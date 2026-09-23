@@ -9,7 +9,8 @@ import {
 	getPullRequest,
 	getRecentIssueComments,
 	getReviewThread,
-	replyToReviewComment
+	replyToReviewComment,
+	resolveReviewThreads
 } from '@hans/github';
 import type { ChatJobPayload, Job } from '@hans/queue';
 import { and, eq } from 'drizzle-orm';
@@ -92,6 +93,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 					)
 			: [];
 
+		let settled = false;
 		const { review: model } = await loadModels(ctx, payload.organizationId);
 		const usage = await createUsageRecorder(db, { organizationId: payload.organizationId });
 		const learnings = await loadLearnings(db, payload.organizationId, payload.repositoryId);
@@ -132,12 +134,19 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 								.update(schema.reviewFindings)
 								.set({ status, dropReason: reason })
 								.where(eq(schema.reviewFindings.id, finding.id));
+							settled = true;
 						}
 					: undefined
 			});
 		});
 
 		await reply(answer);
+		// A finding settled in the conversation (fixed, or intended) closes its thread after the answer.
+		if (settled && payload.rootCommentId) {
+			await resolveReviewThreads(octokit, ref, payload.pullNumber, [payload.rootCommentId]).catch(
+				(error) => log.warn({ err: error }, 'could not resolve thread')
+			);
+		}
 		log.info('chat reply posted');
 	} catch (error) {
 		// Tell the person instead of leaving them waiting, but only once retries are exhausted.

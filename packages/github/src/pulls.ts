@@ -248,6 +248,65 @@ export async function replyToReviewComment(
 	});
 }
 
+interface ReviewThreadsPage {
+	repository: {
+		pullRequest: {
+			reviewThreads: {
+				pageInfo: { hasNextPage: boolean; endCursor: string | null };
+				nodes: { id: string; isResolved: boolean; comments: { nodes: { databaseId: number }[] } }[];
+			};
+		} | null;
+	};
+}
+
+/**
+ * Resolves the review threads that start with the given comments, e.g. findings that were fixed.
+ * Resolving collapses a thread without notifying anyone. Returns how many threads it resolved.
+ */
+export async function resolveReviewThreads(
+	octokit: Octokit,
+	ref: RepoRef,
+	pullNumber: number,
+	rootCommentIds: number[]
+): Promise<number> {
+	const wanted = new Set(rootCommentIds);
+	if (wanted.size === 0) return 0;
+
+	// GitHub only exposes thread ids (and resolving) through GraphQL.
+	const threadIds: string[] = [];
+	for (let cursor: string | null = null; ;) {
+		const page: ReviewThreadsPage = await octokit.graphql(
+			`query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+				repository(owner: $owner, name: $repo) {
+					pullRequest(number: $number) {
+						reviewThreads(first: 100, after: $cursor) {
+							pageInfo { hasNextPage endCursor }
+							nodes { id isResolved comments(first: 1) { nodes { databaseId } } }
+						}
+					}
+				}
+			}`,
+			{ ...ref, number: pullNumber, cursor }
+		);
+		const threads = page.repository.pullRequest?.reviewThreads;
+		if (!threads) break;
+		for (const thread of threads.nodes) {
+			const root = thread.comments.nodes[0]?.databaseId;
+			if (!thread.isResolved && root !== undefined && wanted.has(root)) threadIds.push(thread.id);
+		}
+		if (!threads.pageInfo.hasNextPage) break;
+		cursor = threads.pageInfo.endCursor;
+	}
+
+	for (const threadId of threadIds) {
+		await octokit.graphql(
+			`mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id } } }`,
+			{ threadId }
+		);
+	}
+	return threadIds.length;
+}
+
 /** Acknowledges a comment with 👀 so people know Hansi is working on it. */
 export async function acknowledgeComment(
 	octokit: Octokit,

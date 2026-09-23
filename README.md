@@ -14,10 +14,12 @@ Anthropic, xAI, Google, OpenRouter, Amazon Bedrock, or any OpenAI-compatible end
 - **Runs anywhere.** One Docker image and a libSQL database file. No Redis, no Postgres.
 - **A real reviewer.** Hansi approves pull requests or requests changes, like a teammate, and
   grades every PR's merge confidence from **S** (ready to merge) to **F** (do not merge). After a
-  fix is pushed, it checks its earlier findings and approves once the blocking ones are gone.
+  fix is pushed, it checks its earlier findings, resolves the threads of the fixed ones, and
+  approves once the blocking ones are gone.
 - **Conversational.** Ask `@hansi` anything in a pull request, or reply to one of its comments.
   When you state a preference ("we don't flag this in tests"), Hansi remembers it for future
-  reviews. Replies also record whether a finding was fixed or dismissed.
+  reviews. When a reply settles a finding (fixed, or intended), Hansi answers and resolves the
+  thread.
 - **Incremental.** New pushes are reviewed on their own, and earlier comments are never repeated.
 - **Config as code.** `.hansi.yml` in the repository, plus `AGENTS.md`, `CLAUDE.md`,
   `.cursorrules`, and `.github/copilot-instructions.md` as review guidelines.

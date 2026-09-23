@@ -29,6 +29,7 @@ import {
 	isTrustedAuthor,
 	listReviewComments,
 	RequestError,
+	resolveReviewThreads,
 	startCheckRun,
 	upsertMarkedComment,
 	type ReviewEvent
@@ -222,10 +223,18 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 
 			// Earlier findings the new code fixes are resolved before the verdict is posted.
 			if (result.resolved.length) {
-				await db
+				const fixed = await db
 					.update(schema.reviewFindings)
 					.set({ status: 'resolved', dropReason: `Fixed by ${pr.headSha.slice(0, 7)}` })
-					.where(inArray(schema.reviewFindings.id, result.resolved));
+					.where(inArray(schema.reviewFindings.id, result.resolved))
+					.returning({ commentId: schema.reviewFindings.githubCommentId });
+				// Close their threads on GitHub too. Quietly: the summary lists what was fixed.
+				await resolveReviewThreads(
+					octokit,
+					ref,
+					pr.number,
+					fixed.flatMap((f) => (f.commentId ? [f.commentId] : []))
+				).catch((error) => log.warn({ err: error }, 'could not resolve fixed threads'));
 			}
 
 			// One summary comment per PR, edited in place on every review.
