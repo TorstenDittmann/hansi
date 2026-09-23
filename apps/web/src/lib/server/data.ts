@@ -25,6 +25,33 @@ export async function listRepositories(organizationId: string) {
 		.orderBy(schema.repositories.fullName);
 }
 
+export async function listInstallations(organizationId: string) {
+	const { db } = await getContext();
+	return db
+		.select({
+			id: schema.githubInstallations.id,
+			accountLogin: schema.githubInstallations.accountLogin,
+			accountType: schema.githubInstallations.accountType
+		})
+		.from(schema.githubInstallations)
+		.where(eq(schema.githubInstallations.organizationId, organizationId))
+		.orderBy(schema.githubInstallations.accountLogin);
+}
+
+/** Unlinks an installation so another organization can claim it. Its repositories stay synced. */
+export async function disconnectInstallation(organizationId: string, installationId: number) {
+	const { db } = await getContext();
+	await db
+		.update(schema.githubInstallations)
+		.set({ organizationId: null })
+		.where(
+			and(
+				eq(schema.githubInstallations.id, installationId),
+				eq(schema.githubInstallations.organizationId, organizationId)
+			)
+		);
+}
+
 export async function setRepositoryEnabled(
 	organizationId: string,
 	repositoryId: number,

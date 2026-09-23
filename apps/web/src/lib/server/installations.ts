@@ -15,15 +15,16 @@ export interface RepositoryInfo {
 }
 
 /**
- * Upserts an installation. `organizationId` is only written when given, so webhooks (which don't
- * know the Hansi organization) never unlink an installation a user already claimed.
+ * Upserts an installation. With `organizationId`, it claims the installation for that organization
+ * unless another organization already owns it: each installation belongs to one organization, and
+ * only disconnecting it there frees it up. Returns the owning organization afterwards.
  */
 export async function upsertInstallation(
 	db: Database,
 	installation: InstallationInfo,
 	organizationId?: string
 ) {
-	await db
+	const [row] = await db
 		.insert(schema.githubInstallations)
 		.values({ ...installation, organizationId })
 		.onConflictDoUpdate({
@@ -31,9 +32,15 @@ export async function upsertInstallation(
 			set: {
 				accountLogin: installation.accountLogin,
 				accountType: installation.accountType,
-				...(organizationId ? { organizationId } : {})
+				...(organizationId
+					? {
+							organizationId: sql`coalesce(${schema.githubInstallations.organizationId}, excluded.organization_id)`
+						}
+					: {})
 			}
-		});
+		})
+		.returning({ organizationId: schema.githubInstallations.organizationId });
+	return row?.organizationId ?? null;
 }
 
 export async function upsertRepositories(
@@ -55,7 +62,10 @@ export async function upsertRepositories(
 		});
 }
 
-/** Fetches an installation and all its repositories from GitHub and links it to an organization. */
+/**
+ * Fetches an installation and its repositories from GitHub and links it to an organization, if no
+ * other organization owns it. Returns whether it now belongs to `organizationId`.
+ */
 export async function syncInstallation(
 	db: Database,
 	credentials: GitHubAppCredentials,
@@ -65,7 +75,7 @@ export async function syncInstallation(
 	const app = getGitHubApp(credentials);
 	const { data } = await app.octokit.rest.apps.getInstallation({ installation_id: installationId });
 	const account = data.account;
-	await upsertInstallation(
+	const owner = await upsertInstallation(
 		db,
 		{
 			id: data.id,
@@ -74,6 +84,7 @@ export async function syncInstallation(
 		},
 		organizationId
 	);
+	if (owner !== organizationId) return false;
 
 	const octokit = await app.getInstallationOctokit(installationId);
 	const repos = await octokit.paginate(octokit.rest.apps.listReposAccessibleToInstallation, {
@@ -97,6 +108,7 @@ export async function syncInstallation(
 					)
 				: eq(schema.repositories.installationId, installationId)
 		);
+	return true;
 }
 
 /** Installation ids the signed-in GitHub user can administer, via their user access token. */

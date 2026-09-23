@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { page } from '$app/state';
 
 	let { data, form } = $props();
 	let syncing = $state(false);
@@ -54,9 +55,60 @@
 	</header>
 
 	{#if form && 'synced' in form}
-		<p class="muted">Synced {form.synced} installation{form.synced === 1 ? '' : 's'}.</p>
+		<p class="muted">
+			Synced {form.synced} installation{form.synced === 1 ? '' : 's'}.
+			{#if form.elsewhere}
+				{form.elsewhere} other{form.elsewhere === 1 ? ' belongs' : 's belong'} to another organization;
+				disconnect {form.elsewhere === 1 ? 'it' : 'them'} there to move {form.elsewhere === 1
+					? 'it'
+					: 'them'} here.
+			{/if}
+		</p>
 	{:else if form?.message}
 		<p class="text-sm text-red-600 dark:text-red-400" role="alert">{form.message}</p>
+	{:else if page.url.searchParams.has('elsewhere')}
+		<p
+			class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
+			role="status"
+		>
+			That installation belongs to another organization. Disconnect it there to move it here.
+		</p>
+	{/if}
+
+	{#if data.installations.length}
+		<section class="flex flex-wrap items-center gap-2" aria-label="Installations">
+			<span class="muted">Installed on</span>
+			{#each data.installations as installation (installation.id)}
+				<form
+					method="post"
+					action="?/disconnect"
+					use:enhance={({ cancel }) => {
+						if (
+							!confirm(
+								`Disconnect ${installation.accountLogin}? Its repositories stop being reviewed here until an organization syncs it again.`
+							)
+						)
+							cancel();
+					}}
+					class="flex items-center gap-1.5 rounded-full border border-stone-200 py-0.5 pr-1 pl-1 text-sm dark:border-stone-800"
+				>
+					<img
+						src="https://github.com/{installation.accountLogin}.png?size=40"
+						alt=""
+						class="size-5 {installation.accountType === 'Organization'
+							? 'rounded'
+							: 'rounded-full'}"
+					/>
+					<span class="font-medium">{installation.accountLogin}</span>
+					<input type="hidden" name="installationId" value={installation.id} />
+					<button
+						class="rounded-full px-1.5 text-stone-400 hover:bg-stone-100 hover:text-red-700 dark:hover:bg-stone-800 dark:hover:text-red-400"
+						aria-label="Disconnect {installation.accountLogin}"
+						title="Disconnect">×</button
+					>
+				</form>
+			{/each}
+		</section>
 	{/if}
 
 	{#if data.repositories.length === 0}
