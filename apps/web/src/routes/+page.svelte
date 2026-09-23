@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import '@fontsource-variable/martian-mono';
 	import AsciiHansi from '$lib/components/AsciiHansi.svelte';
 
 	let { data } = $props();
@@ -72,7 +73,7 @@
 	const button = `inline-flex items-center justify-center rounded-[0.6rem] bg-stone-900 dark:bg-stone-100 font-semibold text-white dark:text-stone-900 transition-colors hover:bg-stone-700 dark:hover:bg-stone-300 motion-reduce:transition-none ${focus}`;
 	const navLink = `font-medium text-stone-500 dark:text-stone-400 transition-colors hover:text-stone-900 dark:hover:text-stone-100 motion-reduce:transition-none ${focus}`;
 	const sectionTitle =
-		'text-3xl font-bold tracking-[-0.035em] text-balance sm:text-[2.6rem] sm:leading-[1.1]';
+		'font-display text-2xl font-bold tracking-[-0.04em] text-balance sm:text-[2rem] sm:leading-[1.15]';
 </script>
 
 <svelte:head>
@@ -120,7 +121,7 @@
 	<header class="mx-auto flex h-18 max-w-[70rem] items-center justify-between px-4 sm:px-6">
 		<a
 			href={resolve('/')}
-			class="flex items-baseline gap-2 text-[1.35rem] font-bold tracking-[-0.03em] {focus}"
+			class="flex items-baseline gap-2 font-display text-xl font-bold tracking-[-0.04em] {focus}"
 		>
 			Hansi<span
 				class="font-mono text-sm font-medium tracking-normal text-stone-400 [font-variant-ligatures:none]"
@@ -141,7 +142,7 @@
 		>
 			<div class="relative z-10 max-w-[40rem] min-w-0">
 				<h1
-					class="text-[2.5rem] leading-[1.02] font-bold tracking-[-0.04em] text-balance sm:text-[4.25rem] lg:text-[3.6rem]"
+					class="font-display text-[2rem] leading-[1.08] font-bold tracking-[-0.045em] text-balance sm:text-[2.75rem] lg:text-[3rem]"
 				>
 					The code reviewer that only speaks up when it matters.
 				</h1>
@@ -273,7 +274,9 @@
 			aria-label="What Hansi does"
 		>
 			<div class="min-w-0">
-				<h2 class="text-xl font-semibold tracking-[-0.02em]">Speaks up only for real mistakes</h2>
+				<h2 class="font-display text-lg font-bold tracking-[-0.03em]">
+					Speaks up only for real mistakes
+				</h2>
 				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
 					Hansi flags the bugs you would want a teammate to catch: a missing await, an inverted
 					check, an off-by-one. A second pass drops anything it can't confirm.
@@ -307,7 +310,7 @@
 			</div>
 
 			<div class="min-w-0">
-				<h2 class="text-xl font-semibold tracking-[-0.02em]">Approves like a teammate</h2>
+				<h2 class="font-display text-lg font-bold tracking-[-0.03em]">Approves like a teammate</h2>
 				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
 					Clean pull requests get approved. When something is wrong, Hansi requests changes, and
 					once you push the fix it checks again and approves.
@@ -328,7 +331,9 @@
 			</div>
 
 			<div class="min-w-0">
-				<h2 class="text-xl font-semibold tracking-[-0.02em]">A grade for every pull request</h2>
+				<h2 class="font-display text-lg font-bold tracking-[-0.03em]">
+					A grade for every pull request
+				</h2>
 				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
 					Each review ends with a grade from S, ready to merge, to F, do not merge. Open findings
 					cap the grade, so it always matches what Hansi found.
@@ -359,7 +364,7 @@
 							class="grid size-8 place-items-center rounded-full border border-stone-200 text-sm font-semibold text-stone-900 dark:border-stone-800 dark:text-stone-100"
 							>{i + 1}</span
 						>
-						<h3 class="mt-4 text-lg font-semibold">{step.title}</h3>
+						<h3 class="mt-4 font-display text-base font-bold tracking-[-0.02em]">{step.title}</h3>
 						<p class="mt-1.5 text-stone-500 dark:text-stone-400">{step.body}</p>
 					</li>
 				{/each}
@@ -451,7 +456,7 @@
 	<footer
 		class="mx-auto flex max-w-[70rem] items-center justify-between border-t border-stone-200 px-4 py-8 sm:px-6 dark:border-stone-800"
 	>
-		<span class="flex items-baseline gap-2 text-lg font-bold tracking-[-0.03em]"
+		<span class="flex items-baseline gap-2 font-display text-lg font-bold tracking-[-0.04em]"
 			>Hansi<span
 				class="font-mono text-sm font-medium tracking-normal text-stone-400 [font-variant-ligatures:none]"
 				aria-hidden="true">=^.^=</span

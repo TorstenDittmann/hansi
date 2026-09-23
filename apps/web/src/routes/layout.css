@@ -4,6 +4,8 @@
 @theme {
 	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+	/* Headings on the landing page: a wide monospace that suits Hansi's ASCII art. */
+	--font-display: 'Martian Mono Variable', ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
