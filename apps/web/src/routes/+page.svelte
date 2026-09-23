@@ -157,7 +157,7 @@
 			</div>
 			<!-- Named after Hansi, the founder's cat. The canvas spans the hero so the fly can too. -->
 			<AsciiHansi
-				class="mt-10 hidden text-[7px] sm:block lg:absolute lg:inset-x-0 lg:top-1/2 lg:mt-0 lg:-translate-y-1/2 lg:text-[9px]"
+				class="mt-8 w-full text-[5px] sm:mt-10 sm:text-[7px] lg:absolute lg:inset-x-0 lg:top-1/2 lg:mt-0 lg:-translate-y-1/2 lg:text-[9px]"
 			/>
 		</section>
 

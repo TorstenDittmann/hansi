@@ -18,9 +18,15 @@ export interface Layout {
 /** The standalone size: just the cat and some room around it. */
 export const DEFAULT_LAYOUT: Layout = { cols: 88, catCol: 44 };
 
-/** A canvas `cols` wide with the cat near the right edge. */
+/** A canvas `cols` wide with the cat near the right edge (centered when the canvas is narrow). */
 export function layoutFor(cols: number): Layout {
-	return { cols, catCol: Math.max(44, cols - 44) };
+	const width = Math.max(1, cols);
+	// Wide canvases leave fly-room on the left; below the default width, keep the cat on screen.
+	const catCol =
+		width >= DEFAULT_LAYOUT.cols
+			? Math.max(44, width - 44)
+			: Math.max(1, Math.min(44, Math.round(width / 2)));
+	return { cols: width, catCol };
 }
 
 export type Vec = { x: number; y: number };
