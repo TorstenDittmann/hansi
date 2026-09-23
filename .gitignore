@@ -1,0 +1,28 @@
+node_modules
+
+# Output
+.svelte-kit
+build
+dist
+
+# Local data (libSQL files, WAL, clones)
+data
+*.db
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Workspace utils cache
+.wsu/

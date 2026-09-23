@@ -1,0 +1,23 @@
+{
+	"name": "@hans/github",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"check": "tsc -p .",
+		"test": "bun test --pass-with-no-tests"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"dependencies": {
+		"@hans/db": "workspace:*",
+		"@hans/llm": "workspace:*",
+		"@octokit/webhooks-methods": "^6.0.0",
+		"drizzle-orm": "catalog:",
+		"octokit": "catalog:"
+	}
+}

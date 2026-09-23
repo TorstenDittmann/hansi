@@ -1,0 +1,30 @@
+# Single container: web + worker share a libSQL file on a volume.
+#   cp .env.example .env   # fill in the secrets
+#   docker compose -f docker/compose.yml up -d
+services:
+  hans:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file: ../.env
+    environment:
+      DATABASE_URL: file:/data/hans.db
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      ORIGIN: ${APP_URL:-http://localhost:3000}
+    ports:
+      - '3000:3000'
+    volumes:
+      - hans-data:/data
+    restart: unless-stopped
+
+  # To run web and worker as separate containers, they need a networked database instead of a
+  # shared file. Point both at sqld:
+  #
+  # sqld:
+  #   image: ghcr.io/tursodatabase/libsql-server:latest
+  #   volumes: [sqld-data:/var/lib/sqld]
+  #
+  # and set DATABASE_URL=http://sqld:8080 with HANS_MODE=web / HANS_MODE=worker.
+
+volumes:
+  hans-data:

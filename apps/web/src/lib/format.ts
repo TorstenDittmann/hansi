@@ -1,0 +1,21 @@
+export function formatCost(usd: number | null | undefined) {
+	if (usd === null || usd === undefined) return '–';
+	return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
+}
+
+export function formatDate(value: Date | string | number | null | undefined) {
+	if (!value) return '–';
+	return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+		new Date(value)
+	);
+}
+
+export function formatDuration(from: Date | null | undefined, to: Date | null | undefined) {
+	if (!from || !to) return '–';
+	const seconds = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000);
+	return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+export function formatTokens(value: number) {
+	return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
+}

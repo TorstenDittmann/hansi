@@ -1,0 +1,24 @@
+{
+	"name": "@hans/worker",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun --watch --env-file=../../.env src/index.ts",
+		"start": "bun src/index.ts",
+		"check": "tsc -p ."
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"dependencies": {
+		"@hans/config": "workspace:*",
+		"@hans/core": "workspace:*",
+		"@hans/db": "workspace:*",
+		"@hans/github": "workspace:*",
+		"@hans/llm": "workspace:*",
+		"@hans/queue": "workspace:*",
+		"drizzle-orm": "catalog:",
+		"pino": "^10.3.1"
+	}
+}

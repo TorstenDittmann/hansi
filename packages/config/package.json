@@ -1,0 +1,20 @@
+{
+	"name": "@hans/config",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"check": "tsc -p .",
+		"test": "bun test --pass-with-no-tests"
+	},
+	"dependencies": {
+		"yaml": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

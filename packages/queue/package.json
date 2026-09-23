@@ -1,0 +1,20 @@
+{
+	"name": "@hans/queue",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"check": "tsc -p .",
+		"test": "bun test --pass-with-no-tests"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"dependencies": {
+		"@hans/db": "workspace:*",
+		"drizzle-orm": "catalog:"
+	}
+}

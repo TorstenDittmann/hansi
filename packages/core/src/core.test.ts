@@ -1,0 +1,212 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseRepoConfig } from '@hans/config';
+import { MockLanguageModelV4 } from 'ai/test';
+import { commentableLines, parseUnifiedDiff, renderFileDiff } from './diff';
+import { filterFiles } from './filters';
+import { formatFindingComment } from './format';
+import { placeFinding, runReview, type ModelCall } from './review';
+import { resolveRepoPath } from './tools';
+
+const diff = `diff --git a/src/math.ts b/src/math.ts
+index 1111111..2222222 100644
+--- a/src/math.ts
++++ b/src/math.ts
+@@ -1,4 +1,5 @@
+ export function divide(a: number, b: number) {
+-  return a / b;
++  const result = a / b;
++  return result;
+ }
+
+@@ -20,3 +21,3 @@ export function other() {
+   const x = 1;
+-  return x;
++  return x + 1;
+ }
+diff --git a/bun.lock b/bun.lock
+index 3333333..4444444 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -1 +1 @@
+-old
++new
+`;
+
+describe('diff', () => {
+	const [math] = parseUnifiedDiff(diff);
+
+	test('parses files and new-side line numbers', () => {
+		expect(math?.path).toBe('src/math.ts');
+		expect(math?.status).toBe('modified');
+		expect(math?.additions).toBe(3);
+		expect([...commentableLines(math!)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 21, 22, 23]);
+	});
+
+	test('renders line numbers for the model', () => {
+		const rendered = renderFileDiff(math!);
+		expect(rendered).toContain('    2 +   const result = a / b;');
+		expect(rendered).toContain('      -   return a / b;');
+	});
+});
+
+describe('filterFiles', () => {
+	const files = parseUnifiedDiff(diff);
+
+	test('ignores lockfiles by default', () => {
+		const result = filterFiles(files);
+		expect(result.included.map((f) => f.path)).toEqual(['src/math.ts']);
+		expect(result.excluded).toEqual([{ path: 'bun.lock', reason: 'ignored by default' }]);
+	});
+
+	test('supports allowlists and exclusions', () => {
+		expect(filterFiles(files, ['!src/**']).included).toHaveLength(0);
+		expect(filterFiles(files, ['bun.lock']).included.map((f) => f.path)).toEqual(['bun.lock']);
+	});
+});
+
+describe('placeFinding', () => {
+	const files = parseUnifiedDiff(diff);
+	const base = {
+		path: 'src/math.ts',
+		severity: 'major' as const,
+		category: 'bug' as const,
+		title: 't',
+		body: 'b'
+	};
+
+	test('keeps findings on changed lines', () => {
+		expect(placeFinding({ ...base, startLine: 2, endLine: 3 }, files)).toMatchObject({
+			startLine: 2,
+			endLine: 3
+		});
+	});
+
+	test('collapses ranges that span hunks', () => {
+		expect(placeFinding({ ...base, startLine: 3, endLine: 22 }, files)).toMatchObject({
+			startLine: 22,
+			endLine: 22
+		});
+	});
+
+	test('drops findings outside the diff', () => {
+		expect(placeFinding({ ...base, startLine: 10, endLine: 10 }, files)).toBeNull();
+		expect(placeFinding({ ...base, path: 'nope.ts', startLine: 2, endLine: 2 }, files)).toBeNull();
+	});
+});
+
+test('resolveRepoPath rejects escapes', () => {
+	expect(() => resolveRepoPath('/repo', '../etc/passwd')).toThrow();
+	expect(() => resolveRepoPath('/repo', '.git/config')).toThrow();
+	expect(resolveRepoPath('/repo', '/src/a.ts')).toBe('/repo/src/a.ts');
+});
+
+test('formatFindingComment renders a suggestion block', () => {
+	const comment = formatFindingComment({
+		path: 'a.ts',
+		startLine: 1,
+		endLine: 1,
+		severity: 'critical',
+		category: 'security',
+		title: 'SQL injection',
+		body: 'User input reaches the query.',
+		suggestion: 'db.query(sql, [id]);\n'
+	});
+	expect(comment).toContain('🔴 Critical · security');
+	expect(comment).toEndWith('```suggestion\ndb.query(sql, [id]);\n```');
+});
+
+describe('runReview', () => {
+	let repoDir: string;
+
+	beforeAll(async () => {
+		repoDir = await mkdtemp(join(tmpdir(), 'hans-core-'));
+		await mkdir(join(repoDir, 'src'));
+		await writeFile(
+			join(repoDir, 'src/math.ts'),
+			'export function divide(a: number, b: number) {\n  const result = a / b;\n  return result;\n}\n'
+		);
+	});
+	afterAll(() => rm(repoDir, { recursive: true, force: true }));
+
+	const usage = {
+		inputTokens: { total: 100, noCache: 100, cacheRead: 0, cacheWrite: 0 },
+		outputTokens: { total: 20, text: 20, reasoning: 0 }
+	};
+	const toolCall = (toolName: string, input: unknown) => ({
+		content: [
+			{ type: 'tool-call' as const, toolCallId: toolName, toolName, input: JSON.stringify(input) }
+		],
+		finishReason: { unified: 'tool-calls' as const, raw: 'tool_use' },
+		usage,
+		warnings: []
+	});
+	const finding = (startLine: number, title: string, severity = 'major') => ({
+		path: 'src/math.ts',
+		startLine,
+		endLine: startLine,
+		severity,
+		category: 'bug',
+		title,
+		body: 'Explained.'
+	});
+
+	test('reviews, validates, filters, and verifies findings', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [
+						finding(2, 'Division by zero'),
+						finding(3, 'False positive'),
+						finding(2, 'Nit', 'info'),
+						finding(40, 'Outside diff')
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'b can be 0' },
+						{ id: 'F2', keep: false, reason: 'not a bug' }
+					]
+				})
+			]
+		});
+
+		const calls: ModelCall[] = [];
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			onModelCall: (call) => void calls.push(call)
+		});
+
+		expect(result.status).toBe('completed');
+		if (result.status !== 'completed') return;
+		expect(result.summary).toBe('Refactors divide.');
+		expect(result.posted.map((f) => f.title)).toEqual(['Division by zero']);
+		expect(Object.fromEntries(result.dropped.map((f) => [f.title, f.dropReason]))).toEqual({
+			'Outside diff': 'Not on a changed line',
+			Nit: 'Below min_severity (minor)',
+			'False positive': 'Verifier: not a bug'
+		});
+		expect(calls.map((c) => [c.role, c.usage.inputTokens])).toEqual([
+			['review', 100],
+			['verify', 100]
+		]);
+	});
+
+	test('skips when nothing is reviewable', async () => {
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Lockfile', body: '', author: 'octocat' },
+			config: parseRepoConfig('reviews:\n  path_filters: ["!src/**"]').config,
+			models: { review: { model: new MockLanguageModelV4(), provider: 'mock', modelId: 'mock-1' } }
+		});
+		expect(result).toEqual({ status: 'skipped', reason: 'No reviewable changes' });
+	});
+});

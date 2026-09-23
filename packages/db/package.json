@@ -1,0 +1,25 @@
+{
+	"name": "@hans/db",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./schema": "./src/schema/index.ts"
+	},
+	"scripts": {
+		"check": "tsc -p .",
+		"test": "bun test --pass-with-no-tests",
+		"generate": "drizzle-kit generate",
+		"migrate": "bun --env-file=../../.env src/migrate.ts",
+		"studio": "drizzle-kit studio"
+	},
+	"dependencies": {
+		"@libsql/client": "catalog:",
+		"drizzle-orm": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"drizzle-kit": "^0.31.11",
+		"typescript": "catalog:"
+	}
+}
