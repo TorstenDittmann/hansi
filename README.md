@@ -11,7 +11,7 @@ Anthropic, xAI, Google, OpenRouter, or any OpenAI-compatible endpoint (Ollama, v
   usage, and cost per model call.
 - **Runs anywhere.** One Docker image and a libSQL database file. No Redis, no Postgres.
 - **A real reviewer.** hans approves pull requests or requests changes, like a teammate, and
-  grades every PR's merge confidence from **S** (no issues found) to **F** (do not merge). After a
+  grades every PR's merge confidence from **S** (ready to merge) to **F** (do not merge). After a
   fix is pushed, it checks its earlier findings and approves once the blocking ones are gone.
 - **Conversational.** Ask `@hans` anything in a pull request, or reply to one of its comments.
   When you state a preference ("we don't flag this in tests"), hans remembers it for future
@@ -117,10 +117,11 @@ Each review is submitted to GitHub as **Approve**, **Request changes**, or **Com
   changes stays in effect until they are fixed or dismissed in the thread.
 - Otherwise → **Approve** (minor findings are still posted as comments), unless `approve: false`.
 
-The tier grades merge confidence: **S** no issues found · **A** safe to merge · **B** mergeable after
-minor fixes · **C** needs changes · **D** significant problems · **F** do not merge. The model
-grades the PR, but open findings cap the tier (a major finding means at most **C**, a critical one
-at most **D**). The `hans` check run follows the verdict (success, failure, or neutral), so you
+The tier grades merge confidence: **S** ready to merge · **A** mergeable after minor fixes ·
+**B** needs changes · **C** significant problems · **D** serious problems · **F** do not merge.
+The model grades the PR, but open findings cap the tier: a minor finding means at most **A**, a
+major one at most **B**, a critical one at most **D**. Informational notes don't lower it.
+The `hans` check run follows the verdict (success, failure, or neutral), so you
 can make it a required check to block merging.
 
 **Do hans's approvals count toward required reviews?** Only if the app has write access to code:

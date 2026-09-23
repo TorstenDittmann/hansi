@@ -30,11 +30,11 @@ How to write findings:
 If <open_findings> is present, check each one against the current code with the tools and put the ids of those that are fixed in \`resolved\`. Leave out any you are unsure about.
 
 Grade the whole pull request's merge confidence as a tier, considering your findings and any open findings:
-S = no problems found, safe to merge. This is the expected grade for a clean pull request; it is not praise for exceptional code.
-A = safe to merge, with only informational notes.
-B = mergeable after fixing minor issues.
-C = needs changes before merging.
-D = significant problems.
+S = ready to merge as it is. This is the expected grade whenever nothing needs fixing; it is not praise for exceptional code.
+A = mergeable after fixing minor issues.
+B = needs changes before merging.
+C = significant problems.
+D = serious problems.
 F = do not merge (broken, dangerous, or destroys data).
 Only grade below S for a concrete reason, and state that reason in one sentence as tier_reason.
 

@@ -10,7 +10,7 @@ const base: SummaryInput = {
 	repository: 'acme/api',
 	headSha: 'abcdef1234567890',
 	summary: 'Adds pagination to the items endpoint.',
-	tier: 'C',
+	tier: 'B',
 	tierReason: 'Limited by an open major finding: Off by one',
 	verdict: 'request_changes',
 	posted: [
@@ -47,7 +47,7 @@ describe('formatSummaryComment', () => {
 	const body = formatSummaryComment(base);
 
 	test('starts with the marker and the tier', () => {
-		expect(body).toStartWith(`${SUMMARY_MARKER}\n\n## 🟡 Tier C · Needs changes before merging`);
+		expect(body).toStartWith(`${SUMMARY_MARKER}\n\n## 🟡 Tier B · Needs changes before merging`);
 		expect(body).toContain('> Limited by an open major finding: Off by one');
 	});
 
@@ -75,13 +75,13 @@ describe('formatSummaryComment', () => {
 test('the review body is one line that points to the summary', () => {
 	expect(
 		formatReviewBody({
-			tier: 'C',
+			tier: 'B',
 			verdict: 'request_changes',
 			blocking: 1,
 			summaryUrl: 'https://x'
 		})
-	).toBe('🟡 **Tier C** · 1 blocking finding to address. [Summary](https://x)');
-	expect(formatReviewBody({ tier: 'A', verdict: 'approve', blocking: 0 })).toBe(
-		'🟢 **Tier A** · Looks good to merge.'
+	).toBe('🟡 **Tier B** · 1 blocking finding to address. [Summary](https://x)');
+	expect(formatReviewBody({ tier: 'S', verdict: 'approve', blocking: 0 })).toBe(
+		'🟢 **Tier S** · Looks good to merge.'
 	);
 });

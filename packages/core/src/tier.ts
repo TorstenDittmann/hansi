@@ -4,9 +4,10 @@ export { tierMeaning, tiers, type Tier } from '@hans/config';
 
 /** The best tier a PR can get with a finding of this severity still open. */
 const capBySeverity: Record<Severity, Tier> = {
-	info: 'A',
-	minor: 'B',
-	major: 'C',
+	// Informational notes don't stand in the way of merging.
+	info: 'S',
+	minor: 'A',
+	major: 'B',
 	critical: 'D'
 };
 

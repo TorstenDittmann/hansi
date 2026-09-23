@@ -341,7 +341,7 @@ describe('runReview', () => {
 		expect(fixed.tier).toBe('S');
 		expect(fixed.tierReason).toBe('Clean fix with tests.');
 
-		// Another blocking finding is still open: comment only, and the tier is capped at C.
+		// Another blocking finding is still open: comment only, and the tier is capped at B.
 		const blocked = await run([
 			open('f-zero', 'major', 'Division by zero'),
 			open('f-nan', 'major', 'NaN leaks into totals')
@@ -349,7 +349,7 @@ describe('runReview', () => {
 		if (blocked.status !== 'completed') throw new Error('expected a completed review');
 		expect(blocked.verdict).toBe('comment');
 		expect(blocked.stillOpenBlocking).toBe(1);
-		expect(blocked.tier).toBe('C');
+		expect(blocked.tier).toBe('B');
 		expect(blocked.tierReason).toBe('Limited by an open major finding: NaN leaks into totals');
 	});
 

@@ -20,12 +20,12 @@ const severityName: Record<Severity, string> = {
 };
 
 const tierIcon: Record<Tier, string> = {
-	S: '💎',
-	A: '🟢',
-	B: '🔵',
-	C: '🟡',
-	D: '🟠',
-	F: '🔴'
+	S: '🟢',
+	A: '🔵',
+	B: '🟡',
+	C: '🟠',
+	D: '🔴',
+	F: '⛔'
 };
 
 const verdictText: Record<Verdict, string> = {

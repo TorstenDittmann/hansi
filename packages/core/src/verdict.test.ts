@@ -39,9 +39,9 @@ describe('decideVerdict', () => {
 describe('tiers', () => {
 	test('the worst open finding caps the tier', () => {
 		expect(tierCap([])).toBe('S');
-		expect(tierCap(['info'])).toBe('A');
-		expect(tierCap(['minor', 'info'])).toBe('B');
-		expect(tierCap(['minor', 'major'])).toBe('C');
+		expect(tierCap(['info'])).toBe('S');
+		expect(tierCap(['minor', 'info'])).toBe('A');
+		expect(tierCap(['minor', 'major'])).toBe('B');
 		expect(tierCap(['critical'])).toBe('D');
 	});
 
