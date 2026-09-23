@@ -25,6 +25,10 @@
 	const CELEBRATE_SECONDS = 1.8;
 	const RESPAWN_SECONDS = 2.4;
 	const CATCH_DISTANCE = 6;
+	/** Fly motion, in world units (a character cell is 1.2 wide): spring stiffness, damping, top speed. */
+	const FLY_PULL = 45;
+	const FLY_DAMPING = 9;
+	const FLY_MAX_SPEED = 150;
 
 	let pre: HTMLPreElement | undefined = $state();
 
@@ -53,9 +57,6 @@
 		const random = (range: [number, number]) => range[0] + Math.random() * (range[1] - range[0]);
 
 		let pointer: Vec | null = null;
-		/** Smoothed pointer velocity, so the fly can move with the pointer instead of trailing it. */
-		let pointerVelocity: Vec = { x: 0, y: 0 };
-		let previousPointer: Vec | null = null;
 		let fly: { p: Vec; v: Vec; orbit: number } | null = null;
 		let trail: Vec[] = [];
 		let lastTrail = 0;
@@ -145,17 +146,8 @@
 				fly = { p: nearestEdge(pointer), v: { x: 0, y: 0 }, orbit: 0 };
 			}
 			let desired: Vec;
-			if (pointer && previousPointer && dt > 0) {
-				pointerVelocity = {
-					x: pointerVelocity.x * 0.6 + ((pointer.x - previousPointer.x) / dt) * 0.4,
-					y: pointerVelocity.y * 0.6 + ((pointer.y - previousPointer.y) / dt) * 0.4
-				};
-			} else {
-				pointerVelocity = { x: 0, y: 0 };
-			}
-			previousPointer = pointer ? { ...pointer } : null;
 			if (pointer) {
-				// A tight, jittery orbit: the fly stays right at the pointer.
+				// A tight, jittery orbit around the pointer.
 				fly.orbit += dt * (6 + 2 * Math.sin(time * 0.9));
 				const radius = 2.6 + Math.sin(time * 1.7);
 				desired = {
@@ -174,11 +166,16 @@
 					return;
 				}
 			}
-			// A stiff spring damped relative to the pointer's velocity: the fly moves along with the
-			// pointer (no constant trailing offset) and only wobbles around it.
-			const carry = pointer ? pointerVelocity : { x: 0, y: 0 };
-			fly.v.x += ((desired.x - fly.p.x) * 120 - (fly.v.x - carry.x) * 18) * dt;
-			fly.v.y += ((desired.y - fly.p.y) * 120 - (fly.v.y - carry.y) * 18) * dt;
+			// A soft, slightly underdamped spring: the fly trails a moving pointer, catches up when it
+			// stops, and overshoots a little before settling into its orbit. It has a top speed, so a
+			// fast pointer leaves it behind for a moment.
+			fly.v.x += ((desired.x - fly.p.x) * FLY_PULL - fly.v.x * FLY_DAMPING) * dt;
+			fly.v.y += ((desired.y - fly.p.y) * FLY_PULL - fly.v.y * FLY_DAMPING) * dt;
+			const speed = Math.hypot(fly.v.x, fly.v.y);
+			if (speed > FLY_MAX_SPEED) {
+				fly.v.x *= FLY_MAX_SPEED / speed;
+				fly.v.y *= FLY_MAX_SPEED / speed;
+			}
 			fly.p = { x: fly.p.x + fly.v.x * dt, y: fly.p.y + fly.v.y * dt };
 			if (time - lastTrail > 0.06) {
 				trail = [...trail, fly.p].slice(-7);
