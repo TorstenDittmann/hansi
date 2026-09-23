@@ -28,6 +28,11 @@
 			match: (path: string) => path === '/app' || path.startsWith('/app/reviews')
 		},
 		{
+			name: 'Repositories',
+			href: resolve('/app/repositories'),
+			match: (path: string) => path.startsWith('/app/repositories')
+		},
+		{
 			name: 'Models',
 			href: resolve('/app/settings/models'),
 			match: (path: string) => path.startsWith('/app/settings/models')

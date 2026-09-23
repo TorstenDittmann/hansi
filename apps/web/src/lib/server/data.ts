@@ -2,7 +2,7 @@
 // filters by it; SQLite has no row-level security, so this module is the tenancy boundary.
 import { schema, type ModelRole, type ProviderId } from '@hans/db';
 import { encryptSecret, keyHint } from '@hans/llm';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { getContext } from './context';
 
 export async function listRepositories(organizationId: string) {
@@ -232,4 +232,90 @@ export async function deleteLearning(organizationId: string, learningId: string)
 		.where(
 			and(eq(schema.learnings.id, learningId), eq(schema.learnings.organizationId, organizationId))
 		);
+}
+
+/**
+ * What the organization's model calls cost: this and last calendar month (UTC), daily spend for
+ * the last 30 days, and a breakdown by model and by repository over the same 30 days.
+ */
+export async function getCostSummary(organizationId: string, now = new Date()) {
+	const { db } = await getContext();
+	const { llmCalls, reviews, repositories } = schema;
+	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const lastMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+	const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29));
+	const inOrganization = eq(llmCalls.organizationId, organizationId);
+	const cost = sql<number>`coalesce(sum(${llmCalls.costUsd}), 0)`;
+	const day = sql<string>`date(${llmCalls.createdAt} / 1000, 'unixepoch')`;
+
+	const [[month], [lastMonth], [reviewCount], daily, byModel, byRepository] = await Promise.all([
+		db
+			.select({
+				cost,
+				inputTokens: sql<number>`coalesce(sum(${llmCalls.inputTokens}), 0)`,
+				outputTokens: sql<number>`coalesce(sum(${llmCalls.outputTokens}), 0)`,
+				unpriced: sql<number>`sum(${llmCalls.costUsd} is null)`
+			})
+			.from(llmCalls)
+			.where(and(inOrganization, gte(llmCalls.createdAt, monthStart))),
+		db
+			.select({ cost })
+			.from(llmCalls)
+			.where(
+				and(
+					inOrganization,
+					gte(llmCalls.createdAt, lastMonthStart),
+					sql`${llmCalls.createdAt} < ${monthStart.getTime()}`
+				)
+			),
+		db
+			.select({ count: sql<number>`count(*)` })
+			.from(reviews)
+			.where(and(eq(reviews.organizationId, organizationId), gte(reviews.createdAt, monthStart))),
+		db
+			.select({ day, cost })
+			.from(llmCalls)
+			.where(and(inOrganization, gte(llmCalls.createdAt, since)))
+			.groupBy(day),
+		db
+			.select({
+				provider: llmCalls.provider,
+				model: llmCalls.model,
+				cost,
+				calls: sql<number>`count(*)`,
+				tokens: sql<number>`sum(${llmCalls.inputTokens} + ${llmCalls.outputTokens})`
+			})
+			.from(llmCalls)
+			.where(and(inOrganization, gte(llmCalls.createdAt, since)))
+			.groupBy(llmCalls.provider, llmCalls.model)
+			.orderBy(desc(cost)),
+		db
+			.select({
+				repository: repositories.fullName,
+				cost,
+				reviews: sql<number>`count(distinct ${llmCalls.reviewId})`
+			})
+			.from(llmCalls)
+			.innerJoin(reviews, eq(reviews.id, llmCalls.reviewId))
+			.innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
+			.where(and(inOrganization, gte(llmCalls.createdAt, since)))
+			.groupBy(repositories.fullName)
+			.orderBy(desc(cost))
+			.limit(8)
+	]);
+
+	// One entry per day, including days without calls.
+	const costByDay = new Map(daily.map((row) => [row.day, row.cost]));
+	const days = Array.from({ length: 30 }, (_, i) => {
+		const date = new Date(since.getTime() + i * 86_400_000).toISOString().slice(0, 10);
+		return { day: date, cost: costByDay.get(date) ?? 0 };
+	});
+
+	return {
+		month: { ...month!, reviews: reviewCount!.count, unpriced: month!.unpriced ?? 0 },
+		lastMonthCost: lastMonth!.cost,
+		days,
+		byModel,
+		byRepository
+	};
 }
