@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { LanguageModelUsage } from 'ai';
 import { decryptSecret, encryptSecret, keyHint } from './crypto';
 import { listModels } from './models';
+import { createLanguageModel, parseBedrockKey } from './providers';
 import { estimateCost, findPrice } from './pricing';
 
 const key = Buffer.alloc(32, 7).toString('base64');
@@ -76,5 +77,68 @@ describe('listModels', () => {
 		const fetchImpl = (async () =>
 			new Response('bad key', { status: 401 })) as unknown as typeof fetch;
 		await expect(listModels({ provider: 'openai', apiKey: 'k' }, fetchImpl)).rejects.toThrow('401');
+	});
+});
+
+describe('amazon bedrock', () => {
+	test('parses Bedrock API keys and IAM access keys', () => {
+		expect(parseBedrockKey(' bedrock-api-key-123 ')).toEqual({
+			kind: 'api-key',
+			apiKey: 'bedrock-api-key-123'
+		});
+		expect(parseBedrockKey('AKIAABCDEFGHIJKLMNOP:secret/Key+1')).toEqual({
+			kind: 'iam',
+			accessKeyId: 'AKIAABCDEFGHIJKLMNOP',
+			secretAccessKey: 'secret/Key+1'
+		});
+		expect(parseBedrockKey('ASIAABCDEFGHIJKLMNOP:secret:session-token')).toMatchObject({
+			kind: 'iam',
+			sessionToken: 'session-token'
+		});
+	});
+
+	const bedrockFetch = (seen: Request[]) =>
+		(async (input: Request) => {
+			seen.push(input);
+			const url = new URL(input.url);
+			return Response.json(
+				url.pathname === '/inference-profiles'
+					? { inferenceProfileSummaries: [{ inferenceProfileId: 'us.anthropic.claude-x' }] }
+					: { modelSummaries: [{ modelId: 'amazon.nova-pro-v1:0', modelName: 'Nova Pro' }] }
+			);
+		}) as unknown as typeof fetch;
+
+	test('lists inference profiles, then foundation models, with a bearer API key', async () => {
+		const seen: Request[] = [];
+		const models = await listModels(
+			{ provider: 'amazon-bedrock', apiKey: 'bedrock-key', region: 'eu-central-1' },
+			bedrockFetch(seen)
+		);
+		expect(models.map((m) => m.id)).toEqual(['us.anthropic.claude-x', 'amazon.nova-pro-v1:0']);
+		expect(seen[0]?.url).toStartWith('https://bedrock.eu-central-1.amazonaws.com/');
+		expect(seen[0]?.headers.get('authorization')).toBe('Bearer bedrock-key');
+	});
+
+	test('signs requests with SigV4 for IAM access keys', async () => {
+		const seen: Request[] = [];
+		await listModels(
+			{ provider: 'amazon-bedrock', apiKey: 'AKIAABCDEFGHIJKLMNOP:secret', region: 'us-east-1' },
+			bedrockFetch(seen)
+		);
+		expect(seen[0]?.headers.get('authorization')).toStartWith(
+			'AWS4-HMAC-SHA256 Credential=AKIAABCDEFGHIJKLMNOP/'
+		);
+	});
+
+	test('requires a region', async () => {
+		await expect(listModels({ provider: 'amazon-bedrock', apiKey: 'k' })).rejects.toThrow('region');
+		expect(() =>
+			createLanguageModel({ provider: 'amazon-bedrock', apiKey: 'k' }, 'amazon.nova-pro-v1:0')
+		).toThrow('region');
+		const model = createLanguageModel(
+			{ provider: 'amazon-bedrock', apiKey: 'k', region: 'us-east-1' },
+			'amazon.nova-pro-v1:0'
+		);
+		expect(typeof model === 'object' && model.provider).toContain('bedrock');
 	});
 });

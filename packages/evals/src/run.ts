@@ -4,7 +4,8 @@
 //   bun run eval -- --case sql --repeat 3 --min-f1 0.6
 //
 // Environment: EVAL_PROVIDER, EVAL_MODEL, EVAL_API_KEY (or the provider's usual variable),
-// EVAL_BASE_URL (OpenAI-compatible endpoints), EVAL_VERIFY_MODEL (optional, same provider).
+// EVAL_BASE_URL (OpenAI-compatible endpoints), EVAL_REGION (Amazon Bedrock), EVAL_VERIFY_MODEL
+// (optional, same provider).
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -37,6 +38,7 @@ const keyVariables: Record<ProviderId, string> = {
 	xai: 'XAI_API_KEY',
 	google: 'GOOGLE_GENERATIVE_AI_API_KEY',
 	openrouter: 'OPENROUTER_API_KEY',
+	'amazon-bedrock': 'AWS_BEARER_TOKEN_BEDROCK',
 	'openai-compatible': 'OPENAI_COMPATIBLE_API_KEY'
 };
 
@@ -56,7 +58,12 @@ if (!apiKey && provider !== 'openai-compatible') {
 	fail(`Set EVAL_API_KEY or ${keyVariables[provider]}`);
 }
 
-const credential = { provider, apiKey, baseUrl: process.env.EVAL_BASE_URL };
+const credential = {
+	provider,
+	apiKey,
+	baseUrl: process.env.EVAL_BASE_URL,
+	region: process.env.EVAL_REGION ?? process.env.AWS_REGION
+};
 const model = (id: string): ReviewModel => ({
 	model: createLanguageModel(credential, id),
 	provider,

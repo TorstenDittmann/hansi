@@ -1,0 +1,1 @@
+ALTER TABLE `provider_credentials` ADD `region` text;

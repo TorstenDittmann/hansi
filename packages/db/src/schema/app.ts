@@ -69,6 +69,7 @@ export const providerIds = [
 	'xai',
 	'google',
 	'openrouter',
+	'amazon-bedrock',
 	'openai-compatible'
 ] as const;
 export type ProviderId = (typeof providerIds)[number];
@@ -82,6 +83,8 @@ export const providerCredentials = sqliteTable(
 		provider: text('provider', { enum: providerIds }).notNull(),
 		label: text('label').notNull(),
 		baseUrl: text('base_url'),
+		/** AWS region, for Amazon Bedrock. */
+		region: text('region'),
 		encryptedKey: text('encrypted_key').notNull(),
 		/** Last four characters of the key, for display. */
 		keyHint: text('key_hint').notNull(),

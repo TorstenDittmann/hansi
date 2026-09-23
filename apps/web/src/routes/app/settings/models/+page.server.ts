@@ -37,11 +37,18 @@ export const actions: Actions = {
 		const provider = String(form.get('provider')) as ProviderId;
 		const apiKey = String(form.get('apiKey') ?? '').trim();
 		const baseUrl = String(form.get('baseUrl') ?? '').trim() || undefined;
+		const region = String(form.get('region') ?? '').trim() || undefined;
 		const label = String(form.get('label') ?? '').trim() || providers[provider]?.name;
 
 		if (!providerIds.includes(provider)) return fail(400, { error: 'Unknown provider' });
 		if (providers[provider].requiresBaseUrl && !baseUrl) {
 			return fail(400, { error: 'This provider needs a base URL' });
+		}
+		if (providers[provider].requiresRegion && !region) {
+			return fail(400, { error: 'Amazon Bedrock needs a region, e.g. us-east-1' });
+		}
+		if (region && !/^[a-z]{2}(-[a-z]+)+-\d$/.test(region)) {
+			return fail(400, { error: 'Region should look like us-east-1' });
 		}
 		if (baseUrl && !URL.canParse(baseUrl))
 			return fail(400, { error: 'Base URL is not a valid URL' });
@@ -49,11 +56,11 @@ export const actions: Actions = {
 			return fail(400, { error: 'API key is required' });
 
 		try {
-			await listModels({ provider, apiKey, baseUrl });
+			await listModels({ provider, apiKey, baseUrl, region });
 		} catch (err) {
 			return fail(400, { error: `Connection test failed: ${(err as Error).message}` });
 		}
-		await addCredential(organization.id, { provider, label: label!, apiKey, baseUrl });
+		await addCredential(organization.id, { provider, label: label!, apiKey, baseUrl, region });
 		return { added: true };
 	},
 
@@ -89,7 +96,8 @@ export const actions: Actions = {
 			const models = await listModels({
 				provider: credential.provider,
 				apiKey,
-				baseUrl: credential.baseUrl
+				baseUrl: credential.baseUrl,
+				region: credential.region
 			});
 			return { credentialId, models };
 		} catch (err) {

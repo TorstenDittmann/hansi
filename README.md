@@ -3,7 +3,7 @@
 [hansi.codes](https://hansi.codes) · Named after Hansi, the cat.
 
 Open-source, self-hostable AI code review for GitHub pull requests. Bring your own key for OpenAI,
-Anthropic, xAI, Google, OpenRouter, or any OpenAI-compatible endpoint (Ollama, vLLM, LiteLLM, …).
+Anthropic, xAI, Google, OpenRouter, Amazon Bedrock, or any OpenAI-compatible endpoint (Ollama, vLLM, LiteLLM, …).
 
 - **Fewer, better comments.** By default Hansi only points out obvious mistakes, the kind you'd
   agree with at a glance. An agent explores the repository before commenting, then a second,

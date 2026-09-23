@@ -87,7 +87,12 @@ export async function loadModels({ db, env }: WorkerContext, organizationId: str
 		);
 		return {
 			model: createLanguageModel(
-				{ provider: entry.credential.provider, apiKey, baseUrl: entry.credential.baseUrl },
+				{
+					provider: entry.credential.provider,
+					apiKey,
+					baseUrl: entry.credential.baseUrl,
+					region: entry.credential.region
+				},
 				entry.assignment.modelId
 			),
 			provider: entry.credential.provider,

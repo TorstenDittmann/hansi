@@ -102,6 +102,7 @@ export async function listCredentials(organizationId: string) {
 			provider: schema.providerCredentials.provider,
 			label: schema.providerCredentials.label,
 			baseUrl: schema.providerCredentials.baseUrl,
+			region: schema.providerCredentials.region,
 			keyHint: schema.providerCredentials.keyHint,
 			lastVerifiedAt: schema.providerCredentials.lastVerifiedAt
 		})
@@ -112,7 +113,7 @@ export async function listCredentials(organizationId: string) {
 
 export async function addCredential(
 	organizationId: string,
-	input: { provider: ProviderId; label: string; apiKey: string; baseUrl?: string }
+	input: { provider: ProviderId; label: string; apiKey: string; baseUrl?: string; region?: string }
 ) {
 	const { db, env } = await getContext();
 	const id = crypto.randomUUID();
@@ -122,6 +123,7 @@ export async function addCredential(
 		provider: input.provider,
 		label: input.label,
 		baseUrl: input.baseUrl || null,
+		region: input.region || null,
 		encryptedKey: await encryptSecret(
 			input.apiKey,
 			env.HANS_ENCRYPTION_KEY,

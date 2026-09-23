@@ -94,7 +94,9 @@
 							<p class="muted font-mono">
 								{credential.provider}{credential.keyHint
 									? ` · …${credential.keyHint}`
-									: ''}{credential.baseUrl ? ` · ${credential.baseUrl}` : ''}
+									: ''}{credential.region ? ` · ${credential.region}` : ''}{credential.baseUrl
+									? ` · ${credential.baseUrl}`
+									: ''}
 							</p>
 							<p class="muted">Verified {formatDate(credential.lastVerifiedAt)}</p>
 						</div>
@@ -134,7 +136,9 @@
 					<input id="label" name="label" class="input" placeholder={providerInfo?.name} />
 				</div>
 				<div class="sm:col-span-2">
-					<label class="label" for="apiKey">API key</label>
+					<label class="label" for="apiKey">
+						{provider === 'amazon-bedrock' ? 'Bedrock API key or IAM access key' : 'API key'}
+					</label>
 					<input
 						id="apiKey"
 						name="apiKey"
@@ -143,12 +147,30 @@
 						class="input font-mono"
 						required={provider !== 'openai-compatible'}
 					/>
-					{#if providerInfo?.keyUrl}
+					{#if provider === 'amazon-bedrock'}
+						<p class="muted mt-1">
+							Paste a Bedrock API key, or IAM credentials as
+							<code>ACCESS_KEY_ID:SECRET_ACCESS_KEY</code>. The key needs access to the models you
+							want to use.
+						</p>
+					{:else if providerInfo?.keyUrl}
 						<p class="muted mt-1">
 							Get a key at <a class="underline" href={providerInfo.keyUrl}>{providerInfo.keyUrl}</a>
 						</p>
 					{/if}
 				</div>
+				{#if providerInfo?.requiresRegion}
+					<div class="sm:col-span-2">
+						<label class="label" for="region">Region</label>
+						<input
+							id="region"
+							name="region"
+							class="input font-mono"
+							placeholder="us-east-1"
+							required
+						/>
+					</div>
+				{/if}
 				<div class="sm:col-span-2">
 					<label class="label" for="baseUrl">
 						Base URL {providerInfo?.requiresBaseUrl ? '' : '(optional)'}
