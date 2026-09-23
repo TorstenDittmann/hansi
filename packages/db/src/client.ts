@@ -37,31 +37,14 @@ export function resolveDatabaseUrl(url: string, cwd = process.cwd()): string {
 	return `file:${resolve(findWorkspaceRoot(cwd) ?? cwd, path)}`;
 }
 
-/**
- * sqld can require HTTP Basic auth (e.g. Dokploy's libSQL service), which the client rejects in
- * the URL. Take the credentials out of `http://user:pass@host` and send them as a header instead.
- */
-export function splitBasicAuth(url: string): { url: string; fetch?: typeof fetch } {
-	if (!/^(https?|libsql):/.test(url)) return { url };
-	const parsed = new URL(url);
-	if (!parsed.username) return { url };
-	const credentials = btoa(
-		`${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`
-	);
-	parsed.username = '';
-	parsed.password = '';
-	const withAuth = ((input: string | URL | Request, init?: RequestInit) => {
-		const request =
-			input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
-		request.headers.set('authorization', `Basic ${credentials}`);
-		return fetch(request);
-	}) as typeof fetch;
-	return { url: parsed.toString().replace(/\/$/, ''), fetch: withAuth };
-}
-
 export function createDatabase(options: DatabaseOptions) {
+	let url = resolveDatabaseUrl(options.url);
 	const { authToken } = options;
-	const { url, fetch: basicAuthFetch } = splitBasicAuth(resolveDatabaseUrl(options.url));
+	// sqld behind HTTP Basic auth (e.g. Dokploy's libSQL service): the client rejects `user:pass@`
+	// in the URL, so move the credentials into a header.
+	const credentials = url.match(/^\w+:\/\/([^@/]+)@/);
+	if (credentials) url = url.replace(`${credentials[1]}@`, '');
+	const basicAuth = credentials && `Basic ${btoa(decodeURIComponent(credentials[1]!))}`;
 	const isLocalFile = url.startsWith('file:');
 	if (isLocalFile) mkdirSync(dirname(url.slice('file:'.length)), { recursive: true });
 
@@ -73,7 +56,16 @@ export function createDatabase(options: DatabaseOptions) {
 	const client = createClient(
 		isLocalFile
 			? { url, authToken, timeout: 5_000, concurrency: 1 }
-			: { url, authToken, fetch: basicAuthFetch }
+			: {
+					url,
+					authToken,
+					fetch: basicAuth
+						? (request: Request) => {
+								request.headers.set('authorization', basicAuth);
+								return fetch(request);
+							}
+						: undefined
+				}
 	);
 	const db = drizzle(client, { schema });
 

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDatabase, resolveDatabaseUrl, splitBasicAuth } from './client';
+import { createDatabase, resolveDatabaseUrl } from './client';
 import { runMigrations } from './migrate';
 
 let root: string;
@@ -85,14 +85,6 @@ describe('local file databases', () => {
 		expect(results.every((r) => r.status === 'rejected')).toBe(true);
 		client.close();
 	});
-});
-
-test('credentials in a remote URL become a Basic auth header', () => {
-	expect(splitBasicAuth('file:/data/hans.db')).toEqual({ url: 'file:/data/hans.db' });
-	expect(splitBasicAuth('http://sqld:8080')).toEqual({ url: 'http://sqld:8080' });
-	const { url, fetch } = splitBasicAuth('http://libsql:p%40ss@sqld:8080');
-	expect(url).toBe('http://sqld:8080');
-	expect(fetch).toBeFunction();
 });
 
 // Dokploy's libSQL service runs sqld behind HTTP Basic auth. Needs the sqld binary.
