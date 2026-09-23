@@ -3,7 +3,7 @@ export const tiers = ['S', 'A', 'B', 'C', 'D', 'F'] as const;
 export type Tier = (typeof tiers)[number];
 
 export const tierMeaning: Record<Tier, string> = {
-	S: 'Exemplary: merge with confidence',
+	S: 'No issues found',
 	A: 'Safe to merge',
 	B: 'Mergeable after minor fixes',
 	C: 'Needs changes before merging',

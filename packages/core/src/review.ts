@@ -277,8 +277,8 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
 	const verdict = decideVerdict({ posted, stillOpen: stillOpenBlocking, config });
 	const open = [...posted, ...stillOpen].sort(compareSeverity);
-	// S is a deliberate grade: a model that doesn't grade gets at most A.
-	const tier = finalTier(submitted.tier ?? 'A', tierCap(open.map((f) => f.severity)));
+	// Without a grade from the model, the open findings decide (S when nothing is open).
+	const tier = finalTier(submitted.tier, tierCap(open.map((f) => f.severity)));
 	const limitedBy = tier !== submitted.tier ? open[0] : undefined;
 	const tierReason = limitedBy
 		? `Limited by an open ${limitedBy.severity} finding: ${limitedBy.title}`
@@ -364,7 +364,7 @@ async function verifyFindings(
 	const result = await callModel('verify', verifyModel, input, () =>
 		generateText({
 			model: verifyModel.model,
-			instructions: verifierInstructions(),
+			instructions: verifierInstructions(input.config.reviews.profile),
 			prompt: `Pull request: ${input.pullRequest.title}\n\n${listing.join('\n\n')}`,
 			tools: { ...tools, submit_verdicts: submitVerdicts },
 			stopWhen: [isStepCount(maxSteps), hasToolCall('submit_verdicts')],

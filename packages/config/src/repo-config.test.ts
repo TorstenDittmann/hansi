@@ -4,7 +4,7 @@ import { defaultRepoConfig, parseRepoConfig, severityAtLeast } from './repo-conf
 describe('parseRepoConfig', () => {
 	test('returns defaults for a missing file', () => {
 		expect(parseRepoConfig(null)).toEqual({ ok: true, config: defaultRepoConfig });
-		expect(defaultRepoConfig.reviews.profile).toBe('balanced');
+		expect(defaultRepoConfig.reviews.profile).toBe('chill');
 	});
 
 	test('merges partial config with defaults', () => {

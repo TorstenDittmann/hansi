@@ -19,7 +19,8 @@ export const repoConfigSchema = z.object({
 			base_branches: z.array(z.string()).default([]),
 			/** Globs; prefix with `!` to exclude, e.g. `["!**\/*.snap", "!docs/**"]`. */
 			path_filters: z.array(z.string()).default([]),
-			profile: z.enum(reviewProfiles).default('balanced'),
+			/** `chill` (default) only flags obvious mistakes; `balanced` and `strict` dig deeper. */
+			profile: z.enum(reviewProfiles).default('chill'),
 			min_severity: z.enum(severities).default('minor'),
 			max_comments: z.number().int().min(0).max(100).default(15),
 			/** Approve pull requests that have no blocking findings. */

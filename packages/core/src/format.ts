@@ -48,7 +48,7 @@ export function formatFindingComment(finding: Finding): string {
 		parts.push('```suggestion\n' + finding.suggestion.replace(/\n$/, '') + '\n```');
 	}
 	parts.push(
-		`<sub>${severityIcon[finding.severity]} ${severityName[finding.severity]} · ${finding.category} · Reply to discuss, or explain why it doesn't apply to dismiss it.</sub>`
+		`<sub>${severityIcon[finding.severity]} ${severityName[finding.severity]} · ${finding.category} · Reply if this doesn't apply.</sub>`
 	);
 	return parts.join('\n\n');
 }

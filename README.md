@@ -3,14 +3,15 @@
 Open-source, self-hostable AI code review for GitHub pull requests. Bring your own key for OpenAI,
 Anthropic, xAI, Google, OpenRouter, or any OpenAI-compatible endpoint (Ollama, vLLM, LiteLLM, …).
 
-- **Fewer, better comments.** An agent explores the repository before commenting, then a second,
+- **Fewer, better comments.** By default hans only points out obvious mistakes, the kind you'd
+  agree with at a glance. An agent explores the repository before commenting, then a second,
   skeptical pass verifies every finding. Findings below your severity threshold or outside the
   diff are dropped, and the dashboard shows what was dropped and why.
 - **Transparent.** Every review records which files the agent read, what it searched for, token
   usage, and cost per model call.
 - **Runs anywhere.** One Docker image and a libSQL database file. No Redis, no Postgres.
 - **A real reviewer.** hans approves pull requests or requests changes, like a teammate, and
-  grades every PR's merge confidence from **S** (exemplary) to **F** (do not merge). After a
+  grades every PR's merge confidence from **S** (no issues found) to **F** (do not merge). After a
   fix is pushed, it checks its earlier findings and approves once the blocking ones are gone.
 - **Conversational.** Ask `@hans` anything in a pull request, or reply to one of its comments.
   When you state a preference ("we don't flag this in tests"), hans remembers it for future
@@ -94,7 +95,7 @@ reviews:
   drafts: false
   base_branches: [] # empty = all
   path_filters: ['!docs/**', '!**/*.snap']
-  profile: balanced # chill | balanced | strict
+  profile: chill # chill: obvious mistakes only (default) | balanced | strict
   min_severity: minor # info | minor | major | critical
   max_comments: 15
   approve: true # approve PRs without blocking findings
@@ -116,7 +117,7 @@ Each review is submitted to GitHub as **Approve**, **Request changes**, or **Com
   changes stays in effect until they are fixed or dismissed in the thread.
 - Otherwise → **Approve** (minor findings are still posted as comments), unless `approve: false`.
 
-The tier grades merge confidence: **S** exemplary · **A** safe to merge · **B** mergeable after
+The tier grades merge confidence: **S** no issues found · **A** safe to merge · **B** mergeable after
 minor fixes · **C** needs changes · **D** significant problems · **F** do not merge. The model
 grades the PR, but open findings cap the tier (a major finding means at most **C**, a critical one
 at most **D**). The `hans` check run follows the verdict (success, failure, or neutral), so you
