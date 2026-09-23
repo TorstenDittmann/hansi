@@ -146,8 +146,7 @@
 					Curious about your code.
 				</h1>
 				<p class="mt-6 max-w-[36rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
-					AI code review for GitHub that runs on your own model key: OpenAI, Anthropic, Bedrock,
-					OpenRouter, and more. It catches real bugs and approves the rest.
+					AI code review for GitHub that catches real bugs and approves the rest.
 				</p>
 				<div class="mt-9 flex flex-wrap items-center gap-5">
 					<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
