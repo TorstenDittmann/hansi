@@ -19,7 +19,9 @@ export function buildAppManifest(publicUrl: string, name: string) {
 			pull_requests: 'write',
 			issues: 'write',
 			checks: 'write',
-			email_addresses: 'read'
+			// Manifests use GitHub's internal permission names: `emails`, not the REST API's
+			// `email_addresses`. Sign-in reads /user/emails for users with a private email.
+			emails: 'read'
 		},
 		default_events: ['pull_request', 'issue_comment', 'pull_request_review_comment']
 	};
