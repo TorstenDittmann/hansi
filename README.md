@@ -1,23 +1,25 @@
-# hans
+# Hansi
+
+[hansi.codes](https://hansi.codes) · Named after Hansi, the cat.
 
 Open-source, self-hostable AI code review for GitHub pull requests. Bring your own key for OpenAI,
 Anthropic, xAI, Google, OpenRouter, or any OpenAI-compatible endpoint (Ollama, vLLM, LiteLLM, …).
 
-- **Fewer, better comments.** By default hans only points out obvious mistakes, the kind you'd
+- **Fewer, better comments.** By default Hansi only points out obvious mistakes, the kind you'd
   agree with at a glance. An agent explores the repository before commenting, then a second,
   skeptical pass verifies every finding. Findings below your severity threshold or outside the
   diff are dropped, and the dashboard shows what was dropped and why.
 - **Transparent.** Every review records which files the agent read, what it searched for, token
   usage, and cost per model call.
 - **Runs anywhere.** One Docker image and a libSQL database file. No Redis, no Postgres.
-- **A real reviewer.** hans approves pull requests or requests changes, like a teammate, and
+- **A real reviewer.** Hansi approves pull requests or requests changes, like a teammate, and
   grades every PR's merge confidence from **S** (ready to merge) to **F** (do not merge). After a
   fix is pushed, it checks its earlier findings and approves once the blocking ones are gone.
-- **Conversational.** Ask `@hans` anything in a pull request, or reply to one of its comments.
-  When you state a preference ("we don't flag this in tests"), hans remembers it for future
+- **Conversational.** Ask `@hansi` anything in a pull request, or reply to one of its comments.
+  When you state a preference ("we don't flag this in tests"), Hansi remembers it for future
   reviews. Replies also record whether a finding was fixed or dismissed.
 - **Incremental.** New pushes are reviewed on their own, and earlier comments are never repeated.
-- **Config as code.** `.hans.yml` in the repository, plus `AGENTS.md`, `CLAUDE.md`,
+- **Config as code.** `.hansi.yml` in the repository, plus `AGENTS.md`, `CLAUDE.md`,
   `.cursorrules`, and `.github/copilot-instructions.md` as review guidelines.
 
 ## Quick start (self-hosted)
@@ -31,7 +33,7 @@ docker compose -f docker/compose.yml up -d
 
 Then open `APP_URL/setup`:
 
-1. **Create GitHub App.** hans uses GitHub's manifest flow to create an app with the right
+1. **Create GitHub App.** Hansi uses GitHub's manifest flow to create an app with the right
    permissions and webhooks. The credentials are stored encrypted in your database.
 2. **Sign in** with GitHub, then **install the app** on the repositories you want reviewed.
 3. Under **Models**, add a provider key and choose a model for the `review` role (and optionally a
@@ -81,12 +83,12 @@ bun run eval -- --case sql --repeat 3 --min-f1 0.6
 ```
 
 Run it before and after changing prompts or models. Add a case to `packages/evals/src/cases` for
-every bug hans should have caught. The `Evals` workflow runs the suite on demand or on pull
+every bug Hansi should have caught. The `Evals` workflow runs the suite on demand or on pull
 requests labeled `run-evals`.
 
 ## Repository configuration
 
-Add `.hans.yml` to the repository root. hans reads it, and guideline files like `AGENTS.md`, from
+Add `.hansi.yml` to the repository root. Hansi reads it, and guideline files like `AGENTS.md`, from
 the pull request's base branch, so changes take effect once merged. Every field is optional:
 
 ```yaml
@@ -123,16 +125,16 @@ The tier grades merge confidence: **S** ready to merge · **A** mergeable after 
 **B** needs changes · **C** significant problems · **D** serious problems · **F** do not merge.
 The model grades the PR, but open findings cap the tier: a minor finding means at most **A**, a
 major one at most **B**, a critical one at most **D**. Informational notes don't lower it.
-The `hans` check run follows the verdict (success, failure, or neutral), so you
+The `Hansi` check run follows the verdict (success, failure, or neutral), so you
 can make it a required check to block merging.
 
-**Do hans's approvals count toward required reviews?** Only if the app has write access to code:
-GitHub counts approvals from reviewers with write access, and otherwise lists hans under
+**Do Hansi's approvals count toward required reviews?** Only if the app has write access to code:
+GitHub counts approvals from reviewers with write access, and otherwise lists Hansi under
 "Reviewers whose approvals may not affect merge requirements". By default the app gets read-only
-access to code: hans never pushes code, and write access would let an AI approval alone satisfy a
+access to code: Hansi never pushes code, and write access would let an AI approval alone satisfy a
 required review. To opt in, tick the box on the setup page, or for an existing app set
 **Repository permissions → Contents** to **Read and write** in the GitHub App settings and accept
-the updated permissions on each installation. Without it, gate merges on the `hans` check run.
+the updated permissions on each installation. Without it, gate merges on the `Hansi` check run.
 
 ## Architecture
 
@@ -150,7 +152,7 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 | `packages/queue`  | Durable job queue on the same database (leases, retries, singletons)     |
 | `packages/llm`    | Provider registry, key encryption, model listing, models.dev pricing     |
 | `packages/github` | GitHub App auth, manifest flow, pull request and check run helpers       |
-| `packages/config` | Environment and `.hans.yml` schemas                                      |
+| `packages/config` | Environment and `.hansi.yml` schemas                                     |
 | `packages/evals`  | Review-quality benchmark: cases with known bugs, scoring, runner         |
 
 **Deployment modes.** By default, one container runs both web and worker on a shared database
@@ -160,7 +162,7 @@ file (`HANS_MODE=all`). To run them as separate containers, point both at
 
 **Security model.** The agent can only read files and search the checkout; it never executes
 repository code. Everything in a pull request is treated as untrusted input that may try to steer
-the model, so approvals are guarded outside the model: `.hans.yml` and guideline files come from
+the model, so approvals are guarded outside the model: `.hansi.yml` and guideline files come from
 the base branch, PRs from people without write access are never approved automatically, and a
 review that could not see the whole diff never approves. Provider keys and GitHub App secrets are encrypted with AES-256-GCM using
 `HANS_ENCRYPTION_KEY`. Webhooks are signature-verified and deduplicated. Mentions only trigger

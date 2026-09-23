@@ -71,7 +71,7 @@ export interface ReviewInput {
 	learnings?: string[];
 	/** Where to read repository guidelines from; defaults to the (untrusted) PR checkout. */
 	trustedSource?: TrustedSource;
-	/** When set, hans may not approve, for this reason (e.g. an outside contributor). */
+	/** When set, Hansi may not approve, for this reason (e.g. an outside contributor). */
 	withholdApproval?: string;
 	/**
 	 * Summary and walkthrough from the last review. Incremental reviews update them so the
@@ -122,7 +122,7 @@ export type ReviewResult =
 			walkthrough: WalkthroughEntry[];
 			/** Incremental reviews: what the newest commits changed. */
 			latestChanges: string | null;
-			/** Why hans did not approve although it found nothing blocking. */
+			/** Why Hansi did not approve although it found nothing blocking. */
 			approvalWithheld: string | null;
 	  };
 
@@ -267,7 +267,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		return [placed];
 	});
 
-	// 3. Severity threshold from `.hans.yml`.
+	// 3. Severity threshold from `.hansi.yml`.
 	const relevant = positioned.filter((finding) => {
 		const keep = severityAtLeast(finding.severity, config.reviews.min_severity);
 		if (!keep)
@@ -314,7 +314,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		verdict !== 'approve'
 			? null
 			: (input.withholdApproval ??
-				(truncated ? 'Part of the diff was too large to review, so hans did not approve.' : null));
+				(truncated ? 'Part of the diff was too large to review, so Hansi did not approve.' : null));
 	if (approvalWithheld) verdict = 'comment';
 	const open = [...posted, ...stillOpen].sort(compareSeverity);
 	// Without a grade from the model, the open findings decide (S when nothing is open).

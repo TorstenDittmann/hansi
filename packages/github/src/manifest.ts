@@ -5,7 +5,7 @@ import type { GitHubAppCredentials } from './credentials';
 export interface ManifestOptions {
 	/**
 	 * GitHub only counts approvals toward required reviews from reviewers with write access, so
-	 * hans's approvals count only with `contents: write`. Off by default: hans never writes code,
+	 * Hansi's approvals count only with `contents: write`. Off by default: Hansi never writes code,
 	 * and it would let an AI approval alone satisfy a required review.
 	 */
 	countApprovals?: boolean;

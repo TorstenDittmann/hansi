@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import AsciiHansi from '$lib/components/AsciiHansi.svelte';
 
 	let { data } = $props();
 
@@ -22,16 +23,16 @@
 
 	const steps = [
 		{
-			title: 'Install hans on GitHub',
-			body: 'Pick the repositories hans should review. It needs read access to code and write access to pull requests.'
+			title: 'Install Hansi on GitHub',
+			body: 'Pick the repositories Hansi should review. It needs read access to code and write access to pull requests.'
 		},
 		{
 			title: 'Add your model key',
-			body: 'Paste a key from OpenAI, Anthropic, xAI, Google, or OpenRouter, and choose the model hans should use.'
+			body: 'Paste a key from OpenAI, Anthropic, xAI, Google, or OpenRouter, and choose the model Hansi should use.'
 		},
 		{
 			title: 'Open a pull request',
-			body: 'hans reviews it within minutes, and again on every push. Mention @hans in a comment to ask it anything.'
+			body: 'Hansi reviews it within minutes, and again on every push. Mention @hansi in a comment to ask it anything.'
 		}
 	];
 
@@ -39,30 +40,30 @@
 		'Unlimited repositories',
 		'Reviews on every push',
 		'Approvals, grades, and inline fixes',
-		'Answers when you mention @hans',
+		'Answers when you mention @hansi',
 		'Your own model and API key'
 	];
 
 	const faqs = [
 		{
-			q: 'Which models can hans use?',
+			q: 'Which models can Hansi use?',
 			a: 'Any model from OpenAI, Anthropic, xAI, Google, or OpenRouter, plus any OpenAI-compatible endpoint. You can use a stronger model to review and a cheaper one to double-check findings.'
 		},
 		{
 			q: 'What does it cost?',
-			a: 'hans is free during the beta. You pay your model provider directly for the tokens each review uses, and every review shows its token usage and cost.'
+			a: 'Hansi is free during the beta. You pay your model provider directly for the tokens each review uses, and every review shows its token usage and cost.'
 		},
 		{
 			q: 'What happens to my code?',
-			a: 'hans reads the pull request to review it and sends the relevant code to the model provider you chose. The checkout is deleted when the review finishes.'
+			a: 'Hansi reads the pull request to review it and sends the relevant code to the model provider you chose. The checkout is deleted when the review finishes.'
 		},
 		{
 			q: 'Will it flood my pull requests with comments?',
-			a: 'No. hans only comments on obvious mistakes, and a second pass drops anything it cannot confirm. Most good pull requests get no comments at all, just an approval.'
+			a: 'No. Hansi only comments on obvious mistakes, and a second pass drops anything it cannot confirm. Most good pull requests get no comments at all, just an approval.'
 		},
 		{
 			q: 'Can it approve pull requests?',
-			a: 'Yes. hans approves clean pull requests and requests changes when it finds a real problem. It never approves pull requests from people without write access to the repository.'
+			a: 'Yes. Hansi approves clean pull requests and requests changes when it finds a real problem. It never approves pull requests from people without write access to the repository.'
 		}
 	];
 
@@ -75,10 +76,10 @@
 </script>
 
 <svelte:head>
-	<title>hans: the code reviewer that only speaks up when it matters</title>
+	<title>Hansi: the code reviewer that only speaks up when it matters</title>
 	<meta
 		name="description"
-		content="hans reviews every pull request, points out real mistakes, approves the rest, and grades each one from S to F. Free during the beta."
+		content="Hansi reviews every pull request, points out real mistakes, approves the rest, and grades each one from S to F. Free during the beta."
 	/>
 </svelte:head>
 
@@ -117,7 +118,15 @@
 	class="min-h-screen bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100"
 >
 	<header class="mx-auto flex h-18 max-w-[70rem] items-center justify-between px-4 sm:px-6">
-		<a href={resolve('/')} class="text-[1.35rem] font-bold tracking-[-0.03em] {focus}">hans</a>
+		<a
+			href={resolve('/')}
+			class="flex items-baseline gap-2 text-[1.35rem] font-bold tracking-[-0.03em] {focus}"
+		>
+			Hansi<span
+				class="font-mono text-sm font-medium tracking-normal text-stone-400 [font-variant-ligatures:none]"
+				aria-hidden="true">=^.^=</span
+			>
+		</a>
 		<nav aria-label="Main" class="flex items-center gap-7">
 			<a href="#pricing" class="hidden sm:inline {navLink}">Pricing</a>
 			<a href="#faq" class="hidden sm:inline {navLink}">FAQ</a>
@@ -127,28 +136,36 @@
 	</header>
 
 	<main class="mx-auto max-w-[70rem] px-4 sm:px-6">
-		<section class="max-w-[50rem] pt-12 pb-10 sm:pt-20 sm:pb-14">
-			<h1
-				class="text-[2.5rem] leading-[1.02] font-bold tracking-[-0.04em] text-balance sm:text-[4.25rem]"
-			>
-				The code reviewer that only speaks up when it matters.
-			</h1>
-			<p class="mt-6 max-w-[38rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
-				hans reviews every pull request, points out real mistakes, and approves the rest. No
-				nitpicks, no walls of comments. Just a clear verdict and a grade.
-			</p>
-			<div class="mt-9 flex flex-wrap items-center gap-5">
-				<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
-				<span class="text-[0.95rem] text-stone-500 dark:text-stone-400">
-					Free during the beta. Bring your own model key.
-				</span>
+		<section
+			class="relative pt-12 pb-10 sm:pt-20 sm:pb-14 lg:flex lg:min-h-[500px] lg:items-center"
+		>
+			<div class="relative z-10 max-w-[40rem] min-w-0">
+				<h1
+					class="text-[2.5rem] leading-[1.02] font-bold tracking-[-0.04em] text-balance sm:text-[4.25rem] lg:text-[3.6rem]"
+				>
+					The code reviewer that only speaks up when it matters.
+				</h1>
+				<p class="mt-6 max-w-[38rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
+					Hansi reviews every pull request, points out real mistakes, and approves the rest. No
+					nitpicks, no walls of comments. Just a clear verdict and a grade.
+				</p>
+				<div class="mt-9 flex flex-wrap items-center gap-5">
+					<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
+					<span class="text-[0.95rem] text-stone-500 dark:text-stone-400">
+						Free during the beta. Bring your own model key.
+					</span>
+				</div>
 			</div>
+			<!-- Named after Hansi, the founder's cat. The canvas spans the hero so the fly can too. -->
+			<AsciiHansi
+				class="mt-10 hidden text-[7px] sm:block lg:absolute lg:inset-x-0 lg:top-1/2 lg:mt-0 lg:-translate-y-1/2 lg:text-[9px]"
+			/>
 		</section>
 
-		<!-- The product: a pull request as hans leaves it. -->
+		<!-- The product: a pull request as Hansi leaves it. -->
 		<figure
 			class="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-[0_30px_60px_-30px_rgb(28_25_23/0.18)] dark:border-stone-800 dark:bg-stone-900 dark:shadow-none"
-			aria-label="A pull request reviewed by hans"
+			aria-label="A pull request reviewed by Hansi"
 		>
 			<div
 				class="flex items-start justify-between gap-4 border-b border-stone-200 px-4 py-5 sm:px-6 dark:border-stone-800"
@@ -182,7 +199,7 @@
 						<p
 							class="flex flex-wrap items-center gap-2 text-[0.925rem] text-stone-500 dark:text-stone-400"
 						>
-							<strong class="text-stone-900 dark:text-stone-100">hans</strong> requested changes
+							<strong class="text-stone-900 dark:text-stone-100">Hansi</strong> requested changes
 							<span
 								class="rounded-full bg-red-100 px-2 py-px text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-300"
 								>Changes requested</span
@@ -253,12 +270,12 @@
 
 		<section
 			class="grid gap-14 pt-20 pb-16 md:grid-cols-3 md:gap-12 md:pt-28 md:pb-20"
-			aria-label="What hans does"
+			aria-label="What Hansi does"
 		>
 			<div class="min-w-0">
 				<h2 class="text-xl font-semibold tracking-[-0.02em]">Speaks up only for real mistakes</h2>
 				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
-					hans flags the bugs you would want a teammate to catch: a missing await, an inverted
+					Hansi flags the bugs you would want a teammate to catch: a missing await, an inverted
 					check, an off-by-one. A second pass drops anything it can't confirm.
 				</p>
 				<div
@@ -292,20 +309,20 @@
 			<div class="min-w-0">
 				<h2 class="text-xl font-semibold tracking-[-0.02em]">Approves like a teammate</h2>
 				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
-					Clean pull requests get approved. When something is wrong, hans requests changes, and once
-					you push the fix it checks again and approves.
+					Clean pull requests get approved. When something is wrong, Hansi requests changes, and
+					once you push the fix it checks again and approves.
 				</p>
 				<div
 					class="mt-6 space-y-2 rounded-xl border border-stone-200 bg-white p-4 text-sm dark:border-stone-800 dark:bg-stone-900"
 				>
 					<p class="flex items-center gap-2.5">
-						<span class="size-2 rounded-full bg-red-500"></span>hans requested changes
+						<span class="size-2 rounded-full bg-red-500"></span>Hansi requested changes
 					</p>
 					<p class="flex items-center gap-2.5 text-stone-500 dark:text-stone-400">
 						<span class="size-2 rounded-full bg-stone-400"></span>anna pushed 1 commit
 					</p>
 					<p class="flex items-center gap-2.5">
-						<span class="size-2 rounded-full bg-emerald-500"></span>hans approved these changes
+						<span class="size-2 rounded-full bg-emerald-500"></span>Hansi approved these changes
 					</p>
 				</div>
 			</div>
@@ -314,7 +331,7 @@
 				<h2 class="text-xl font-semibold tracking-[-0.02em]">A grade for every pull request</h2>
 				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
 					Each review ends with a grade from S, ready to merge, to F, do not merge. Open findings
-					cap the grade, so it always matches what hans found.
+					cap the grade, so it always matches what Hansi found.
 				</p>
 				<div
 					class="mt-6 flex justify-between rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-900"
@@ -357,8 +374,8 @@
 			<div class="min-w-0">
 				<h2 id="pricing-title" class={sectionTitle}>Free during the beta</h2>
 				<p class="mt-4 max-w-[32rem] text-stone-500 dark:text-stone-400">
-					Unlimited repositories and reviews while hans is in beta. You pay your model provider
-					directly for the tokens each review uses, and hans shows you the cost of every review.
+					Unlimited repositories and reviews while Hansi is in beta. You pay your model provider
+					directly for the tokens each review uses, and Hansi shows you the cost of every review.
 				</p>
 			</div>
 			<div
@@ -426,7 +443,7 @@
 		<section
 			class="flex flex-wrap items-center justify-between gap-8 border-t border-stone-200 pt-20 pb-24 dark:border-stone-800"
 		>
-			<h2 class="max-w-[20ch] {sectionTitle}">Let hans review your next pull request.</h2>
+			<h2 class="max-w-[20ch] {sectionTitle}">Let Hansi review your next pull request.</h2>
 			<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
 		</section>
 	</main>
@@ -434,7 +451,12 @@
 	<footer
 		class="mx-auto flex max-w-[70rem] items-center justify-between border-t border-stone-200 px-4 py-8 sm:px-6 dark:border-stone-800"
 	>
-		<span class="text-lg font-bold tracking-[-0.03em]">hans</span>
+		<span class="flex items-baseline gap-2 text-lg font-bold tracking-[-0.03em]"
+			>Hansi<span
+				class="font-mono text-sm font-medium tracking-normal text-stone-400 [font-variant-ligatures:none]"
+				aria-hidden="true">=^.^=</span
+			></span
+		>
 		<a href={start} class={navLink}>Sign in</a>
 	</footer>
 </div>

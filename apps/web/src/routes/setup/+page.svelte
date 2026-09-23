@@ -22,7 +22,7 @@
 </script>
 
 <div class="mx-auto max-w-xl">
-	<h1 class="text-2xl font-semibold">Set up hans</h1>
+	<h1 class="text-2xl font-semibold">Set up Hansi</h1>
 
 	{#if data.configured}
 		<div class="card mt-6 space-y-4 p-6">
@@ -37,7 +37,7 @@
 		</div>
 	{:else}
 		<p class="muted mt-2">
-			hans talks to GitHub through a GitHub App that you own. This creates one with the right
+			Hansi talks to GitHub through a GitHub App that you own. This creates one with the right
 			permissions and webhooks, and stores its credentials encrypted in your database.
 		</p>
 
@@ -80,12 +80,12 @@
 					bind:checked={countApprovals}
 				/>
 				<label for="count-approvals" class="text-sm">
-					<span class="font-medium">Let hans's approvals count toward required reviews</span>
+					<span class="font-medium">Let Hansi's approvals count toward required reviews</span>
 					<span class="muted block">
 						GitHub only counts approvals from reviewers with write access, so this gives the app
-						write access to code. hans never pushes code, but anyone with the app's key could. With
-						one required approval, hans alone could then approve a merge. Without this, use the
-						<code>hans</code> check run to gate merges.
+						write access to code. Hansi never pushes code, but anyone with the app's key could. With
+						one required approval, Hansi alone could then approve a merge. Without this, use the
+						<code>Hansi</code> check run to gate merges.
 					</span>
 				</label>
 			</div>

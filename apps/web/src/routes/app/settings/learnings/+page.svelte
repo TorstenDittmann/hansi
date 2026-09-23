@@ -9,7 +9,7 @@
 	<header>
 		<h1 class="text-2xl font-semibold">Learnings</h1>
 		<p class="muted">
-			Rules every review follows. hans adds them when someone states a preference in a pull request
+			Rules every review follows. Hansi adds them when someone states a preference in a pull request
 			conversation (“we don't flag this in tests”), and you can add your own.
 		</p>
 	</header>

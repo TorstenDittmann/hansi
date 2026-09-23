@@ -105,15 +105,15 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	if (pr.state !== 'open') return { status: 'skipped', summary: 'Pull request is closed' };
 
 	// Configuration comes from the base branch: a pull request must not rewrite its own review
-	// rules. Changes to .hans.yml apply once they are merged.
+	// rules. Changes to .hansi.yml apply once they are merged.
 	const { config, ...configResult } = parseRepoConfig(
-		await getFileContent(octokit, ref, '.hans.yml', pr.baseSha)
+		await getFileContent(octokit, ref, '.hansi.yml', pr.baseSha)
 	);
 	const isAutomatic = review.trigger === 'opened' || review.trigger === 'synchronize';
 	const skipReason = !config.reviews.enabled
-		? 'Reviews are disabled in .hans.yml'
+		? 'Reviews are disabled in .hansi.yml'
 		: isAutomatic && !config.reviews.auto
-			? 'Automatic reviews are disabled in .hans.yml'
+			? 'Automatic reviews are disabled in .hansi.yml'
 			: isAutomatic && pr.draft && !config.reviews.drafts
 				? 'Draft pull request'
 				: isAutomatic &&
@@ -133,7 +133,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	const detailsUrl = `${env.APP_URL.replace(/\/+$/, '')}/app/reviews/${review.id}`;
 	const checkRunId = await startCheckRun(octokit, ref, {
 		headSha: pr.headSha,
-		name: 'hans',
+		name: 'Hansi',
 		detailsUrl
 	});
 
@@ -258,7 +258,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 			);
 
 			// A GitHub review is only submitted when it adds something: inline comments, or a change
-			// of hans's approve / request-changes state. Otherwise the summary update is enough.
+			// of Hansi's approve / request-changes state. Otherwise the summary update is enough.
 			const stateChanged =
 				result.verdict !== 'comment' && result.verdict !== history.lastDecisiveVerdict;
 			const commentIds =
@@ -326,7 +326,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 }
 
 /**
- * Why hans may not approve this PR, if anything. Content from people without write access could
+ * Why Hansi may not approve this PR, if anything. Content from people without write access could
  * try to talk the model into approving, so their PRs get findings but never an approval.
  */
 async function approvalRestriction(
@@ -336,7 +336,7 @@ async function approvalRestriction(
 ): Promise<string | undefined> {
 	if (config.reviews.approve_outside_contributors) return undefined;
 	if (await isTrustedAuthor(octokit, ref, pr)) return undefined;
-	return `@${pr.author} does not have write access to this repository, so hans does not approve automatically. A maintainer can review and approve.`;
+	return `@${pr.author} does not have write access to this repository, so Hansi does not approve automatically. A maintainer can review and approve.`;
 }
 
 /**
@@ -421,7 +421,7 @@ async function loadReviewHistory(db: Database, review: Review) {
 		.where(samePullRequest)
 		.orderBy(desc(schema.reviews.finishedAt))
 		.limit(1);
-	// hans's current approve / request-changes state on GitHub is its latest such review.
+	// Hansi's current approve / request-changes state on GitHub is its latest such review.
 	const [decisive] = await db
 		.select({ verdict: schema.reviews.verdict })
 		.from(schema.reviews)

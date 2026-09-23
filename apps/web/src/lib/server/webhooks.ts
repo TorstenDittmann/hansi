@@ -5,7 +5,7 @@ import { getContext, getGitHubCredentials } from './context';
 import { removeRepositories, upsertInstallation, upsertRepositories } from './installations';
 import { enqueueChat, enqueueReview } from './jobs';
 
-// Only the payload fields hans reads. Full types: @octokit/openapi-webhooks-types.
+// Only the payload fields Hansi reads. Full types: @octokit/openapi-webhooks-types.
 interface Account {
 	login: string;
 	type: string;
@@ -139,7 +139,7 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 			const isReviewThread = event === 'pull_request_review_comment';
 			const rootCommentId = isReviewThread ? (comment.in_reply_to_id ?? comment.id) : undefined;
 			let intent = classifyMention(comment.body, credentials.slug);
-			// Replying to one of hans's findings is a conversation, even without a mention.
+			// Replying to one of Hansi's findings is a conversation, even without a mention.
 			if (
 				!intent &&
 				rootCommentId &&
@@ -200,7 +200,7 @@ async function findActiveRepository(repositoryId: number) {
 	return { id: row.id, organizationId: row.organizationId };
 }
 
-/** Whether a GitHub review comment is one of the findings hans posted for this organization. */
+/** Whether a GitHub review comment is one of the findings Hansi posted for this organization. */
 async function isFindingComment(organizationId: string, commentId: number) {
 	const { db } = await getContext();
 	const [row] = await db

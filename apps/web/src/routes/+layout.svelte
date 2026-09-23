@@ -3,6 +3,7 @@
 	import './layout.css';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import favicon from '$lib/assets/favicon.svg';
 	import { authClient } from '$lib/auth-client';
 
 	let { data, children } = $props();
@@ -16,7 +17,8 @@
 </script>
 
 <svelte:head>
-	<title>hans</title>
+	<title>Hansi</title>
+	<link rel="icon" href={favicon} type="image/svg+xml" />
 </svelte:head>
 
 {#if bare}
@@ -27,9 +29,12 @@
 			<div class="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
 				<a
 					href={data.user ? resolve('/app') : resolve('/')}
-					class="font-mono text-lg font-semibold tracking-tight"
+					class="flex items-baseline gap-2 text-lg font-bold tracking-tight"
 				>
-					hans
+					Hansi<span
+						class="font-mono text-sm font-medium text-stone-400 [font-variant-ligatures:none]"
+						aria-hidden="true">=^.^=</span
+					>
 				</a>
 				{#if data.user}
 					<nav class="flex items-center gap-4 text-sm">

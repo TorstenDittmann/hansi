@@ -44,7 +44,7 @@ export function verifyWebhookSignature(
 	return verify(credentials.webhookSecret, rawBody, signature);
 }
 
-/** The handle users mention to talk to the bot, e.g. `@hans-review`. */
+/** The handle users mention to talk to the bot, e.g. `@hansi-codes`. */
 export function botMention(credentials: GitHubAppCredentials) {
 	return `@${credentials.slug}`;
 }

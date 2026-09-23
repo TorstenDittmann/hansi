@@ -112,7 +112,7 @@
 	{#if dropped.length}
 		<section>
 			<h2 class="text-lg font-semibold">Filtered out ({dropped.length})</h2>
-			<p class="muted">Findings hans did not post, and why.</p>
+			<p class="muted">Findings Hansi did not post, and why.</p>
 			{@render findingList(dropped)}
 		</section>
 	{/if}

@@ -248,7 +248,7 @@ export async function replyToReviewComment(
 	});
 }
 
-/** Acknowledges a comment with 👀 so people know hans is working on it. */
+/** Acknowledges a comment with 👀 so people know Hansi is working on it. */
 export async function acknowledgeComment(
 	octokit: Octokit,
 	ref: RepoRef,

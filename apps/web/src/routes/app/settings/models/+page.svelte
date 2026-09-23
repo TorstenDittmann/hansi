@@ -30,7 +30,7 @@
 	<header>
 		<h1 class="text-2xl font-semibold">Models</h1>
 		<p class="muted">
-			hans uses your own API keys. Keys are encrypted at rest and never shown again after saving.
+			Hansi uses your own API keys. Keys are encrypted at rest and never shown again after saving.
 		</p>
 	</header>
 

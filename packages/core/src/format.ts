@@ -2,7 +2,7 @@ import type { Severity, Tier, Verdict } from '@hans/config';
 import type { DroppedFinding, Finding } from './findings';
 import { tierMeaning } from './tier';
 
-/** Hidden marker that identifies hans's summary comment, so each review edits it in place. */
+/** Hidden marker that identifies Hansi's summary comment, so each review edits it in place. */
 export const SUMMARY_MARKER = '<!-- hans:summary -->';
 
 const severityIcon: Record<Severity, string> = {
@@ -69,15 +69,15 @@ export interface SummaryInput {
 	walkthrough: { path: string; change: string }[];
 	/** Incremental reviews: what the newest commits changed. */
 	latestChanges?: string | null;
-	/** Why hans did not approve although nothing is blocking. */
+	/** Why Hansi did not approve although nothing is blocking. */
 	approvalWithheld?: string | null;
 	incrementalFrom?: string;
 	detailsUrl?: string;
-	/** The bot's handle, e.g. `@hans-review`. */
+	/** The bot's handle, e.g. `@hansi-codes`. */
 	mention: string;
 }
 
-/** The summary comment hans keeps up to date on every pull request. */
+/** The summary comment Hansi keeps up to date on every pull request. */
 export function formatSummaryComment(input: SummaryInput): string {
 	const lineLink = (path: string, start: number, end = start) =>
 		`[\`${path}:${start}\`](https://github.com/${input.repository}/blob/${input.headSha}/${path}#L${start}${end > start ? `-L${end}` : ''})`;
@@ -155,7 +155,7 @@ export function formatSummaryComment(input: SummaryInput): string {
 				'🔇 Filtered out',
 				input.dropped.length,
 				[
-					'Findings hans considered but did not post.',
+					'Findings Hansi considered but did not post.',
 					'',
 					'| Finding | Why |',
 					'| :-- | :-- |',

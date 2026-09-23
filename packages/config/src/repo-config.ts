@@ -7,7 +7,7 @@ export type Severity = (typeof severities)[number];
 export const reviewProfiles = ['chill', 'balanced', 'strict'] as const;
 export type ReviewProfile = (typeof reviewProfiles)[number];
 
-/** Schema of `.hans.yml` in the repository root. Every field is optional. */
+/** Schema of `.hansi.yml` in the repository root. Every field is optional. */
 export const repoConfigSchema = z.object({
 	reviews: z
 		.object({
@@ -26,7 +26,7 @@ export const repoConfigSchema = z.object({
 			/** Approve pull requests that have no blocking findings. */
 			approve: z.boolean().default(true),
 			/**
-			 * Findings at or above this severity block the PR: hans requests changes. `never` only
+			 * Findings at or above this severity block the PR: Hansi requests changes. `never` only
 			 * comments (and never approves a PR with major or critical findings).
 			 */
 			request_changes: z.enum([...severities, 'never']).default('major'),
@@ -51,7 +51,7 @@ export const defaultRepoConfig: RepoConfig = repoConfigSchema.parse({});
 export type RepoConfigResult =
 	{ ok: true; config: RepoConfig } | { ok: false; config: RepoConfig; errors: string[] };
 
-/** Parses `.hans.yml`. Invalid files fall back to defaults and report errors instead of throwing. */
+/** Parses `.hansi.yml`. Invalid files fall back to defaults and report errors instead of throwing. */
 export function parseRepoConfig(source: string | null | undefined): RepoConfigResult {
 	if (!source?.trim()) return { ok: true, config: defaultRepoConfig };
 

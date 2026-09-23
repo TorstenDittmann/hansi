@@ -54,7 +54,9 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 	try {
 		const pr = await getPullRequest(octokit, ref, payload.pullNumber);
 		// Settings and guidelines come from the base branch, which the PR author cannot change.
-		const { config } = parseRepoConfig(await getFileContent(octokit, ref, '.hans.yml', pr.baseSha));
+		const { config } = parseRepoConfig(
+			await getFileContent(octokit, ref, '.hansi.yml', pr.baseSha)
+		);
 
 		const comments =
 			payload.kind === 'review'
@@ -76,7 +78,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				? { path: root.path, line: root.line ?? undefined, diffHunk: root.diffHunk }
 				: undefined;
 
-		// Replies on a finding hans posted can resolve or dismiss that finding.
+		// Replies on a finding Hansi posted can resolve or dismiss that finding.
 		const [finding] = payload.rootCommentId
 			? await db
 					.select({ id: schema.reviewFindings.id })

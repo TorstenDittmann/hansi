@@ -9,7 +9,7 @@ import { createRepoTools, loadRepoGuidelines, type EmitEvent, type TrustedSource
 export interface ThreadMessage {
 	author: string;
 	body: string;
-	/** True for messages hans wrote. */
+	/** True for messages Hansi wrote. */
 	fromBot: boolean;
 }
 
@@ -29,7 +29,7 @@ export interface ChatInput {
 	model: ReviewModel;
 	/** Stores a team preference for future reviews. */
 	onRemember: (rule: string) => Promise<void>;
-	/** Available when the thread started from a hans finding. */
+	/** Available when the thread started from a Hansi finding. */
 	onMarkFinding?: (status: 'resolved' | 'dismissed', reason: string) => Promise<void>;
 	onEvent?: EmitEvent;
 	onModelCall?: (call: ModelCall) => void | Promise<void>;

@@ -84,7 +84,7 @@
 		{#if data.reviews.length === 0}
 			<p class="muted mt-2">
 				Reviews appear here when a pull request is opened or someone comments
-				<code>@{data.appSlug ?? 'hans'} review</code>.
+				<code>@{data.appSlug ?? 'hansi'} review</code>.
 			</p>
 		{:else}
 			<div class="card mt-4 overflow-x-auto">

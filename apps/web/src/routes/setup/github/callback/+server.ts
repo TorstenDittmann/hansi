@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	const expected = cookies.get('hans_setup_state');
 	// GitHub has already created the app by now; without its credentials it is unusable.
 	const orphaned =
-		'GitHub created the app, but hans could not save its credentials. Delete it under GitHub → Settings → Developer settings → GitHub Apps, then start again at /setup.';
+		'GitHub created the app, but Hansi could not save its credentials. Delete it under GitHub → Settings → Developer settings → GitHub Apps, then start again at /setup.';
 	if (!code || !state || !expected || state !== expected) {
 		error(400, `Setup link expired or was opened in another browser. ${orphaned}`);
 	}

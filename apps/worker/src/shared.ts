@@ -33,7 +33,7 @@ export interface RepositoryConnection {
 	repository: typeof schema.repositories.$inferSelect;
 	octokit: Octokit;
 	ref: RepoRef;
-	/** The bot's handle, e.g. `@hans-review`. */
+	/** The bot's handle, e.g. `@hansi-codes`. */
 	mention: string;
 }
 

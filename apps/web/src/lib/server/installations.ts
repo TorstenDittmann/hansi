@@ -16,7 +16,7 @@ export interface RepositoryInfo {
 
 /**
  * Upserts an installation. `organizationId` is only written when given, so webhooks (which don't
- * know the hans organization) never unlink an installation a user already claimed.
+ * know the Hansi organization) never unlink an installation a user already claimed.
  */
 export async function upsertInstallation(
 	db: Database,
