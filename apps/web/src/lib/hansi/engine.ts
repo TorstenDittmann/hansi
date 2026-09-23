@@ -12,10 +12,10 @@ export interface Layout {
 	catCol: number;
 }
 
-/** The standalone size: just the cat and some room around her. */
+/** The standalone size: just the cat and some room around it. */
 export const DEFAULT_LAYOUT: Layout = { cols: 88, catCol: 40 };
 
-/** A canvas `cols` wide with the cat near the right edge, leaving room for her tail. */
+/** A canvas `cols` wide with the cat near the right edge, leaving room for the tail. */
 export function layoutFor(cols: number): Layout {
 	return { cols, catCol: Math.max(40, cols - 48) };
 }
@@ -34,7 +34,7 @@ export interface Scene {
 	/** 0..1 while swiping at `swipeTarget`, else 0. */
 	swipe: number;
 	swipeTarget: Vec | null;
-	/** 0..1 while stalking the fly just before a swipe: she crouches lower. */
+	/** 0..1 while stalking the fly just before a swipe: the cat crouches lower. */
 	crouch: number;
 	/** Phase of the tail's sway, advanced smoothly by the caller so speed changes never jump. */
 	tailPhase: number;
@@ -242,7 +242,7 @@ export function render(scene: Scene, layout: Layout = DEFAULT_LAYOUT): string {
 	const q = pose(scene);
 	const grid: string[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
 	const dist = new Float32Array(ROWS * COLS).fill(1);
-	// Only cells near the cat can be part of her; the rest of a wide canvas is just for the fly.
+	// Only cells near the cat can be part of it; the rest of a wide canvas is just for the fly.
 	const reachX = [...q.tail, q.paw].map((p) => p.x);
 	const minCol = Math.max(0, worldToCell({ x: Math.min(-30, ...reachX) - 4, y: 0 }, layout).col);
 	const maxCol = Math.min(
@@ -310,7 +310,7 @@ export function render(scene: Scene, layout: Layout = DEFAULT_LAYOUT): string {
 		if (scene.happy) put(eye, ' ^ ^ ');
 		else if (scene.blink) put(eye, '(---)');
 		else {
-			// Pupils widen while she stalks.
+			// Pupils widen while stalking.
 			const dot = scene.crouch > 0.4 ? 'O' : '@';
 			const pupil = look.x < -0.3 ? `(${dot}  )` : look.x > 0.3 ? `(  ${dot})` : `( ${dot} )`;
 			put({ x: eye.x, y: eye.y - 2 }, look.y < -0.45 ? ' .". ' : ' ___ ');

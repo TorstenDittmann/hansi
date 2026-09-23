@@ -77,10 +77,10 @@
 </script>
 
 <svelte:head>
-	<title>Hansi: the code reviewer that only speaks up when it matters</title>
+	<title>Hansi: AI code review that catches real bugs</title>
 	<meta
 		name="description"
-		content="Hansi reviews every pull request, points out real mistakes, approves the rest, and grades each one from S to F. Free during the beta."
+		content="Hansi is an AI code reviewer for GitHub. It reads every pull request, catches real bugs, approves the rest, and grades each one from S to F. Free during the beta."
 	/>
 </svelte:head>
 
@@ -142,13 +142,13 @@
 		>
 			<div class="relative z-10 max-w-[40rem] min-w-0">
 				<h1
-					class="font-display text-[2rem] leading-[1.08] font-bold tracking-[-0.045em] text-balance sm:text-[2.75rem] lg:text-[3rem]"
+					class="font-display text-[2.25rem] leading-[1.05] font-bold tracking-[-0.045em] text-balance sm:text-[3rem] lg:text-[3.5rem]"
 				>
-					The code reviewer that only speaks up when it matters.
+					Curious about your code.
 				</h1>
-				<p class="mt-6 max-w-[38rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
-					Hansi reviews every pull request, points out real mistakes, and approves the rest. No
-					nitpicks, no walls of comments. Just a clear verdict and a grade.
+				<p class="mt-6 max-w-[36rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
+					Hansi is an AI code reviewer for GitHub. It reads every pull request, catches real bugs,
+					and approves the rest. No nitpicks, no walls of comments.
 				</p>
 				<div class="mt-9 flex flex-wrap items-center gap-5">
 					<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>

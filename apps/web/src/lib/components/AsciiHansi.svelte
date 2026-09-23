@@ -14,10 +14,10 @@
 	} from '$lib/hansi/engine';
 
 	// Hansi the cat, on a canvas as wide as its container. A fly follows the pointer across the
-	// canvas; when it comes within reach, she stalks it and swipes.
+	// canvas; when it comes within reach, the cat stalks it and swipes.
 	let { class: className = '' } = $props();
 
-	/** How long she stalks a fly in reach before swiping (random in this range). */
+	/** How long the cat stalks a fly in reach before swiping (random in this range). */
 	const STALK_SECONDS: [number, number] = [1.2, 2.2];
 	/** A whole swipe: paw raised, strike, hold, and drawn back (see swipeReach). */
 	const SWIPE_SECONDS = 1.4;
@@ -43,7 +43,7 @@
 	});
 
 	// Server-rendered first frame at the default width; lines are right-aligned, so the cat sits
-	// where the full-width canvas will draw her.
+	// where the full-width canvas will draw the cat.
 	const firstFrame = render(idle(0), DEFAULT_LAYOUT);
 
 	onMount(() => {
@@ -53,6 +53,9 @@
 		const random = (range: [number, number]) => range[0] + Math.random() * (range[1] - range[0]);
 
 		let pointer: Vec | null = null;
+		/** Smoothed pointer velocity, so the fly can move with the pointer instead of trailing it. */
+		let pointerVelocity: Vec = { x: 0, y: 0 };
+		let previousPointer: Vec | null = null;
 		let fly: { p: Vec; v: Vec; orbit: number } | null = null;
 		let trail: Vec[] = [];
 		let lastTrail = 0;
@@ -60,7 +63,7 @@
 		let stalk = 0;
 		let stalkNeeded = random(STALK_SECONDS);
 		let swipeStart = -1;
-		/** Where she aims: fixed when the swipe starts, so a fly that keeps moving can get away. */
+		/** Where the paw aims: fixed when the swipe starts, so a fly that keeps moving can get away. */
 		let swipeAim: Vec | null = null;
 		let swipeChecked = false;
 		let cooldownUntil = 0;
@@ -74,16 +77,31 @@
 		let layout: Layout = DEFAULT_LAYOUT;
 		let charWidth = 0;
 
-		// Fit the canvas to the element: as many columns as fit at the current font size.
+		// Fit the canvas to the element: as many columns as fit at the current font size. The width
+		// of a character is measured from real rendered text, so pointer positions map exactly.
 		const measure = () => {
-			const context = document.createElement('canvas').getContext('2d')!;
-			context.font = getComputedStyle(element).font;
-			charWidth = context.measureText('M').width || 5.4;
+			const style = getComputedStyle(element);
+			const sample = document.createElement('span');
+			sample.textContent = 'M'.repeat(100);
+			Object.assign(sample.style, {
+				position: 'absolute',
+				visibility: 'hidden',
+				whiteSpace: 'pre',
+				fontFamily: style.fontFamily,
+				fontSize: style.fontSize,
+				fontWeight: style.fontWeight,
+				letterSpacing: style.letterSpacing
+			});
+			document.body.append(sample);
+			charWidth = sample.getBoundingClientRect().width / 100 || 5.4;
+			sample.remove();
 			layout = layoutFor(
 				Math.max(DEFAULT_LAYOUT.cols, Math.floor(element.clientWidth / charWidth))
 			);
 		};
 		measure();
+		// Web fonts may arrive after the first measurement and change the character width.
+		void document.fonts.ready.then(measure);
 		const resizeObserver = new ResizeObserver(measure);
 		resizeObserver.observe(element);
 		let frame = 0;
@@ -127,12 +145,22 @@
 				fly = { p: nearestEdge(pointer), v: { x: 0, y: 0 }, orbit: 0 };
 			}
 			let desired: Vec;
+			if (pointer && previousPointer && dt > 0) {
+				pointerVelocity = {
+					x: pointerVelocity.x * 0.6 + ((pointer.x - previousPointer.x) / dt) * 0.4,
+					y: pointerVelocity.y * 0.6 + ((pointer.y - previousPointer.y) / dt) * 0.4
+				};
+			} else {
+				pointerVelocity = { x: 0, y: 0 };
+			}
+			previousPointer = pointer ? { ...pointer } : null;
 			if (pointer) {
-				fly.orbit += dt * (4.5 + 2 * Math.sin(time * 0.9));
-				const radius = 6 + 2.2 * Math.sin(time * 1.7);
+				// A tight, jittery orbit: the fly stays right at the pointer.
+				fly.orbit += dt * (6 + 2 * Math.sin(time * 0.9));
+				const radius = 2.6 + Math.sin(time * 1.7);
 				desired = {
-					x: pointer.x + Math.cos(fly.orbit) * radius + Math.sin(time * 3.1) * 1.5,
-					y: pointer.y + Math.sin(fly.orbit) * radius * 0.7 + Math.cos(time * 2.3) * 1.2
+					x: pointer.x + Math.cos(fly.orbit) * radius + Math.sin(time * 5.3) * 0.6,
+					y: pointer.y + Math.sin(fly.orbit) * radius * 0.8 + Math.cos(time * 4.1) * 0.5
 				};
 			} else {
 				desired = nearestEdge(fly.p);
@@ -146,8 +174,11 @@
 					return;
 				}
 			}
-			fly.v.x += ((desired.x - fly.p.x) * 38 - fly.v.x * 8) * dt;
-			fly.v.y += ((desired.y - fly.p.y) * 38 - fly.v.y * 8) * dt;
+			// A stiff spring damped relative to the pointer's velocity: the fly moves along with the
+			// pointer (no constant trailing offset) and only wobbles around it.
+			const carry = pointer ? pointerVelocity : { x: 0, y: 0 };
+			fly.v.x += ((desired.x - fly.p.x) * 120 - (fly.v.x - carry.x) * 18) * dt;
+			fly.v.y += ((desired.y - fly.p.y) * 120 - (fly.v.y - carry.y) * 18) * dt;
 			fly.p = { x: fly.p.x + fly.v.x * dt, y: fly.p.y + fly.v.y * dt };
 			if (time - lastTrail > 0.06) {
 				trail = [...trail, fly.p].slice(-7);
@@ -254,4 +285,4 @@
 	bind:this={pre}
 	class="overflow-hidden text-right font-mono leading-none whitespace-pre text-stone-800 select-none [font-variant-ligatures:none] dark:text-stone-200 {className}"
 	role="img"
-	aria-label="Hansi the cat. Move your pointer near her: a fly follows it, and she tries to catch the fly.">{firstFrame}</pre>
+	aria-label="Hansi the cat. Move your pointer nearby: a fly follows it, and Hansi tries to catch the fly.">{firstFrame}</pre>
