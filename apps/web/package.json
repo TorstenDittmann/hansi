@@ -15,7 +15,6 @@
 	},
 	"dependencies": {
 		"@hans/config": "workspace:*",
-		"@hans/core": "workspace:*",
 		"@hans/db": "workspace:*",
 		"@hans/github": "workspace:*",
 		"@hans/llm": "workspace:*",

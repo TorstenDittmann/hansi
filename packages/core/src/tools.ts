@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { git } from './git';
+import { astLanguages, astSearch } from './structure';
 
 export type ReviewEvent = { type: string; data?: Record<string, unknown> };
 export type EmitEvent = (event: ReviewEvent) => void;
@@ -80,6 +81,33 @@ export function createRepoTools(repoDir: string, emit: EmitEvent) {
 				const truncated =
 					lines.length > MAX_GREP_LINES ? `\n… ${lines.length - MAX_GREP_LINES} more matches` : '';
 				return lines.slice(0, MAX_GREP_LINES).join('\n') + truncated;
+			}
+		}),
+
+		ast_search: tool({
+			description: `Structural code search (ast-grep): match syntax instead of text. Use it to find call sites, definitions, and usages precisely. Patterns are code with metavariables: $NAME matches one node, $$$ matches any number. Examples: "fetch($$$)", "$OBJ.save($$$)", "function $F($$$) { $$$ }", "class $C extends Base { $$$ }", "def $F($$$): $$$" (python). Some snippets do not parse on their own (e.g. Go method calls): then pass a full snippet as context and the node kind to match as selector, e.g. context "func f() { $DB.Exec($$$) }" with selector "call_expression".`,
+			inputSchema: z.object({
+				pattern: z.string(),
+				language: z.enum(astLanguages),
+				path: z.string().default('.').describe('Directory or file to search'),
+				context: z.string().optional().describe('Full snippet containing the pattern'),
+				selector: z.string().optional().describe('Tree-sitter node kind to match within context')
+			}),
+			execute: async ({ pattern, language, path, context, selector }) => {
+				emit({ type: 'tool.ast_search', data: { pattern, language, path } });
+				try {
+					const matches = await astSearch({
+						repoDir,
+						absolutePath: resolveRepoPath(repoDir, path),
+						language,
+						pattern,
+						context: context && selector ? { snippet: context, selector } : undefined
+					});
+					if (matches.length === 0) return 'No matches.';
+					return matches.map((m) => `${m.path}:${m.line}: ${m.text.split('\n')[0]}`).join('\n');
+				} catch (error) {
+					return `Error: ${(error as Error).message}`;
+				}
 			}
 		}),
 
