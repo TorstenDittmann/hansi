@@ -3,14 +3,16 @@
 
 	let { data } = $props();
 	let pending = $state(false);
-	let error = $state<string | null>(null);
+	// Starts from an OAuth error in the URL; overwritten by client-side failures.
+	let error = $derived<string | null>(data.error);
 
 	async function signIn() {
 		pending = true;
 		error = null;
 		const result = await authClient.signIn.social({
 			provider: 'github',
-			callbackURL: data.destination
+			callbackURL: data.destination,
+			errorCallbackURL: '/login'
 		});
 		if (result.error) {
 			error = result.error.message ?? 'Sign-in failed';

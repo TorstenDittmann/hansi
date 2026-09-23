@@ -31,6 +31,10 @@ Then open `APP_URL/setup`:
 
 Open a pull request, or comment `@<app-name> review` on one.
 
+Sign-ups are restricted by default: the first person to sign in owns the instance. Let teammates
+in by adding their GitHub logins to `ALLOWED_GITHUB_USERS` or inviting them to the workspace. Set
+`SIGNUP_MODE=open` for a public, multi-tenant deployment.
+
 ## Development
 
 Requires [Bun](https://bun.sh) ≥ 1.4, `git`, and [`ripgrep`](https://github.com/BurntSushi/ripgrep).

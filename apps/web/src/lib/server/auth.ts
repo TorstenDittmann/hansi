@@ -1,7 +1,10 @@
+import { canSignUp } from '@hans/config';
 import { schema } from '@hans/db';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { APIError } from 'better-auth/api';
 import { organization } from 'better-auth/plugins';
+import { and, count, eq, gt } from 'drizzle-orm';
 import { getContext, getGitHubCredentials } from './context';
 
 async function createAuth() {
@@ -26,8 +29,50 @@ async function createAuth() {
 		}),
 		// Sign-in uses the GitHub App's own OAuth credentials: one app for login and repo access.
 		socialProviders: github
-			? { github: { clientId: github.clientId, clientSecret: github.clientSecret } }
+			? {
+					github: {
+						clientId: github.clientId,
+						clientSecret: github.clientSecret,
+						mapProfileToUser: (profile) => ({ githubLogin: profile.login })
+					}
+				}
 			: {},
+		user: {
+			additionalFields: { githubLogin: { type: 'string', required: false, input: false } }
+		},
+		databaseHooks: {
+			user: {
+				create: {
+					before: async (user) => {
+						const [{ users }] = await db.select({ users: count() }).from(schema.user);
+						const [invitation] = await db
+							.select({ id: schema.invitation.id })
+							.from(schema.invitation)
+							.where(
+								and(
+									eq(schema.invitation.email, user.email.toLowerCase()),
+									eq(schema.invitation.status, 'pending'),
+									gt(schema.invitation.expiresAt, new Date())
+								)
+							)
+							.limit(1);
+						const allowed = canSignUp(
+							{ mode: env.SIGNUP_MODE, allowedGithubUsers: env.ALLOWED_GITHUB_USERS },
+							{
+								githubLogin: user.githubLogin as string | undefined,
+								existingUsers: users,
+								hasPendingInvitation: !!invitation
+							}
+						);
+						if (!allowed) {
+							throw new APIError('FORBIDDEN', {
+								message: 'Sign-ups on this instance are restricted. Ask an admin for an invitation.'
+							});
+						}
+					}
+				}
+			}
+		},
 		plugins: [organization()],
 		telemetry: { enabled: false }
 	});

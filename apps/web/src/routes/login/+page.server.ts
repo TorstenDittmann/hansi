@@ -9,5 +9,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const destination =
 		redirectTo?.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/app';
 	if (locals.user) redirect(303, destination);
-	return { destination };
+	// better-auth redirects OAuth failures (e.g. a rejected sign-up) back here with ?error=.
+	const error = url.searchParams.get('error');
+	return { destination, error: error ? error.replaceAll('_', ' ') : null };
 };

@@ -36,6 +36,22 @@ export const envSchema = z.object({
 	GITHUB_CLIENT_ID: optional,
 	GITHUB_CLIENT_SECRET: optional,
 
+	/**
+	 * `restricted` (default, for self-hosting): only the first user, GitHub logins listed in
+	 * ALLOWED_GITHUB_USERS, and people with a pending workspace invitation can sign up.
+	 * `open`: anyone with a GitHub account can sign up (hosted service).
+	 */
+	SIGNUP_MODE: z.enum(['restricted', 'open']).default('restricted'),
+	ALLOWED_GITHUB_USERS: z
+		.string()
+		.default('')
+		.transform((value) =>
+			value
+				.split(',')
+				.map((login) => login.trim().toLowerCase())
+				.filter(Boolean)
+		),
+
 	WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
 	/** Directory for temporary repository checkouts. */
 	WORKER_WORKDIR: optional
