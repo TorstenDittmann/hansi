@@ -44,7 +44,6 @@
 		'Unlimited repositories',
 		'Reviews on every push',
 		'Approvals, grades, and inline fixes',
-		'Answers when you mention @hansi',
 		'Your own model and API key'
 	];
 
