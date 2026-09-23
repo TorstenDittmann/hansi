@@ -9,6 +9,17 @@ export async function requireOrganization(locals: App.Locals, headers: Headers) 
 	if (!locals.user || !locals.session) error(401, 'Not signed in');
 	const auth = await getAuth();
 
+	// Join workspaces this user was invited to before falling back to a personal one.
+	// better-auth only matches invitations to verified emails (GitHub reports verification).
+	if (locals.user.emailVerified) {
+		const invitations = await auth.api.listUserInvitations({ headers });
+		for (const invitation of invitations) {
+			if (invitation.status === 'pending' && new Date(invitation.expiresAt) > new Date()) {
+				await auth.api.acceptInvitation({ headers, body: { invitationId: invitation.id } });
+			}
+		}
+	}
+
 	let organizations = await auth.api.listOrganizations({ headers });
 	if (organizations.length === 0) {
 		await auth.api.createOrganization({
