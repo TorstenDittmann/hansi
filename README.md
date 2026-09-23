@@ -4,7 +4,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.png">
-  <img alt="Hansi: Curious about your code. AI code review for GitHub that catches real bugs and approves the rest." src=".github/assets/hero-light.png">
+  <img alt="Curious about your code. AI code review for GitHub that catches real bugs and approves the rest. Next to it, Hansi the cat in ASCII art." src=".github/assets/hero-light.png">
 </picture>
 
 Open-source, self-hostable AI code review for GitHub pull requests. Bring your own key for OpenAI,
