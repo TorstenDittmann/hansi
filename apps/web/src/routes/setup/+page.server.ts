@@ -8,7 +8,9 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	if (credentials) return { configured: true as const, slug: credentials.slug };
 
 	const { env } = await getContext();
-	const state = crypto.randomUUID();
+	// Reuse the browser's existing state: every load minting a new one broke setup whenever the
+	// submitted form came from an older load (a second tab, a reload, a tunnel warning page).
+	const state = cookies.get('hans_setup_state') ?? crypto.randomUUID();
 	cookies.set('hans_setup_state', state, {
 		path: '/setup',
 		httpOnly: true,

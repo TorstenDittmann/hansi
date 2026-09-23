@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveDatabaseUrl } from './client';
+import { createDatabase, resolveDatabaseUrl } from './client';
 
 let root: string;
 beforeAll(async () => {
@@ -24,4 +24,64 @@ test('absolute, in-memory, and remote URLs are unchanged', () => {
 	expect(resolveDatabaseUrl(':memory:', root)).toBe(':memory:');
 	expect(resolveDatabaseUrl('libsql://db.turso.io', root)).toBe('libsql://db.turso.io');
 	expect(resolveDatabaseUrl('http://sqld:8080', root)).toBe('http://sqld:8080');
+});
+
+describe('local file databases', () => {
+	let dir: string;
+	beforeAll(async () => {
+		dir = await mkdtemp(join(tmpdir(), 'hans-db-'));
+	});
+	afterAll(() => rm(dir, { recursive: true, force: true }));
+
+	test('a second process waits for a lock instead of failing with SQLITE_BUSY', async () => {
+		const path = join(dir, 'locks.db');
+		const web = createDatabase({ url: `file:${path}` });
+		await web.ready;
+		await web.client.execute('create table t (n integer)');
+
+		// Another process (like the worker) holds the write lock for a moment. It must be a real
+		// process: libSQL's local driver blocks the thread while it waits for a lock.
+		const holder = Bun.spawn(
+			[
+				'bun',
+				'-e',
+				`import { createClient } from '@libsql/client';
+				const c = createClient({ url: 'file:${path}' });
+				const tx = await c.transaction('write');
+				await tx.execute('insert into t values (1)');
+				console.log('locked');
+				await Bun.sleep(500);
+				await tx.commit();`
+			],
+			{ cwd: import.meta.dir, stdout: 'pipe' }
+		);
+		const reader = holder.stdout.getReader();
+		expect(new TextDecoder().decode((await reader.read()).value)).toContain('locked');
+
+		// Concurrent queries, as a server or the worker's parallel loops make them. The old pooled
+		// client ran the second one on a fresh connection without a busy timeout: SQLITE_BUSY.
+		const started = performance.now();
+		await Promise.all([
+			web.client.execute('select count(*) from t'),
+			web.client.execute('insert into t values (2)')
+		]);
+		expect(performance.now() - started).toBeGreaterThan(100); // it waited for the lock
+
+		expect(await holder.exited).toBe(0);
+		const { rows } = await web.client.execute('select count(*) as n from t');
+		expect(Number(rows[0]!.n)).toBe(2);
+		web.client.close();
+	});
+
+	test('foreign keys are enforced for concurrent queries', async () => {
+		const { client, ready } = createDatabase({ url: `file:${join(dir, 'fk.db')}` });
+		await ready;
+		await client.execute('create table parent (id integer primary key)');
+		await client.execute('create table child (parent_id integer references parent(id))');
+		const results = await Promise.allSettled(
+			Array.from({ length: 10 }, () => client.execute('insert into child values (999)'))
+		);
+		expect(results.every((r) => r.status === 'rejected')).toBe(true);
+		client.close();
+	});
 });

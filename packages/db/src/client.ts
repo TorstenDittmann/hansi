@@ -43,15 +43,20 @@ export function createDatabase(options: DatabaseOptions) {
 	const isLocalFile = url.startsWith('file:');
 	if (isLocalFile) mkdirSync(dirname(url.slice('file:'.length)), { recursive: true });
 
-	const client = createClient({ url, authToken });
+	// Local files are shared by the web and worker processes. `timeout` makes every connection
+	// wait for a lock instead of failing with SQLITE_BUSY (the client's default is to fail
+	// immediately). One connection per process: SQLite has a single writer anyway, and the local
+	// driver blocks the thread while it waits for a lock, so a second in-process connection
+	// waiting on the first one's transaction would stall the whole process until the timeout.
+	const client = createClient(
+		isLocalFile ? { url, authToken, timeout: 5_000, concurrency: 1 } : { url, authToken }
+	);
 	const db = drizzle(client, { schema });
 
-	// Local files are shared by the web and worker processes: WAL lets readers and the single
-	// writer proceed concurrently, busy_timeout waits instead of failing on a locked database.
 	const ready = (async () => {
 		if (isLocalFile) {
+			// WAL lets readers proceed while one process writes; it persists in the file.
 			await client.execute('PRAGMA journal_mode = WAL');
-			await client.execute('PRAGMA busy_timeout = 5000');
 			await client.execute('PRAGMA synchronous = NORMAL');
 		}
 		await client.execute('PRAGMA foreign_keys = ON');

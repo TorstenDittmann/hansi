@@ -20,7 +20,11 @@ const ctx = { db, env, logger };
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {
-		logger.info({ signal }, 'shutting down after in-flight jobs finish');
+		if (controller.signal.aborted) {
+			logger.warn({ signal }, 'second signal, exiting without waiting for in-flight jobs');
+			process.exit(1);
+		}
+		logger.info({ signal }, 'shutting down after in-flight jobs finish (signal again to force)');
 		controller.abort();
 	});
 }
@@ -49,3 +53,6 @@ await Promise.all([
 
 client.close();
 logger.info('worker stopped');
+// Exit explicitly: under `bun --watch` (dev) the process otherwise keeps watching after the
+// script ends, outlives `bun run dev` as an orphan, and restarts on the next file change.
+process.exit(0);
