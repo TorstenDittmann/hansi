@@ -1,5 +1,6 @@
 import type { Severity } from '@hans/config';
 import type { Finding } from './findings';
+import { tierMeaning, type Tier } from './tier';
 
 const severityLabel: Record<Severity, string> = {
 	critical: '🔴 Critical',
@@ -21,22 +22,42 @@ export function formatFindingComment(finding: Finding): string {
 
 export function formatReviewBody(input: {
 	summary: string;
+	tier: Tier;
+	tierReason: string;
 	posted: number;
 	dropped: number;
+	/** Earlier findings the new code fixed. */
+	resolved?: number;
+	/** Earlier blocking findings still unresolved. */
+	stillOpen?: number;
 	reviewedFiles: number;
 	incrementalFrom?: string;
 	detailsUrl?: string;
 }): string {
-	const stats =
+	const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+	const reason = input.tierReason ? ` ${input.tierReason}` : '';
+	const lines = [
+		`### hans review · Tier ${input.tier}`,
+		`**${tierMeaning[input.tier]}.**${reason}`,
+		input.summary
+	];
+
+	const stats = [
 		input.posted === 0
-			? `No issues found in ${input.reviewedFiles} reviewed file${input.reviewedFiles === 1 ? '' : 's'}.`
-			: `${input.posted} comment${input.posted === 1 ? '' : 's'} on ${input.reviewedFiles} reviewed file${input.reviewedFiles === 1 ? '' : 's'}.`;
-	const filtered = input.dropped
-		? ` ${input.dropped} finding${input.dropped === 1 ? ' was' : 's were'} filtered out.`
-		: '';
-	const scope = input.incrementalFrom
-		? `\n\n_Reviewed the commits pushed since \`${input.incrementalFrom.slice(0, 7)}\`._`
-		: '';
-	const details = input.detailsUrl ? `\n\n[Review details](${input.detailsUrl})` : '';
-	return `### hans review\n\n${input.summary}\n\n${stats}${filtered}${scope}${details}`;
+			? `No new issues in ${plural(input.reviewedFiles, 'reviewed file')}.`
+			: `${plural(input.posted, 'comment')} on ${plural(input.reviewedFiles, 'reviewed file')}.`
+	];
+	if (input.resolved) stats.push(`${plural(input.resolved, 'earlier finding')} fixed.`);
+	if (input.stillOpen)
+		stats.push(`${plural(input.stillOpen, 'earlier blocking finding')} still open.`);
+	if (input.dropped) {
+		stats.push(`${plural(input.dropped, 'finding')} filtered out.`);
+	}
+	lines.push(stats.join(' '));
+
+	if (input.incrementalFrom) {
+		lines.push(`_Reviewed the commits pushed since \`${input.incrementalFrom.slice(0, 7)}\`._`);
+	}
+	if (input.detailsUrl) lines.push(`[Review details](${input.detailsUrl})`);
+	return lines.join('\n\n');
 }

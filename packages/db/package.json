@@ -14,6 +14,7 @@
 		"studio": "drizzle-kit studio"
 	},
 	"dependencies": {
+		"@hans/config": "workspace:*",
 		"@libsql/client": "catalog:",
 		"drizzle-orm": "catalog:"
 	},

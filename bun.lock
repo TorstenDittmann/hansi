@@ -107,6 +107,7 @@
     "packages/db": {
       "name": "@hans/db",
       "dependencies": {
+        "@hans/config": "workspace:*",
         "@libsql/client": "catalog:",
         "drizzle-orm": "catalog:",
       },

@@ -261,6 +261,55 @@ describe('runReview', () => {
 		expect(prompt).toContain('already_reported');
 	});
 
+	test('resolves fixed findings, approves, and grades the PR', async () => {
+		const open = (id: string, severity: 'major' | 'minor', title: string) => ({
+			id,
+			path: 'src/math.ts',
+			startLine: 2,
+			endLine: 2,
+			severity,
+			title,
+			body: 'Explained.'
+		});
+		const submission = toolCall('submit_review', {
+			summary: 'Guards against zero.',
+			findings: [],
+			resolved: ['f-zero', 'not-a-real-id'],
+			tier: 'S',
+			tier_reason: 'Clean fix with tests.'
+		});
+		// One scripted response per review below.
+		const model = new MockLanguageModelV4({ doGenerate: [submission, submission] });
+		const run = (openFindings: ReturnType<typeof open>[]) =>
+			runReview({
+				repoDir,
+				diff,
+				openFindings,
+				pullRequest: { title: 'Fix', body: '', author: 'octocat' },
+				config: parseRepoConfig('').config,
+				models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+			});
+
+		// The blocking finding is fixed: approve, and the model's S stands.
+		const fixed = await run([open('f-zero', 'major', 'Division by zero')]);
+		if (fixed.status !== 'completed') throw new Error('expected a completed review');
+		expect(fixed.resolved).toEqual(['f-zero']);
+		expect(fixed.verdict).toBe('approve');
+		expect(fixed.tier).toBe('S');
+		expect(fixed.tierReason).toBe('Clean fix with tests.');
+
+		// Another blocking finding is still open: comment only, and the tier is capped at C.
+		const blocked = await run([
+			open('f-zero', 'major', 'Division by zero'),
+			open('f-nan', 'major', 'NaN leaks into totals')
+		]);
+		if (blocked.status !== 'completed') throw new Error('expected a completed review');
+		expect(blocked.verdict).toBe('comment');
+		expect(blocked.stillOpenBlocking).toBe(1);
+		expect(blocked.tier).toBe('C');
+		expect(blocked.tierReason).toBe('Limited by an open major finding: NaN leaks into totals');
+	});
+
 	test('incremental reviews skip when the increment has nothing reviewable', async () => {
 		const result = await runReview({
 			repoDir,

@@ -1,12 +1,15 @@
-import { parseRepoConfig } from '@hans/config';
+import { parseRepoConfig, type Severity } from '@hans/config';
 import {
 	checkoutPullRequest,
 	diffSince,
 	formatFindingComment,
 	formatReviewBody,
 	runReview,
+	tierMeaning,
 	type Finding,
-	type ReviewEvent
+	type OpenFinding,
+	type ReviewEvent as TraceEvent,
+	type Verdict
 } from '@hans/core';
 import { schema, type Database } from '@hans/db';
 import {
@@ -17,10 +20,11 @@ import {
 	getPullRequest,
 	listReviewComments,
 	RequestError,
-	startCheckRun
+	startCheckRun,
+	type ReviewEvent
 } from '@hans/github';
 import type { Job, ReviewJobPayload } from '@hans/queue';
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import {
 	connectRepository,
@@ -33,7 +37,23 @@ import {
 } from './shared';
 
 type Review = typeof schema.reviews.$inferSelect;
-type Outcome = { status: 'completed' | 'skipped'; summary: string };
+type Outcome = Pick<
+	typeof schema.reviews.$inferInsert,
+	'status' | 'summary' | 'verdict' | 'tier' | 'tierReason'
+>;
+
+const reviewEvents = {
+	approve: 'APPROVE',
+	request_changes: 'REQUEST_CHANGES',
+	comment: 'COMMENT'
+} as const satisfies Record<Verdict, ReviewEvent>;
+
+/** The check run follows the verdict, so teams can require it for merging. */
+const checkConclusions = {
+	approve: 'success',
+	request_changes: 'failure',
+	comment: 'neutral'
+} as const;
 
 export async function handleReviewJob(ctx: WorkerContext, job: Job<ReviewJobPayload>) {
 	const { db, logger } = ctx;
@@ -107,7 +127,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 
 	// Events are written sequentially, off the model's critical path.
 	let pendingWrites: Promise<unknown> = Promise.resolve();
-	const record = (event: ReviewEvent) => {
+	const record = (event: TraceEvent) => {
 		pendingWrites = pendingWrites.then(() =>
 			db.insert(schema.reviewEvents).values({ reviewId: review.id, ...event })
 		);
@@ -154,6 +174,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					incremental: !!incrementalFrom,
 					from: incrementalFrom ?? pr.baseSha,
 					previousFindings: history.findings.length,
+					openFindings: history.open.length,
 					learnings: learnings.length
 				}
 			});
@@ -164,6 +185,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				pullRequestDiff: diff,
 				incrementalFrom,
 				previousFindings: history.findings,
+				openFindings: history.open,
 				learnings,
 				pullRequest: pr,
 				config,
@@ -183,15 +205,33 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				return { status: 'skipped', summary: result.reason } satisfies Outcome;
 			}
 
+			// Earlier findings the new code fixes are resolved before the verdict is posted.
+			if (result.resolved.length) {
+				await db
+					.update(schema.reviewFindings)
+					.set({ status: 'resolved', dropReason: `Fixed by ${pr.headSha.slice(0, 7)}` })
+					.where(inArray(schema.reviewFindings.id, result.resolved));
+			}
+
 			const body = formatReviewBody({
 				summary: result.summary,
+				tier: result.tier,
+				tierReason: result.tierReason,
+				resolved: result.resolved.length,
+				stillOpen: result.stillOpenBlocking,
 				posted: result.posted.length,
 				dropped: result.dropped.length,
 				reviewedFiles: result.reviewedFiles.length,
 				incrementalFrom,
 				detailsUrl
 			});
-			const commentIds = await postReview(connection, pr, body, result.posted, log);
+			const commentIds = await postReview(
+				connection,
+				pr,
+				{ body, event: reviewEvents[result.verdict] },
+				result.posted,
+				log
+			);
 
 			const findingRows = [
 				...result.posted.map((f, i) => ({
@@ -209,13 +249,17 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 			if (findingRows.length) await db.insert(schema.reviewFindings).values(findingRows);
 
 			await completeCheckRun(octokit, ref, checkRunId, {
-				conclusion: result.posted.length ? 'neutral' : 'success',
-				title: result.posted.length
-					? `${result.posted.length} comment${result.posted.length === 1 ? '' : 's'}`
-					: 'No issues found',
-				summary: result.summary
+				conclusion: checkConclusions[result.verdict],
+				title: `Tier ${result.tier}: ${tierMeaning[result.tier]}`,
+				summary: [result.tierReason, result.summary].filter(Boolean).join('\n\n')
 			});
-			return { status: 'completed', summary: result.summary } satisfies Outcome;
+			return {
+				status: 'completed',
+				summary: result.summary,
+				verdict: result.verdict,
+				tier: result.tier,
+				tierReason: result.tierReason
+			} satisfies Outcome;
 		});
 	} catch (error) {
 		await pendingWrites.catch(() => {});
@@ -235,10 +279,11 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 async function postReview(
 	{ octokit, ref }: RepositoryConnection,
 	pr: { number: number; headSha: string },
-	body: string,
+	review: { body: string; event: ReviewEvent },
 	findings: Finding[],
 	log: Logger
 ): Promise<(number | null)[]> {
+	const { body, event } = review;
 	const comments = findings.map((finding) => ({
 		path: finding.path,
 		line: finding.endLine,
@@ -251,7 +296,8 @@ async function postReview(
 			pullNumber: pr.number,
 			commitId: pr.headSha,
 			body,
-			comments
+			comments,
+			event
 		});
 		if (comments.length === 0) return [];
 		const created = await listReviewComments(octokit, ref, pr.number, review.id);
@@ -280,13 +326,17 @@ async function postReview(
 			pullNumber: pr.number,
 			commitId: pr.headSha,
 			body: `${body}\n\n${inline}`,
-			comments: []
+			comments: [],
+			event
 		});
 		return findings.map(() => null);
 	}
 }
 
-/** The last completed review of this PR, and every finding posted on it so far. */
+/**
+ * The last completed review of this PR, the findings not to repeat (posted and dismissed), and
+ * the findings still open.
+ */
 async function loadReviewHistory(db: Database, review: Review) {
 	const samePullRequest = and(
 		eq(schema.reviews.repositoryId, review.repositoryId),
@@ -300,17 +350,26 @@ async function loadReviewHistory(db: Database, review: Review) {
 		.where(samePullRequest)
 		.orderBy(desc(schema.reviews.finishedAt))
 		.limit(1);
-	const findings = await db
+	const rows = await db
 		.select({
+			id: schema.reviewFindings.id,
 			path: schema.reviewFindings.path,
 			startLine: schema.reviewFindings.startLine,
 			endLine: schema.reviewFindings.endLine,
+			severity: schema.reviewFindings.severity,
 			category: schema.reviewFindings.category,
-			title: schema.reviewFindings.title
+			title: schema.reviewFindings.title,
+			body: schema.reviewFindings.body,
+			status: schema.reviewFindings.status
 		})
 		.from(schema.reviewFindings)
 		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
-		.where(and(samePullRequest, eq(schema.reviewFindings.status, 'posted')))
+		.where(and(samePullRequest, ne(schema.reviewFindings.status, 'dropped')))
 		.limit(200);
-	return { lastHeadSha: last?.headSha || undefined, findings };
+	const open: OpenFinding[] = rows
+		.filter((f) => f.status === 'posted')
+		.map((f) => ({ ...f, severity: f.severity as Severity }));
+	// Resolved findings may be reported again if the problem comes back; dismissed ones may not.
+	const findings = rows.filter((f) => f.status !== 'resolved');
+	return { lastHeadSha: last?.headSha || undefined, findings, open };
 }

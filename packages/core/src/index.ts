@@ -5,4 +5,7 @@ export * from './findings';
 export * from './format';
 export * from './git';
 export * from './review';
+export * from './tier';
+export * from './verdict';
+export * from './verdict';
 export { createRepoTools, loadRepoGuidelines, type EmitEvent, type ReviewEvent } from './tools';

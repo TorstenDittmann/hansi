@@ -9,6 +9,9 @@ Anthropic, xAI, Google, OpenRouter, or any OpenAI-compatible endpoint (Ollama, v
 - **Transparent.** Every review records which files the agent read, what it searched for, token
   usage, and cost per model call.
 - **Runs anywhere.** One Docker image and a libSQL database file. No Redis, no Postgres.
+- **A real reviewer.** hans approves pull requests or requests changes, like a teammate, and
+  grades every PR's merge confidence from **S** (exemplary) to **F** (do not merge). After a
+  fix is pushed, it checks its earlier findings and approves once the blocking ones are gone.
 - **Conversational.** Ask `@hans` anything in a pull request, or reply to one of its comments.
   When you state a preference ("we don't flag this in tests"), hans remembers it for future
   reviews. Replies also record whether a finding was fixed or dismissed.
@@ -94,6 +97,8 @@ reviews:
   profile: balanced # chill | balanced | strict
   min_severity: minor # info | minor | major | critical
   max_comments: 15
+  approve: true # approve PRs without blocking findings
+  request_changes: major # severity that blocks a PR; `never` to only comment
 instructions: |
   We use Result types instead of exceptions in src/domain.
 path_instructions:
@@ -101,6 +106,21 @@ path_instructions:
     instructions: Check that every migration is reversible.
 language: en
 ```
+
+### Verdicts and tiers
+
+Each review is submitted to GitHub as **Approve**, **Request changes**, or **Comment**:
+
+- New findings at or above `request_changes` → **Request changes**.
+- Blocking findings from an earlier review still open → **Comment**, so the earlier request for
+  changes stays in effect until they are fixed or dismissed in the thread.
+- Otherwise → **Approve** (minor findings are still posted as comments), unless `approve: false`.
+
+The tier grades merge confidence: **S** exemplary · **A** safe to merge · **B** mergeable after
+minor fixes · **C** needs changes · **D** significant problems · **F** do not merge. The model
+grades the PR, but open findings cap the tier (a major finding means at most **C**, a critical one
+at most **D**). The `hans` check run follows the verdict (success, failure, or neutral), so you
+can make it a required check to block merging.
 
 ## Architecture
 

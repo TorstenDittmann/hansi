@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { formatCost, formatDate, formatDuration, formatTokens } from '$lib/format';
+	import TierBadge from '$lib/components/TierBadge.svelte';
+	import {
+		formatCost,
+		formatDate,
+		formatDuration,
+		formatTokens,
+		tierMeaning,
+		verdictLabel
+	} from '$lib/format';
 
 	let { data } = $props();
 	const review = $derived(data.review);
@@ -40,6 +48,23 @@
 		>
 			{review.error}
 		</div>
+	{/if}
+
+	{#if review.tier}
+		<section class="card flex items-center gap-4 p-4">
+			<TierBadge tier={review.tier} size="lg" />
+			<div>
+				<p class="font-medium">
+					{tierMeaning[review.tier]}
+					{#if review.verdict}
+						<span class="muted">· {verdictLabel[review.verdict]} on GitHub</span>
+					{/if}
+				</p>
+				{#if review.tierReason}
+					<p class="muted mt-1">{review.tierReason}</p>
+				{/if}
+			</div>
+		</section>
 	{/if}
 
 	{#if review.summary}

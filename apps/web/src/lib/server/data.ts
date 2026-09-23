@@ -55,6 +55,8 @@ export async function listReviews(organizationId: string, limit = 50) {
 			pullNumber: schema.reviews.pullNumber,
 			status: schema.reviews.status,
 			trigger: schema.reviews.trigger,
+			verdict: schema.reviews.verdict,
+			tier: schema.reviews.tier,
 			costUsd: schema.reviews.costUsd,
 			createdAt: schema.reviews.createdAt,
 			finishedAt: schema.reviews.finishedAt,

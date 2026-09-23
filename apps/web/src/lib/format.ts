@@ -19,3 +19,5 @@ export function formatDuration(from: Date | null | undefined, to: Date | null | 
 export function formatTokens(value: number) {
 	return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
 }
+
+export { tierMeaning, verdictLabel } from '@hans/config';

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { severityAtLeast, type RepoConfig } from '@hans/config';
+import { blockingSeverity, severityAtLeast, type RepoConfig, type Severity } from '@hans/config';
 import {
 	generateText,
 	hasToolCall,
@@ -26,6 +26,8 @@ import {
 	type PreviousFinding
 } from './findings';
 import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
+import { finalTier, tierCap, tiers, type Tier } from './tier';
+import { decideVerdict, type Verdict } from './verdict';
 import { createRepoTools, loadRepoGuidelines, resolveRepoPath, type EmitEvent } from './tools';
 
 export interface ReviewModel {
@@ -53,6 +55,11 @@ export interface ReviewInput {
 	incrementalFrom?: string;
 	/** Findings already posted on this PR, so they are not repeated. */
 	previousFindings?: PreviousFinding[];
+	/**
+	 * Posted findings not yet resolved or dismissed. The model checks whether the current code
+	 * fixes them; open blocking findings keep a PR from being approved.
+	 */
+	openFindings?: OpenFinding[];
 	/** Team preferences from earlier conversations (see `remember` in chat). */
 	learnings?: string[];
 	pullRequest: { title: string; body: string; author: string };
@@ -64,6 +71,16 @@ export interface ReviewInput {
 	limits?: { maxDiffChars?: number; maxReviewSteps?: number; maxVerifySteps?: number };
 }
 
+export interface OpenFinding {
+	id: string;
+	path: string;
+	startLine: number;
+	endLine: number;
+	severity: Severity;
+	title: string;
+	body: string;
+}
+
 export type ReviewResult =
 	| { status: 'skipped'; reason: string }
 	| {
@@ -72,9 +89,26 @@ export type ReviewResult =
 			reviewedFiles: string[];
 			posted: Finding[];
 			dropped: DroppedFinding[];
+			/** Ids of open findings the current code fixes. */
+			resolved: string[];
+			/** Earlier blocking findings that are still unresolved. */
+			stillOpenBlocking: number;
+			verdict: Verdict;
+			/** Merge confidence for the whole PR, S (best) to F. */
+			tier: Tier;
+			tierReason: string;
 	  };
 
-const submissionSchema = z.object({ summary: z.string(), findings: z.array(findingSchema) });
+const submissionSchema = z.object({
+	summary: z.string(),
+	findings: z.array(findingSchema),
+	resolved: z
+		.array(z.string())
+		.default([])
+		.describe('Ids of <open_findings> that the current code fixes'),
+	tier: z.enum(tiers).optional().describe('Merge confidence for the whole pull request'),
+	tier_reason: z.string().optional().describe('One sentence explaining the tier')
+});
 const verdictsSchema = z.object({
 	verdicts: z.array(z.object({ id: z.string(), keep: z.boolean(), reason: z.string() }))
 });
@@ -132,7 +166,8 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		excludedFiles: excludedPaths,
 		incrementalFrom: input.incrementalFrom,
 		learnings: input.learnings,
-		previousFindings
+		previousFindings,
+		openFindings: input.openFindings
 	});
 
 	// 1. Review: an agent loop that explores the repo, then submits findings.
@@ -157,8 +192,14 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			'The review model did not submit a review. Check that it supports tool calling.'
 		);
 	}
-	const { summary, findings } = submissionSchema.parse(submission.input);
-	emit({ type: 'review.submitted', data: { findings: findings.length } });
+	const submitted = submissionSchema.parse(submission.input);
+	const { summary, findings } = submitted;
+	const openFindings = input.openFindings ?? [];
+	const resolved = submitted.resolved.filter((id) => openFindings.some((f) => f.id === id));
+	emit({
+		type: 'review.submitted',
+		data: { findings: findings.length, resolved, tier: submitted.tier ?? null }
+	});
 
 	// 2. Validate positions: GitHub rejects comments outside the PR diff. For incremental reviews
 	//    the finding must be on a newly changed line *and* on a line of the full PR diff.
@@ -200,8 +241,41 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		dropped.push({ ...finding, dropReason: `Over max_comments (${config.reviews.max_comments})` });
 	}
 
-	emit({ type: 'review.completed', data: { posted: posted.length, dropped: dropped.length } });
-	return { status: 'completed', summary, reviewedFiles: shown.map((f) => f.path), posted, dropped };
+	// 6. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
+	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
+	const threshold = blockingSeverity(config);
+	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
+	const verdict = decideVerdict({ posted, stillOpen: stillOpenBlocking, config });
+	const open = [...posted, ...stillOpen].sort(compareSeverity);
+	// S is a deliberate grade: a model that doesn't grade gets at most A.
+	const tier = finalTier(submitted.tier ?? 'A', tierCap(open.map((f) => f.severity)));
+	const limitedBy = tier !== submitted.tier ? open[0] : undefined;
+	const tierReason = limitedBy
+		? `Limited by an open ${limitedBy.severity} finding: ${limitedBy.title}`
+		: (submitted.tier_reason ?? '');
+
+	emit({
+		type: 'review.completed',
+		data: {
+			posted: posted.length,
+			dropped: dropped.length,
+			stillOpen: stillOpen.length,
+			verdict,
+			tier
+		}
+	});
+	return {
+		status: 'completed',
+		summary,
+		reviewedFiles: shown.map((f) => f.path),
+		posted,
+		dropped,
+		resolved,
+		stillOpenBlocking,
+		verdict,
+		tier,
+		tierReason
+	};
 }
 
 /** Clamps a finding onto commentable lines of a single hunk, or returns null. */

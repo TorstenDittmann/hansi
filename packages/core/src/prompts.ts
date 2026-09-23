@@ -25,6 +25,12 @@ How to work:
 - Severity: critical = security hole, data loss, or outage; major = incorrect behavior in normal use; minor = edge-case bug or risky pattern; info = worth knowing, no defect.
 - Write in language: ${config.language}.
 
+If <open_findings> is present, check each one against the current code with the tools and put the ids of those that are actually fixed in \`resolved\`. Leave out any you are unsure about.
+
+Grade the whole pull request's merge confidence as a tier, considering your findings and any open findings:
+S = exemplary, merge with confidence; A = safe to merge; B = mergeable after minor fixes; C = needs changes before merging; D = significant problems; F = do not merge (broken, dangerous, or data-destroying).
+Give a one-sentence tier_reason.
+
 When done, call submit_review exactly once with a short summary of the change (2-4 sentences, what it does, not a judgement) and your findings.`;
 }
 
@@ -64,6 +70,14 @@ export function buildReviewPrompt(input: {
 	incrementalFrom?: string;
 	learnings?: string[];
 	previousFindings?: { path: string; startLine: number; endLine: number; title: string }[];
+	openFindings?: {
+		id: string;
+		path: string;
+		startLine: number;
+		endLine: number;
+		title: string;
+		body: string;
+	}[];
 }): string {
 	const parts = [
 		`<pull_request author="${input.author}">\n<title>${input.title}</title>\n<description>\n${input.body || '(none)'}\n</description>\n</pull_request>`
@@ -92,6 +106,17 @@ export function buildReviewPrompt(input: {
 			.join('\n');
 		parts.push(
 			`<already_reported>\nThese were reported in earlier reviews of this pull request. Do not report them again.\n${list}\n</already_reported>`
+		);
+	}
+	if (input.openFindings?.length) {
+		const list = input.openFindings
+			.map(
+				(f) =>
+					`<finding id="${f.id}" path="${f.path}" lines="${f.startLine}-${f.endLine}">\n${f.title}\n${f.body}\n</finding>`
+			)
+			.join('\n');
+		parts.push(
+			`<open_findings>\nReported earlier and not yet resolved. Line numbers may have shifted since.\n${list}\n</open_findings>`
 		);
 	}
 	if (input.incrementalFrom) {

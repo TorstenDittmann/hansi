@@ -30,3 +30,11 @@ test('severityAtLeast', () => {
 	expect(severityAtLeast('major', 'minor')).toBe(true);
 	expect(severityAtLeast('info', 'minor')).toBe(false);
 });
+
+test('verdict settings default to approving and requesting changes on major findings', () => {
+	expect(defaultRepoConfig.reviews.approve).toBe(true);
+	expect(defaultRepoConfig.reviews.request_changes).toBe('major');
+	const commentOnly = parseRepoConfig('reviews:\n  request_changes: never\n  approve: false\n');
+	expect(commentOnly.ok).toBe(true);
+	expect(commentOnly.config.reviews.request_changes).toBe('never');
+});

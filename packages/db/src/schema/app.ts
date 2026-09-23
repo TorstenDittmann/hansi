@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { tiers, verdicts } from '@hans/config';
 import { organization } from './auth';
 
 const createdAt = integer('created_at', { mode: 'timestamp_ms' })
@@ -134,6 +135,11 @@ export const reviews = sqliteTable(
 		status: text('status', { enum: reviewStatuses }).notNull().default('queued'),
 		trigger: text('trigger', { enum: reviewTriggers }).notNull(),
 		summary: text('summary'),
+		/** The GitHub review event hans submitted: approve, request_changes, or comment. */
+		verdict: text('verdict', { enum: verdicts }),
+		/** Merge confidence, S (best) to F. */
+		tier: text('tier', { enum: tiers }),
+		tierReason: text('tier_reason'),
 		error: text('error'),
 		inputTokens: integer('input_tokens').notNull().default(0),
 		outputTokens: integer('output_tokens').notNull().default(0),

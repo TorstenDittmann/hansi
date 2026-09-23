@@ -2,7 +2,8 @@
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { formatCost, formatDate } from '$lib/format';
+	import TierBadge from '$lib/components/TierBadge.svelte';
+	import { formatCost, formatDate, verdictLabel } from '$lib/format';
 
 	let { data, form } = $props();
 	let syncing = $state(false);
@@ -91,6 +92,7 @@
 					<thead class="border-b border-stone-200 text-stone-500 dark:border-stone-800">
 						<tr>
 							<th class="px-4 py-2 font-medium">Pull request</th>
+							<th class="px-4 py-2 font-medium">Tier</th>
 							<th class="px-4 py-2 font-medium">Status</th>
 							<th class="px-4 py-2 font-medium">Comments</th>
 							<th class="px-4 py-2 font-medium">Cost</th>
@@ -108,7 +110,14 @@
 										{review.repository}#{review.pullNumber}
 									</a>
 								</td>
-								<td class="px-4 py-2"><StatusBadge status={review.status} /></td>
+								<td class="px-4 py-2"><TierBadge tier={review.tier} /></td>
+								<td class="px-4 py-2">
+									{#if review.status === 'completed' && review.verdict}
+										{verdictLabel[review.verdict]}
+									{:else}
+										<StatusBadge status={review.status} />
+									{/if}
+								</td>
 								<td class="px-4 py-2">{review.posted}</td>
 								<td class="px-4 py-2">{formatCost(review.costUsd)}</td>
 								<td class="muted px-4 py-2">{formatDate(review.createdAt)}</td>

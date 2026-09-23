@@ -47,6 +47,8 @@ export async function getFileContent(
 	}
 }
 
+export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+
 export interface ReviewComment {
 	path: string;
 	/** Right-side line in the new file; must be part of the diff. */
@@ -62,13 +64,20 @@ export interface ReviewComment {
 export async function createReview(
 	octokit: Octokit,
 	ref: RepoRef,
-	input: { pullNumber: number; commitId: string; body: string; comments: ReviewComment[] }
+	input: {
+		pullNumber: number;
+		commitId: string;
+		body: string;
+		comments: ReviewComment[];
+		/** Approve, request changes, or only comment. */
+		event: ReviewEvent;
+	}
 ) {
 	const { data } = await octokit.rest.pulls.createReview({
 		...ref,
 		pull_number: input.pullNumber,
 		commit_id: input.commitId,
-		event: 'COMMENT',
+		event: input.event,
 		body: input.body,
 		comments: input.comments.map((comment) => ({
 			path: comment.path,
