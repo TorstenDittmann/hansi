@@ -42,7 +42,8 @@ in by adding their GitHub logins to `ALLOWED_GITHUB_USERS` or inviting them to t
 
 ## Development
 
-Requires [Bun](https://bun.sh) ≥ 1.4, `git`, and [`ripgrep`](https://github.com/BurntSushi/ripgrep).
+Requires [Bun](https://bun.sh) ≥ 1.4, `git`, and [`ripgrep`](https://github.com/BurntSushi/ripgrep). No Docker needed: the
+database is a local libSQL file (`data/hans.db`).
 
 ```sh
 bun install
