@@ -46,36 +46,58 @@ Tell it "we don't flag this in tests" and it remembers for future reviews.
 
 ## Repository configuration
 
-Add `.hansi.yml` to the repository root. Hansi also reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`,
-and `.github/copilot-instructions.md` as review guidelines. Both come from the pull request's base
+Add `.hansi.json` to the repository root. The `$schema` line gives you autocompletion and
+validation in editors like VS Code. Schemas are versioned: `schema/v1.json` never changes, and
+`https://hansi.codes/schema.json` always serves the latest version. Hansi also reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and
+`.github/copilot-instructions.md` as review guidelines. Both come from the pull request's base
 branch, so changes take effect once they are merged. Every field is optional:
 
-```yaml
-reviews:
-  enabled: true
-  auto: true # review on open and push; mentions always work
-  drafts: false
-  base_branches: [] # empty means all
-  path_filters: ['!docs/**', '!**/*.snap']
-  profile: chill # chill: obvious mistakes only (default) | balanced | strict
-  min_severity: minor # info | minor | major | critical
-  max_comments: 15
-  approve: true # approve pull requests without blocking findings
-  request_changes: major # severity that blocks a pull request; `never` to only comment
-  approve_outside_contributors: false # approve pull requests from people without write access
-instructions: |
-  We use Result types instead of exceptions in src/domain.
-path_instructions:
-  - path: 'migrations/**'
-    instructions: Check that every migration is reversible.
-language: en
+```json
+{
+	"$schema": "https://hansi.codes/schema/v1.json",
+	"reviews": {
+		"enabled": true,
+		"auto": true,
+		"drafts": false,
+		"baseBranches": [],
+		"pathFilters": ["!docs/**", "!**/*.snap"],
+		"profile": "chill",
+		"minSeverity": "minor",
+		"maxComments": 15,
+		"approve": true,
+		"requestChanges": "major",
+		"approveOutsideContributors": false
+	},
+	"instructions": "We use Result types instead of exceptions in src/domain.",
+	"pathInstructions": [
+		{ "path": "migrations/**", "instructions": "Check that every migration is reversible." }
+	],
+	"language": "en"
+}
 ```
+
+| Field                                | Default | What it does                                                                        |
+| ------------------------------------ | ------- | ----------------------------------------------------------------------------------- |
+| `reviews.enabled`                    | `true`  | Review pull requests in this repository.                                            |
+| `reviews.auto`                       | `true`  | Review when a pull request is opened or updated. Mentions always work.              |
+| `reviews.drafts`                     | `false` | Also review draft pull requests.                                                    |
+| `reviews.baseBranches`               | `[]`    | Only review pull requests into these branches. Empty means all.                     |
+| `reviews.pathFilters`                | `[]`    | Globs for the files to review; prefix with `!` to exclude.                          |
+| `reviews.profile`                    | `chill` | `chill` flags obvious mistakes only; `balanced` and `strict` dig deeper.            |
+| `reviews.minSeverity`                | `minor` | Findings below this severity (`info`, `minor`, `major`, `critical`) are not posted. |
+| `reviews.maxComments`                | `15`    | The most inline comments in one review.                                             |
+| `reviews.approve`                    | `true`  | Approve pull requests without blocking findings.                                    |
+| `reviews.requestChanges`             | `major` | Severity from which Hansi requests changes; `never` to only comment.                |
+| `reviews.approveOutsideContributors` | `false` | Approve pull requests from people without write access.                             |
+| `instructions`                       | `""`    | Extra review instructions for the repository.                                       |
+| `pathInstructions`                   | `[]`    | Instructions for files matching a glob.                                             |
+| `language`                           | `en`    | Language for review comments.                                                       |
 
 ### Verdicts and tiers
 
 Each review is submitted to GitHub as **Approve**, **Request changes**, or **Comment**:
 
-- New findings at or above `request_changes`: **Request changes**.
+- New findings at or above `requestChanges`: **Request changes**.
 - Blocking findings from an earlier review still open: **Comment**, so the earlier request for
   changes stays in effect until they are fixed or dismissed in the thread.
 - Otherwise: **Approve** (minor findings are still posted as comments), unless `approve: false`.
@@ -153,7 +175,7 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 | `packages/queue`  | Durable job queue on the same database (leases, retries, singletons)     |
 | `packages/llm`    | Provider registry, key encryption, model listing, models.dev pricing     |
 | `packages/github` | GitHub App auth, manifest flow, pull request and check run helpers       |
-| `packages/config` | Environment and `.hansi.yml` schemas                                     |
+| `packages/config` | Environment and `.hansi.json` schemas                                    |
 | `packages/evals`  | Review-quality benchmark: cases with known bugs, scoring, runner         |
 
 ### Security model
@@ -161,7 +183,7 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 - The agent can only read and search the checkout; it never runs repository code.
 - Pull request content is treated as untrusted input that may try to steer the model, so approvals
   are guarded outside the model:
-  - `.hansi.yml` and guideline files come from the base branch;
+  - `.hansi.json` and guideline files come from the base branch;
   - pull requests from people without write access are never approved automatically;
   - a review that could not see the whole diff never approves.
 - Provider keys and GitHub App secrets are encrypted with AES-256-GCM using `HANS_ENCRYPTION_KEY`.

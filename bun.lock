@@ -72,7 +72,6 @@
     "packages/config": {
       "name": "@hans/config",
       "dependencies": {
-        "yaml": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
@@ -182,7 +181,6 @@
     "drizzle-orm": "^0.45.3",
     "octokit": "^5.0.5",
     "typescript": "^6.0.3",
-    "yaml": "^2.9.1",
     "zod": "^4.6.5",
   },
   "packages": {
