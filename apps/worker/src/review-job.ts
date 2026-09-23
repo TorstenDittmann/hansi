@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { parseRepoConfig, type Env } from '@hans/config';
 import {
 	checkoutPullRequest,
+	diffSince,
 	formatFindingComment,
 	formatReviewBody,
 	runReview,
@@ -32,7 +33,7 @@ import {
 	type ProviderId
 } from '@hans/llm';
 import type { Job } from '@hans/queue';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import type { Logger } from 'pino';
 
 export interface ReviewJobPayload {
@@ -149,18 +150,47 @@ async function executeReview(
 	const repoDir = await mkdtemp(join(workRoot, 'review-'));
 
 	try {
+		const token = await getInstallationToken(octokit);
 		const diff = await checkoutPullRequest({
 			dir: repoDir,
 			cloneUrl: pr.cloneUrl,
-			token: await getInstallationToken(octokit),
+			token,
 			pullNumber: pr.number,
 			baseSha: pr.baseSha,
 			headSha: pr.headSha
 		});
 
+		// On a push, review only the new commits when the last reviewed head is still an ancestor.
+		const history = await loadReviewHistory(db, review);
+		let reviewDiff = diff;
+		let incrementalFrom: string | undefined;
+		if (review.trigger === 'synchronize' && history.lastHeadSha) {
+			const since = await diffSince({
+				dir: repoDir,
+				fromSha: history.lastHeadSha,
+				headSha: pr.headSha,
+				token
+			});
+			if (since !== null) {
+				reviewDiff = since;
+				incrementalFrom = history.lastHeadSha;
+			}
+		}
+		record({
+			type: 'review.mode',
+			data: {
+				incremental: !!incrementalFrom,
+				from: incrementalFrom ?? pr.baseSha,
+				previousFindings: history.findings.length
+			}
+		});
+
 		const result = await runReview({
 			repoDir,
-			diff,
+			diff: reviewDiff,
+			pullRequestDiff: diff,
+			incrementalFrom,
+			previousFindings: history.findings,
 			pullRequest: pr,
 			config,
 			models,
@@ -204,6 +234,7 @@ async function executeReview(
 			posted: result.posted.length,
 			dropped: result.dropped.length,
 			reviewedFiles: result.reviewedFiles.length,
+			incrementalFrom,
 			detailsUrl
 		});
 		const comments = result.posted.map((finding) => ({
@@ -266,6 +297,35 @@ async function executeReview(
 	} finally {
 		await rm(repoDir, { recursive: true, force: true });
 	}
+}
+
+/** The last completed review of this PR, and every finding posted on it so far. */
+async function loadReviewHistory(db: Database, review: typeof schema.reviews.$inferSelect) {
+	const samePullRequest = and(
+		eq(schema.reviews.repositoryId, review.repositoryId),
+		eq(schema.reviews.pullNumber, review.pullNumber),
+		eq(schema.reviews.status, 'completed'),
+		ne(schema.reviews.id, review.id)
+	);
+	const [last] = await db
+		.select({ headSha: schema.reviews.headSha })
+		.from(schema.reviews)
+		.where(samePullRequest)
+		.orderBy(desc(schema.reviews.finishedAt))
+		.limit(1);
+	const findings = await db
+		.select({
+			path: schema.reviewFindings.path,
+			startLine: schema.reviewFindings.startLine,
+			endLine: schema.reviewFindings.endLine,
+			category: schema.reviewFindings.category,
+			title: schema.reviewFindings.title
+		})
+		.from(schema.reviewFindings)
+		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
+		.where(and(samePullRequest, eq(schema.reviewFindings.status, 'posted')))
+		.limit(200);
+	return { lastHeadSha: last?.headSha || undefined, findings };
 }
 
 async function loadModels(db: Database, env: Env, organizationId: string) {

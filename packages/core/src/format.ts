@@ -24,6 +24,7 @@ export function formatReviewBody(input: {
 	posted: number;
 	dropped: number;
 	reviewedFiles: number;
+	incrementalFrom?: string;
 	detailsUrl?: string;
 }): string {
 	const stats =
@@ -31,8 +32,11 @@ export function formatReviewBody(input: {
 			? `No issues found in ${input.reviewedFiles} reviewed file${input.reviewedFiles === 1 ? '' : 's'}.`
 			: `${input.posted} comment${input.posted === 1 ? '' : 's'} on ${input.reviewedFiles} reviewed file${input.reviewedFiles === 1 ? '' : 's'}.`;
 	const filtered = input.dropped
-		? ` ${input.dropped} lower-confidence finding${input.dropped === 1 ? ' was' : 's were'} filtered out.`
+		? ` ${input.dropped} finding${input.dropped === 1 ? ' was' : 's were'} filtered out.`
+		: '';
+	const scope = input.incrementalFrom
+		? `\n\n_Reviewed the commits pushed since \`${input.incrementalFrom.slice(0, 7)}\`._`
 		: '';
 	const details = input.detailsUrl ? `\n\n[Review details](${input.detailsUrl})` : '';
-	return `### hans review\n\n${input.summary}\n\n${stats}${filtered}${details}`;
+	return `### hans review\n\n${input.summary}\n\n${stats}${filtered}${scope}${details}`;
 }

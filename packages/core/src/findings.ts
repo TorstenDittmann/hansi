@@ -43,3 +43,54 @@ export interface DroppedFinding extends Finding {
 export function compareSeverity(a: { severity: Severity }, b: { severity: Severity }) {
 	return severities.indexOf(b.severity) - severities.indexOf(a.severity);
 }
+
+/** A finding posted by an earlier review of the same pull request. */
+export interface PreviousFinding {
+	path: string;
+	startLine: number;
+	endLine: number;
+	category: string;
+	title: string;
+}
+
+function words(text: string) {
+	return new Set(
+		text
+			.toLowerCase()
+			.split(/[^a-z0-9]+/)
+			.filter((word) => word.length >= 3)
+	);
+}
+
+/** Jaccard similarity of the words in two titles. */
+export function titleSimilarity(a: string, b: string): number {
+	const left = words(a);
+	const right = words(b);
+	if (left.size === 0 || right.size === 0) return 0;
+	let shared = 0;
+	for (const word of left) if (right.has(word)) shared++;
+	return shared / (left.size + right.size - shared);
+}
+
+/**
+ * Whether a finding repeats one already posted on this PR: same file, and either a similar title
+ * on nearby lines (code shifts a little between pushes) or the same category on the same lines.
+ * Proximity alone is not enough: a new bug can sit right next to an old one.
+ */
+export function isDuplicateFinding(
+	finding: Finding,
+	previous: PreviousFinding[],
+	lineTolerance = 3
+): boolean {
+	return previous.some((prior) => {
+		if (prior.path !== finding.path) return false;
+		const nearby =
+			finding.startLine <= prior.endLine + lineTolerance &&
+			finding.endLine >= prior.startLine - lineTolerance;
+		const sameLines = finding.startLine === prior.startLine && finding.endLine === prior.endLine;
+		return (
+			(nearby && titleSimilarity(prior.title, finding.title) >= 0.4) ||
+			(sameLines && prior.category === finding.category)
+		);
+	});
+}

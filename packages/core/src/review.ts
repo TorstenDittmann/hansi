@@ -17,7 +17,14 @@ import {
 	type FileDiff
 } from './diff';
 import { filterFiles } from './filters';
-import { compareSeverity, findingSchema, type DroppedFinding, type Finding } from './findings';
+import {
+	compareSeverity,
+	findingSchema,
+	isDuplicateFinding,
+	type DroppedFinding,
+	type Finding,
+	type PreviousFinding
+} from './findings';
 import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
 import { createRepoTools, loadRepoGuidelines, resolveRepoPath, type EmitEvent } from './tools';
 
@@ -38,8 +45,14 @@ export interface ModelCall {
 export interface ReviewInput {
 	/** Checkout of the PR head. */
 	repoDir: string;
-	/** Unified diff of the PR (merge base → head). */
+	/** Diff to review: the whole PR, or only the commits since the last review. */
 	diff: string;
+	/** Full PR diff (merge base → head); comments must land on it. Defaults to `diff`. */
+	pullRequestDiff?: string;
+	/** Set when `diff` only covers commits since this previously reviewed SHA. */
+	incrementalFrom?: string;
+	/** Findings already posted on this PR, so they are not repeated. */
+	previousFindings?: PreviousFinding[];
 	pullRequest: { title: string; body: string; author: string };
 	config: RepoConfig;
 	models: { review: ReviewModel; verify?: ReviewModel };
@@ -76,7 +89,14 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		config.reviews.path_filters
 	);
 	emit({ type: 'files.filtered', data: { included: included.map((f) => f.path), excluded } });
-	if (included.length === 0) return { status: 'skipped', reason: 'No reviewable changes' };
+	if (included.length === 0) {
+		const reason = input.incrementalFrom
+			? 'No new reviewable changes since the last review'
+			: 'No reviewable changes';
+		return { status: 'skipped', reason };
+	}
+	const pullRequestFiles = input.pullRequestDiff ? parseUnifiedDiff(input.pullRequestDiff) : null;
+	const previousFindings = input.previousFindings ?? [];
 
 	// Keep the prompt within budget; files that don't fit are listed but not shown.
 	const shown: FileDiff[] = [];
@@ -107,7 +127,9 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		config,
 		pathInstructions,
 		diff: shown.map(renderFileDiff).join('\n\n'),
-		excludedFiles: excludedPaths
+		excludedFiles: excludedPaths,
+		incrementalFrom: input.incrementalFrom,
+		previousFindings
 	});
 
 	// 1. Review: an agent loop that explores the repo, then submits findings.
@@ -135,12 +157,21 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const { summary, findings } = submissionSchema.parse(submission.input);
 	emit({ type: 'review.submitted', data: { findings: findings.length } });
 
-	// 2. Validate positions: GitHub rejects comments outside the diff.
+	// 2. Validate positions: GitHub rejects comments outside the PR diff. For incremental reviews
+	//    the finding must be on a newly changed line *and* on a line of the full PR diff.
 	const dropped: DroppedFinding[] = [];
 	const positioned = findings.flatMap((finding) => {
-		const placed = placeFinding(finding, shown);
-		if (!placed) dropped.push({ ...finding, dropReason: 'Not on a changed line' });
-		return placed ? [placed] : [];
+		let placed = placeFinding(finding, shown);
+		if (placed && pullRequestFiles) placed = placeFinding(placed, pullRequestFiles);
+		if (!placed) {
+			dropped.push({ ...finding, dropReason: 'Not on a changed line' });
+			return [];
+		}
+		if (isDuplicateFinding(placed, previousFindings)) {
+			dropped.push({ ...placed, dropReason: 'Already reported in an earlier review' });
+			return [];
+		}
+		return [placed];
 	});
 
 	// 3. Severity threshold from `.hans.yml`.

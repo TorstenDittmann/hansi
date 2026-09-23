@@ -47,6 +47,8 @@ export function buildReviewPrompt(input: {
 	pathInstructions: string[];
 	diff: string;
 	excludedFiles: string[];
+	incrementalFrom?: string;
+	previousFindings?: { path: string; startLine: number; endLine: number; title: string }[];
 }): string {
 	const parts = [
 		`<pull_request author="${input.author}">\n<title>${input.title}</title>\n<description>\n${input.body || '(none)'}\n</description>\n</pull_request>`
@@ -62,6 +64,19 @@ export function buildReviewPrompt(input: {
 	if (input.excludedFiles.length) {
 		parts.push(
 			`Files changed but not shown (excluded from review): ${input.excludedFiles.join(', ')}`
+		);
+	}
+	if (input.previousFindings?.length) {
+		const list = input.previousFindings
+			.map((f) => `- ${f.path}:${f.startLine}-${f.endLine} ${f.title}`)
+			.join('\n');
+		parts.push(
+			`<already_reported>\nThese were reported in earlier reviews of this pull request. Do not report them again.\n${list}\n</already_reported>`
+		);
+	}
+	if (input.incrementalFrom) {
+		parts.push(
+			`This is an incremental review. The diff below only contains commits pushed since ${input.incrementalFrom.slice(0, 7)}, which was already reviewed. Use the tools to see the rest of the pull request when needed, but only report problems in the new changes.`
 		);
 	}
 	parts.push(

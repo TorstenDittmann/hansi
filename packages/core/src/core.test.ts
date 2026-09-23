@@ -6,6 +6,7 @@ import { parseRepoConfig } from '@hans/config';
 import { MockLanguageModelV4 } from 'ai/test';
 import { commentableLines, parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
+import { isDuplicateFinding, titleSimilarity } from './findings';
 import { formatFindingComment } from './format';
 import { placeFinding, runReview, type ModelCall } from './review';
 import { resolveRepoPath } from './tools';
@@ -208,5 +209,113 @@ describe('runReview', () => {
 			models: { review: { model: new MockLanguageModelV4(), provider: 'mock', modelId: 'mock-1' } }
 		});
 		expect(result).toEqual({ status: 'skipped', reason: 'No reviewable changes' });
+	});
+
+	test('incremental reviews drop repeats and findings outside the PR diff', async () => {
+		// The increment touches line 3 only; the full PR diff covers lines 1-5 and 21-23.
+		const increment = `diff --git a/src/math.ts b/src/math.ts
+--- a/src/math.ts
++++ b/src/math.ts
+@@ -2,3 +2,3 @@
+   const result = a / b;
+-  return result;
++  return result ?? 0;
+ }
+`;
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Adds a fallback.',
+					findings: [finding(3, 'Nullish fallback hides NaN'), finding(2, 'Division by zero again')]
+				}),
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: true, reason: 'real' }] })
+			]
+		});
+
+		const result = await runReview({
+			repoDir,
+			diff: increment,
+			pullRequestDiff: diff,
+			incrementalFrom: 'abc1234def',
+			previousFindings: [
+				{
+					path: 'src/math.ts',
+					startLine: 2,
+					endLine: 2,
+					category: 'bug',
+					title: 'Division by zero'
+				}
+			],
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => f.title)).toEqual(['Nullish fallback hides NaN']);
+		expect(result.dropped.map((f) => f.dropReason)).toEqual([
+			'Already reported in an earlier review'
+		]);
+		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+		expect(prompt).toContain('incremental review');
+		expect(prompt).toContain('already_reported');
+	});
+
+	test('incremental reviews skip when the increment has nothing reviewable', async () => {
+		const result = await runReview({
+			repoDir,
+			diff: '',
+			incrementalFrom: 'abc1234',
+			pullRequest: { title: 'x', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model: new MockLanguageModelV4(), provider: 'mock', modelId: 'mock-1' } }
+		});
+		expect(result).toEqual({
+			status: 'skipped',
+			reason: 'No new reviewable changes since the last review'
+		});
+	});
+});
+
+describe('isDuplicateFinding', () => {
+	const base = {
+		path: 'a.ts',
+		startLine: 10,
+		endLine: 12,
+		severity: 'major' as const,
+		category: 'bug' as const,
+		title: 'Race condition when saving the cache',
+		body: ''
+	};
+	const prior = { path: 'a.ts', startLine: 10, endLine: 12, category: 'security', title: '' };
+
+	test('matches similar titles on nearby lines', () => {
+		expect(
+			isDuplicateFinding(base, [
+				{ ...prior, startLine: 13, endLine: 13, title: 'Race condition saving cache entries' }
+			])
+		).toBe(true);
+	});
+
+	test('matches the same category on the same lines', () => {
+		expect(isDuplicateFinding(base, [{ ...prior, category: 'bug' }])).toBe(true);
+	});
+
+	test('keeps new problems next to old ones', () => {
+		expect(
+			isDuplicateFinding(base, [{ ...prior, category: 'bug', startLine: 13, endLine: 13 }])
+		).toBe(false);
+		expect(isDuplicateFinding(base, [{ ...prior, title: 'Unvalidated redirect URL' }])).toBe(false);
+	});
+
+	test('ignores other files and distant lines', () => {
+		const similar = { ...prior, title: 'Race condition when saving the cache' };
+		expect(isDuplicateFinding(base, [{ ...similar, path: 'b.ts' }])).toBe(false);
+		expect(isDuplicateFinding(base, [{ ...similar, startLine: 40, endLine: 41 }])).toBe(false);
+	});
+
+	test('titleSimilarity', () => {
+		expect(titleSimilarity('Division by zero', 'division by zero')).toBe(1);
+		expect(titleSimilarity('Division by zero', 'SQL injection')).toBe(0);
 	});
 });

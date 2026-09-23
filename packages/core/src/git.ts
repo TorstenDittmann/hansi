@@ -83,3 +83,35 @@ export async function checkoutPullRequest(options: CheckoutOptions): Promise<str
 		{ cwd: dir, token, signal }
 	);
 }
+
+/**
+ * Diff of the commits since `fromSha` (a previously reviewed head), or `null` when that commit
+ * is gone or no longer an ancestor of `headSha`, e.g. after a force-push or rebase.
+ */
+export async function diffSince(options: {
+	dir: string;
+	fromSha: string;
+	headSha: string;
+	token?: string;
+	signal?: AbortSignal;
+}): Promise<string | null> {
+	const { dir, fromSha, headSha, token, signal } = options;
+	try {
+		await git(['cat-file', '-e', `${fromSha}^{commit}`], { cwd: dir, signal }).catch(() =>
+			git(['fetch', '--quiet', '--no-tags', '--filter=blob:none', 'origin', fromSha], {
+				cwd: dir,
+				token,
+				signal
+			})
+		);
+		await git(['merge-base', '--is-ancestor', fromSha, headSha], { cwd: dir, signal });
+	} catch (error) {
+		if (error instanceof GitError) return null;
+		throw error;
+	}
+	return git(['diff', '--no-color', '--no-ext-diff', '--find-renames', `${fromSha}..${headSha}`], {
+		cwd: dir,
+		token,
+		signal
+	});
+}
