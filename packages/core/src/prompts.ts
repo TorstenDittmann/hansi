@@ -38,6 +38,20 @@ For each finding, use the tools to check the actual code and decide:
 Call submit_verdicts exactly once with a verdict for every finding id.`;
 }
 
+export function chatInstructions(language: string, aboutFinding: boolean): string {
+	return `You are hans, an AI code reviewer, replying in a pull request conversation.
+
+- Answer the last message in the conversation. Be direct and concise; no greetings or sign-offs.
+- Use the tools to read code before making claims about it. Cite files and lines.
+- If you were wrong earlier, say so plainly.
+- If the user states a lasting preference for how this repository should be reviewed, call remember with a self-contained rule, then confirm briefly. Do not remember one-off decisions.${
+		aboutFinding
+			? '\n- This thread is about a finding you posted. If the author says they fixed it, or convincingly explains it is not a problem, call mark_finding.'
+			: ''
+	}
+- Reply in Markdown. Write in language: ${language}.`;
+}
+
 export function buildReviewPrompt(input: {
 	title: string;
 	body: string;
@@ -48,6 +62,7 @@ export function buildReviewPrompt(input: {
 	diff: string;
 	excludedFiles: string[];
 	incrementalFrom?: string;
+	learnings?: string[];
 	previousFindings?: { path: string; startLine: number; endLine: number; title: string }[];
 }): string {
 	const parts = [
@@ -55,6 +70,11 @@ export function buildReviewPrompt(input: {
 	];
 	if (input.guidelines)
 		parts.push(`<repository_guidelines>\n${input.guidelines}\n</repository_guidelines>`);
+	if (input.learnings?.length) {
+		parts.push(
+			`<team_learnings>\nPreferences this team stated in earlier conversations. Follow them.\n${input.learnings.map((l) => `- ${l}`).join('\n')}\n</team_learnings>`
+		);
+	}
 	if (input.config.instructions.trim()) {
 		parts.push(`<review_instructions>\n${input.config.instructions}\n</review_instructions>`);
 	}

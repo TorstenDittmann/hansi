@@ -35,7 +35,7 @@ export interface ReviewModel {
 }
 
 export interface ModelCall {
-	role: 'review' | 'verify';
+	role: 'review' | 'verify' | 'chat';
 	provider: string;
 	modelId: string;
 	usage: LanguageModelUsage;
@@ -53,6 +53,8 @@ export interface ReviewInput {
 	incrementalFrom?: string;
 	/** Findings already posted on this PR, so they are not repeated. */
 	previousFindings?: PreviousFinding[];
+	/** Team preferences from earlier conversations (see `remember` in chat). */
+	learnings?: string[];
 	pullRequest: { title: string; body: string; author: string };
 	config: RepoConfig;
 	models: { review: ReviewModel; verify?: ReviewModel };
@@ -129,6 +131,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		diff: shown.map(renderFileDiff).join('\n\n'),
 		excludedFiles: excludedPaths,
 		incrementalFrom: input.incrementalFrom,
+		learnings: input.learnings,
 		previousFindings
 	});
 

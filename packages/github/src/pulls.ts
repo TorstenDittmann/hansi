@@ -127,3 +127,110 @@ export async function completeCheckRun(
 		output: { title: input.title, summary: input.summary }
 	});
 }
+
+/** Review comments GitHub created for a review, to link findings to their comment ids. */
+export async function listReviewComments(
+	octokit: Octokit,
+	ref: RepoRef,
+	pullNumber: number,
+	reviewId: number
+) {
+	return octokit.paginate(octokit.rest.pulls.listCommentsForReview, {
+		...ref,
+		pull_number: pullNumber,
+		review_id: reviewId,
+		per_page: 100
+	});
+}
+
+export interface ThreadComment {
+	id: number;
+	author: string;
+	body: string;
+	isBot: boolean;
+	path?: string;
+	line?: number | null;
+	diffHunk?: string;
+}
+
+/** A review comment thread: the root comment and its replies, oldest first. */
+export async function getReviewThread(
+	octokit: Octokit,
+	ref: RepoRef,
+	pullNumber: number,
+	rootCommentId: number
+): Promise<ThreadComment[]> {
+	const comments = await octokit.paginate(octokit.rest.pulls.listReviewComments, {
+		...ref,
+		pull_number: pullNumber,
+		per_page: 100
+	});
+	return comments
+		.filter((c) => c.id === rootCommentId || c.in_reply_to_id === rootCommentId)
+		.sort((a, b) => a.created_at.localeCompare(b.created_at))
+		.map((c) => ({
+			id: c.id,
+			author: c.user?.login ?? 'unknown',
+			body: c.body,
+			isBot: c.user?.type === 'Bot',
+			path: c.path,
+			line: c.line ?? c.original_line ?? null,
+			diffHunk: c.diff_hunk
+		}));
+}
+
+/** The most recent conversation comments on a pull request, oldest first. */
+export async function getRecentIssueComments(
+	octokit: Octokit,
+	ref: RepoRef,
+	issueNumber: number,
+	limit = 20
+): Promise<ThreadComment[]> {
+	const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+		...ref,
+		issue_number: issueNumber,
+		per_page: 100
+	});
+	return comments.slice(-limit).map((c) => ({
+		id: c.id,
+		author: c.user?.login ?? 'unknown',
+		body: c.body ?? '',
+		isBot: c.user?.type === 'Bot'
+	}));
+}
+
+export async function replyToReviewComment(
+	octokit: Octokit,
+	ref: RepoRef,
+	pullNumber: number,
+	commentId: number,
+	body: string
+) {
+	await octokit.rest.pulls.createReplyForReviewComment({
+		...ref,
+		pull_number: pullNumber,
+		comment_id: commentId,
+		body
+	});
+}
+
+/** Acknowledges a comment with 👀 so people know hans is working on it. */
+export async function acknowledgeComment(
+	octokit: Octokit,
+	ref: RepoRef,
+	comment: { id: number; kind: 'issue' | 'review' }
+) {
+	if (comment.kind === 'issue') {
+		await octokit.rest.reactions.createForIssueComment({
+			...ref,
+			comment_id: comment.id,
+			content: 'eyes'
+		});
+	} else {
+		await octokit.rest.reactions.createForPullRequestReviewComment({
+			...ref,
+			comment_id: comment.id,
+			content: 'eyes'
+		});
+	}
+}

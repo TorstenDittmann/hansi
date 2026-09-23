@@ -29,6 +29,7 @@
 				<nav class="flex items-center gap-4 text-sm">
 					<a href={resolve('/app')} class="hover:underline">Overview</a>
 					<a href={resolve('/app/settings/models')} class="hover:underline">Models</a>
+					<a href={resolve('/app/settings/learnings')} class="hover:underline">Learnings</a>
 					<a href={resolve('/app/settings/members')} class="hover:underline">Members</a>
 					<span class="muted hidden sm:inline">{data.user.name}</span>
 					<button type="button" class="btn" onclick={signOut}>Sign out</button>

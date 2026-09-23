@@ -1,5 +1,5 @@
 import { schema, type Database, type ReviewTrigger } from '@hans/db';
-import type { Queue } from '@hans/queue';
+import { queues, type ChatJobPayload, type Queue, type ReviewJobPayload } from '@hans/queue';
 import { and, eq } from 'drizzle-orm';
 
 export interface EnqueueReviewInput {
@@ -28,10 +28,15 @@ export async function enqueueReview(db: Database, queue: Queue, input: EnqueueRe
 		);
 
 	const [review] = await db.insert(schema.reviews).values(input).returning();
-	await queue.send(
-		'review',
+	await queue.send<ReviewJobPayload>(
+		queues.review,
 		{ reviewId: review!.id },
 		{ singletonKey: `${input.repositoryId}:${input.pullNumber}` }
 	);
 	return review!;
+}
+
+/** Queues an answer to a comment. Chat jobs are never deduplicated: every question gets a reply. */
+export async function enqueueChat(queue: Queue, payload: ChatJobPayload) {
+	await queue.send<ChatJobPayload>(queues.chat, payload, { maxAttempts: 2 });
 }

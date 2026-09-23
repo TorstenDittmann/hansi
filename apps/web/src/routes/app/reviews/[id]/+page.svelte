@@ -5,7 +5,8 @@
 
 	let { data } = $props();
 	const review = $derived(data.review);
-	const posted = $derived(review.findings.filter((f) => f.status === 'posted'));
+	// Posted findings stay listed after a conversation resolves or dismisses them.
+	const posted = $derived(review.findings.filter((f) => f.status !== 'dropped'));
 	const dropped = $derived(review.findings.filter((f) => f.status === 'dropped'));
 </script>
 
@@ -56,13 +57,18 @@
 						<span class="font-mono">{finding.path}:{finding.startLine}-{finding.endLine}</span>
 						<span class="badge bg-stone-100 dark:bg-stone-800">{finding.severity}</span>
 						<span class="badge bg-stone-100 dark:bg-stone-800">{finding.category}</span>
+						{#if finding.status === 'resolved' || finding.status === 'dismissed'}
+							<StatusBadge status={finding.status} />
+						{/if}
 					</div>
 					<p class="mt-2 font-medium">{finding.title}</p>
 					<p class="mt-1 text-sm whitespace-pre-wrap text-stone-700 dark:text-stone-300">
 						{finding.body}
 					</p>
 					{#if finding.dropReason}
-						<p class="muted mt-2">Dropped: {finding.dropReason}</p>
+						<p class="muted mt-2">
+							{finding.status === 'dropped' ? 'Dropped' : 'Reason'}: {finding.dropReason}
+						</p>
 					{/if}
 				</li>
 			{/each}

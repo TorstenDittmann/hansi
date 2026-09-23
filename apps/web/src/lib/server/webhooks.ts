@@ -1,9 +1,9 @@
 import { schema } from '@hans/db';
-import { botMention, verifyWebhookSignature } from '@hans/github';
+import { classifyMention, verifyWebhookSignature } from '@hans/github';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { getContext, getGitHubCredentials } from './context';
 import { removeRepositories, upsertInstallation, upsertRepositories } from './installations';
-import { enqueueReview } from './reviews';
+import { enqueueChat, enqueueReview } from './jobs';
 
 // Only the payload fields hans reads. Full types: @octokit/openapi-webhooks-types.
 interface Account {
@@ -24,7 +24,15 @@ type Payload = {
 	repository?: Repo;
 	pull_request?: { number: number; draft: boolean; head: { sha: string } };
 	issue?: { number: number; pull_request?: unknown };
-	comment?: { body: string; author_association: string; user: { type: string } };
+	comment?: {
+		id: number;
+		body: string;
+		html_url: string;
+		author_association: string;
+		user: { login: string; type: string };
+		/** Review comments only: the thread's first comment when this is a reply. */
+		in_reply_to_id?: number;
+	};
 };
 
 /** Commenters allowed to trigger a review: BYOK keys are spent on every review. */
@@ -110,26 +118,56 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 			break;
 		}
 
-		case 'issue_comment': {
-			const { issue, comment } = payload;
-			if (payload.action !== 'created' || !issue?.pull_request || !comment || !payload.repository) {
-				break;
-			}
+		case 'issue_comment':
+		case 'pull_request_review_comment': {
+			const { comment } = payload;
+			const pullNumber =
+				event === 'issue_comment'
+					? payload.issue?.pull_request
+						? payload.issue.number
+						: undefined
+					: payload.pull_request?.number;
+			if (payload.action !== 'created' || !comment || !pullNumber || !payload.repository) break;
+			// Every answer spends the workspace's API credits; only trusted people can ask.
 			if (comment.user.type === 'Bot' || !TRUSTED_ASSOCIATIONS.has(comment.author_association)) {
 				break;
 			}
-			const mention = new RegExp(`${escapeRegExp(botMention(credentials))}\\s+review\\b`, 'i');
-			if (!mention.test(comment.body)) break;
 
 			const repo = await findActiveRepository(payload.repository.id);
 			if (!repo) break;
-			await enqueueReview(db, queue, {
-				organizationId: repo.organizationId,
-				repositoryId: repo.id,
-				pullNumber: issue.number,
-				headSha: '',
-				trigger: 'mention'
-			});
+
+			const isReviewThread = event === 'pull_request_review_comment';
+			const rootCommentId = isReviewThread ? (comment.in_reply_to_id ?? comment.id) : undefined;
+			let intent = classifyMention(comment.body, credentials.slug);
+			// Replying to one of hans's findings is a conversation, even without a mention.
+			if (
+				!intent &&
+				rootCommentId &&
+				(await isFindingComment(repo.organizationId, rootCommentId))
+			) {
+				intent = 'chat';
+			}
+
+			if (intent === 'review') {
+				await enqueueReview(db, queue, {
+					organizationId: repo.organizationId,
+					repositoryId: repo.id,
+					pullNumber,
+					headSha: '',
+					trigger: 'mention'
+				});
+			} else if (intent === 'chat') {
+				await enqueueChat(queue, {
+					organizationId: repo.organizationId,
+					repositoryId: repo.id,
+					pullNumber,
+					commentId: comment.id,
+					kind: isReviewThread ? 'review' : 'issue',
+					rootCommentId,
+					author: comment.user.login,
+					commentUrl: comment.html_url
+				});
+			}
 			break;
 		}
 	}
@@ -162,10 +200,23 @@ async function findActiveRepository(repositoryId: number) {
 	return { id: row.id, organizationId: row.organizationId };
 }
 
-function toRepo(repo: Repo) {
-	return { id: repo.id, fullName: repo.full_name, private: repo.private };
+/** Whether a GitHub review comment is one of the findings hans posted for this organization. */
+async function isFindingComment(organizationId: string, commentId: number) {
+	const { db } = await getContext();
+	const [row] = await db
+		.select({ id: schema.reviewFindings.id })
+		.from(schema.reviewFindings)
+		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
+		.where(
+			and(
+				eq(schema.reviewFindings.githubCommentId, commentId),
+				eq(schema.reviews.organizationId, organizationId)
+			)
+		)
+		.limit(1);
+	return !!row;
 }
 
-function escapeRegExp(value: string) {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function toRepo(repo: Repo) {
+	return { id: repo.id, fullName: repo.full_name, private: repo.private };
 }

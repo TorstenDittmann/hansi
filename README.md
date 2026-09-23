@@ -9,6 +9,10 @@ Anthropic, xAI, Google, OpenRouter, or any OpenAI-compatible endpoint (Ollama, v
 - **Transparent.** Every review records which files the agent read, what it searched for, token
   usage, and cost per model call.
 - **Runs anywhere.** One Docker image and a libSQL database file. No Redis, no Postgres.
+- **Conversational.** Ask `@hans` anything in a pull request, or reply to one of its comments.
+  When you state a preference ("we don't flag this in tests"), hans remembers it for future
+  reviews. Replies also record whether a finding was fixed or dismissed.
+- **Incremental.** New pushes are reviewed on their own, and earlier comments are never repeated.
 - **Config as code.** `.hans.yml` in the repository, plus `AGENTS.md`, `CLAUDE.md`,
   `.cursorrules`, and `.github/copilot-instructions.md` as review guidelines.
 
@@ -29,7 +33,8 @@ Then open `APP_URL/setup`:
 3. Under **Models**, add a provider key and choose a model for the `review` role (and optionally a
    different one for `verify`).
 
-Open a pull request, or comment `@<app-name> review` on one.
+Open a pull request, or comment `@<app-name> review` on one. Mention `@<app-name>` with a
+question, or reply to one of its comments, to start a conversation.
 
 Sign-ups are restricted by default: the first person to sign in owns the instance. Let teammates
 in by adding their GitHub logins to `ALLOWED_GITHUB_USERS` or inviting them to the workspace. Set

@@ -217,3 +217,24 @@ export const webhookDeliveries = sqliteTable('webhook_deliveries', {
 	event: text('event').notNull(),
 	receivedAt: createdAt
 });
+
+/**
+ * Team preferences learned from conversations ("we don't flag X in tests"). Injected into future
+ * review prompts. `repositoryId` null means the learning applies to every repository.
+ */
+export const learnings = sqliteTable(
+	'learnings',
+	{
+		id: id(),
+		organizationId: organizationId(),
+		repositoryId: integer('repository_id').references(() => repositories.id, {
+			onDelete: 'cascade'
+		}),
+		body: text('body').notNull(),
+		/** GitHub login of the person whose comment produced this learning. */
+		author: text('author'),
+		sourceUrl: text('source_url'),
+		createdAt
+	},
+	(t) => [index('learnings_org_repo_idx').on(t.organizationId, t.repositoryId)]
+);

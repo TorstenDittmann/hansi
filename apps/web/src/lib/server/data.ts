@@ -189,3 +189,43 @@ export async function clearModelAssignment(organizationId: string, role: ModelRo
 			)
 		);
 }
+
+export async function listLearnings(organizationId: string) {
+	const { db } = await getContext();
+	return db
+		.select({
+			id: schema.learnings.id,
+			body: schema.learnings.body,
+			author: schema.learnings.author,
+			sourceUrl: schema.learnings.sourceUrl,
+			repository: schema.repositories.fullName,
+			createdAt: schema.learnings.createdAt
+		})
+		.from(schema.learnings)
+		.leftJoin(schema.repositories, eq(schema.repositories.id, schema.learnings.repositoryId))
+		.where(eq(schema.learnings.organizationId, organizationId))
+		.orderBy(desc(schema.learnings.createdAt));
+}
+
+export async function addLearning(
+	organizationId: string,
+	input: { body: string; repositoryId: number | null; author: string | null }
+) {
+	const { db } = await getContext();
+	if (input.repositoryId !== null) {
+		const repositories = await listRepositories(organizationId);
+		if (!repositories.some((repo) => repo.id === input.repositoryId)) {
+			throw new Error('Unknown repository');
+		}
+	}
+	await db.insert(schema.learnings).values({ organizationId, ...input });
+}
+
+export async function deleteLearning(organizationId: string, learningId: string) {
+	const { db } = await getContext();
+	await db
+		.delete(schema.learnings)
+		.where(
+			and(eq(schema.learnings.id, learningId), eq(schema.learnings.organizationId, organizationId))
+		);
+}

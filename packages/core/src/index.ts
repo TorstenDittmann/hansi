@@ -1,3 +1,4 @@
+export * from './chat';
 export * from './diff';
 export * from './filters';
 export * from './findings';

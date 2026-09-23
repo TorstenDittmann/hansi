@@ -9,7 +9,9 @@
 		skipped: 'bg-stone-100 text-stone-500 dark:bg-stone-900 dark:text-stone-400',
 		superseded: 'bg-stone-100 text-stone-500 dark:bg-stone-900 dark:text-stone-400',
 		posted: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-		dropped: 'bg-stone-100 text-stone-500 dark:bg-stone-900 dark:text-stone-400'
+		dropped: 'bg-stone-100 text-stone-500 dark:bg-stone-900 dark:text-stone-400',
+		resolved: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+		dismissed: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
 	};
 </script>
 
