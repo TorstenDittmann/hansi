@@ -8,6 +8,7 @@
 	import openrouterLogo from '$lib/assets/providers/openrouter.svg';
 	import xaiLogo from '$lib/assets/providers/xai.svg';
 	import AsciiHansi from '$lib/components/AsciiHansi.svelte';
+	import Logo from '$lib/components/Logo.svelte';
 
 	let { data } = $props();
 
@@ -123,12 +124,9 @@
 	<header class="mx-auto flex h-18 max-w-[70rem] items-center justify-between px-4 sm:px-6">
 		<a
 			href={resolve('/')}
-			class="flex items-baseline gap-2 font-display text-xl font-bold tracking-[-0.04em] {focus}"
+			class="flex items-center gap-2.5 font-display text-xl font-bold tracking-[-0.04em] {focus}"
 		>
-			Hansi<span
-				class="font-mono text-sm font-medium tracking-normal text-stone-400 [font-variant-ligatures:none]"
-				aria-hidden="true">=^.^=</span
-			>
+			<Logo class="size-6" />Hansi
 		</a>
 		<nav aria-label="Main" class="flex items-center gap-7">
 			<a href="#pricing" class="hidden sm:inline {navLink}">Pricing</a>
@@ -461,11 +459,8 @@
 	<footer
 		class="mx-auto flex max-w-[70rem] items-center justify-between border-t border-stone-200 px-4 py-8 sm:px-6 dark:border-stone-800"
 	>
-		<span class="flex items-baseline gap-2 font-display text-lg font-bold tracking-[-0.04em]"
-			>Hansi<span
-				class="font-mono text-sm font-medium tracking-normal text-stone-400 [font-variant-ligatures:none]"
-				aria-hidden="true">=^.^=</span
-			></span
+		<span class="flex items-center gap-2 font-display text-lg font-bold tracking-[-0.04em]"
+			><Logo class="size-5" />Hansi</span
 		>
 		<a href={start} class={navLink}>Sign in</a>
 	</footer>

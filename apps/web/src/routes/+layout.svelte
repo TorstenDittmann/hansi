@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import favicon from '$lib/assets/favicon.svg';
+	import Logo from '$lib/components/Logo.svelte';
 	import { authClient } from '$lib/auth-client';
 
 	let { data, children } = $props();
@@ -35,12 +36,9 @@
 				<div class="flex items-center gap-4">
 					<a
 						href={data.user ? resolve('/app') : resolve('/')}
-						class="flex items-baseline gap-2 text-lg font-bold tracking-tight"
+						class="flex items-center gap-2 text-lg font-bold tracking-tight"
 					>
-						Hansi<span
-							class="font-mono text-sm font-medium text-stone-400 [font-variant-ligatures:none]"
-							aria-hidden="true">=^.^=</span
-						>
+						<Logo class="size-5" />Hansi
 					</a>
 					{#if activeOrganization && organizations.length}
 						<form method="post" action="/app/organizations/switch" class="flex items-center gap-2">
