@@ -2,7 +2,16 @@
 // Lets a self-hoster create a correctly configured GitHub App with one click.
 import type { GitHubAppCredentials } from './credentials';
 
-export function buildAppManifest(publicUrl: string, name: string) {
+export interface ManifestOptions {
+	/**
+	 * GitHub only counts approvals toward required reviews from reviewers with write access, so
+	 * hans's approvals count only with `contents: write`. Off by default: hans never writes code,
+	 * and it would let an AI approval alone satisfy a required review.
+	 */
+	countApprovals?: boolean;
+}
+
+export function buildAppManifest(publicUrl: string, name: string, options: ManifestOptions = {}) {
 	const base = publicUrl.replace(/\/+$/, '');
 	return {
 		name,
@@ -15,7 +24,7 @@ export function buildAppManifest(publicUrl: string, name: string) {
 		public: false,
 		default_permissions: {
 			metadata: 'read',
-			contents: 'read',
+			contents: options.countApprovals ? 'write' : 'read',
 			pull_requests: 'write',
 			issues: 'write',
 			checks: 'write',

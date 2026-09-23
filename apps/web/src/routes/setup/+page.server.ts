@@ -27,6 +27,9 @@ export const load: PageServerLoad = async ({ cookies }) => {
 		publicUrl,
 		isLocal: /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(publicUrl),
 		defaultName: `hans-${suffix}`,
-		manifest: buildAppManifest(publicUrl, `hans-${suffix}`)
+		manifests: {
+			advisory: buildAppManifest(publicUrl, `hans-${suffix}`),
+			countingApprovals: buildAppManifest(publicUrl, `hans-${suffix}`, { countApprovals: true })
+		}
 	};
 };

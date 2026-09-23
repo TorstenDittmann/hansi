@@ -4,9 +4,14 @@
 
 	let appName = $state('');
 	let organization = $state('');
+	let countApprovals = $state(false);
 
 	const name = $derived(appName.trim() || (data.configured ? '' : data.defaultName));
-	const manifest = $derived(data.configured ? '' : JSON.stringify({ ...data.manifest, name }));
+	const manifest = $derived.by(() => {
+		if (data.configured) return '';
+		const base = countApprovals ? data.manifests.countingApprovals : data.manifests.advisory;
+		return JSON.stringify({ ...base, name });
+	});
 	const action = $derived.by(() => {
 		if (data.configured) return '';
 		const base = organization.trim()
@@ -66,6 +71,23 @@
 					placeholder="Leave empty to create it on your personal account"
 					bind:value={organization}
 				/>
+			</div>
+			<div class="flex gap-3">
+				<input
+					id="count-approvals"
+					type="checkbox"
+					class="mt-1 rounded border-stone-300 dark:border-stone-700"
+					bind:checked={countApprovals}
+				/>
+				<label for="count-approvals" class="text-sm">
+					<span class="font-medium">Let hans's approvals count toward required reviews</span>
+					<span class="muted block">
+						GitHub only counts approvals from reviewers with write access, so this gives the app
+						write access to code. hans never pushes code, but anyone with the app's key could. With
+						one required approval, hans alone could then approve a merge. Without this, use the
+						<code>hans</code> check run to gate merges.
+					</span>
+				</label>
 			</div>
 			<input type="hidden" name="manifest" value={manifest} />
 			<button type="submit" class="btn btn-primary">Create GitHub App</button>

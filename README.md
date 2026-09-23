@@ -122,6 +122,14 @@ grades the PR, but open findings cap the tier (a major finding means at most **C
 at most **D**). The `hans` check run follows the verdict (success, failure, or neutral), so you
 can make it a required check to block merging.
 
+**Do hans's approvals count toward required reviews?** Only if the app has write access to code:
+GitHub counts approvals from reviewers with write access, and otherwise lists hans under
+"Reviewers whose approvals may not affect merge requirements". By default the app gets read-only
+access to code: hans never pushes code, and write access would let an AI approval alone satisfy a
+required review. To opt in, tick the box on the setup page, or for an existing app set
+**Repository permissions → Contents** to **Read and write** in the GitHub App settings and accept
+the updated permissions on each installation. Without it, gate merges on the `hans` check run.
+
 ## Architecture
 
 ```
