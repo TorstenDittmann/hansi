@@ -21,12 +21,12 @@ export const DEFAULT_LAYOUT: Layout = { cols: 88, catCol: 44 };
 /** A canvas `cols` wide with the cat near the right edge (centered when the canvas is narrow). */
 export function layoutFor(cols: number): Layout {
 	const width = Math.max(1, cols);
-	// Wide canvases leave fly-room on the left; below the default width, keep the cat on screen.
-	const catCol =
-		width >= DEFAULT_LAYOUT.cols
-			? Math.max(44, width - 44)
-			: Math.max(1, Math.min(44, Math.round(width / 2)));
-	return { cols: width, catCol };
+	// Wider than the default: shift the cat right so the fly has room on the left.
+	// At or below default width: center so the whole body stays on screen on phones.
+	if (width > DEFAULT_LAYOUT.cols) {
+		return { cols: width, catCol: width - 44 };
+	}
+	return { cols: width, catCol: Math.max(1, Math.round(width / 2)) };
 }
 
 export type Vec = { x: number; y: number };
