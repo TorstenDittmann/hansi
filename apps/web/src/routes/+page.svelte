@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import '@fontsource-variable/martian-mono';
+	import anthropicLogo from '$lib/assets/providers/anthropic.svg';
+	import bedrockLogo from '$lib/assets/providers/bedrock.svg';
+	import geminiLogo from '$lib/assets/providers/gemini.svg';
+	import openaiLogo from '$lib/assets/providers/openai.svg';
+	import openrouterLogo from '$lib/assets/providers/openrouter.svg';
+	import xaiLogo from '$lib/assets/providers/xai.svg';
 	import AsciiHansi from '$lib/components/AsciiHansi.svelte';
 
 	let { data } = $props();
@@ -22,19 +28,15 @@
 		}
 	];
 
-	const steps = [
-		{
-			title: 'Install Hansi on GitHub',
-			body: 'Pick the repositories Hansi should review. It needs read access to code and write access to pull requests.'
-		},
-		{
-			title: 'Add your model key',
-			body: 'Paste a key from OpenAI, Anthropic, xAI, Google, or OpenRouter, and choose the model Hansi should use.'
-		},
-		{
-			title: 'Open a pull request',
-			body: 'Hansi reviews it within minutes, and again on every push. Mention @hansi in a comment to ask it anything.'
-		}
+	// Logos are static SVG files from $lib/assets/providers (MIT, LobeHub Icons), drawn as masks
+	// so they take the text color in light and dark mode.
+	const providerLogos = [
+		{ name: 'OpenAI', logo: openaiLogo },
+		{ name: 'Anthropic', logo: anthropicLogo },
+		{ name: 'Amazon Bedrock', logo: bedrockLogo },
+		{ name: 'Google Gemini', logo: geminiLogo },
+		{ name: 'xAI', logo: xaiLogo },
+		{ name: 'OpenRouter', logo: openrouterLogo }
 	];
 
 	const plan = [
@@ -80,7 +82,7 @@
 	<title>Hansi: AI code review that catches real bugs</title>
 	<meta
 		name="description"
-		content="Hansi is an AI code reviewer for GitHub. It reads every pull request, catches real bugs, approves the rest, and grades each one from S to F. Free during the beta."
+		content="AI code review for GitHub that runs on your own model key: OpenAI, Anthropic, Amazon Bedrock, OpenRouter, and more. It catches real bugs, approves the rest, and grades each pull request from S to F."
 	/>
 </svelte:head>
 
@@ -147,13 +149,13 @@
 					Curious about your code.
 				</h1>
 				<p class="mt-6 max-w-[36rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
-					Hansi is an AI code reviewer for GitHub. It reads every pull request, catches real bugs,
-					and approves the rest. No nitpicks, no walls of comments.
+					AI code review for GitHub that runs on your own model key: OpenAI, Anthropic, Bedrock,
+					OpenRouter, and more. It catches real bugs and approves the rest.
 				</p>
 				<div class="mt-9 flex flex-wrap items-center gap-5">
 					<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
 					<span class="text-[0.95rem] text-stone-500 dark:text-stone-400">
-						Free during the beta. Bring your own model key.
+						Free during the beta.
 					</span>
 				</div>
 			</div>
@@ -353,22 +355,25 @@
 		</section>
 
 		<section
+			id="providers"
 			class="border-t border-stone-200 py-20 dark:border-stone-800"
-			aria-labelledby="how-title"
+			aria-labelledby="providers-title"
 		>
-			<h2 id="how-title" class={sectionTitle}>Up and running in three steps</h2>
-			<ol class="mt-10 grid gap-8 md:grid-cols-3 md:gap-12">
-				{#each steps as step, i (step.title)}
-					<li class="min-w-0">
+			<h2 id="providers-title" class={sectionTitle}>Bring your own model</h2>
+			<ul class="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3">
+				{#each providerLogos as provider (provider.name)}
+					<li
+						class="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-4 dark:border-stone-800 dark:bg-stone-900"
+					>
 						<span
-							class="grid size-8 place-items-center rounded-full border border-stone-200 text-sm font-semibold text-stone-900 dark:border-stone-800 dark:text-stone-100"
-							>{i + 1}</span
-						>
-						<h3 class="mt-4 font-display text-base font-bold tracking-[-0.02em]">{step.title}</h3>
-						<p class="mt-1.5 text-stone-500 dark:text-stone-400">{step.body}</p>
+							class="size-7 shrink-0 bg-current [mask-image:var(--logo)] [mask-size:contain] [mask-position:center] [mask-repeat:no-repeat] [-webkit-mask-image:var(--logo)] [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:contain]"
+							style="--logo: url({JSON.stringify(provider.logo)})"
+							aria-hidden="true"
+						></span>
+						<span class="min-w-0 font-semibold">{provider.name}</span>
 					</li>
 				{/each}
-			</ol>
+			</ul>
 		</section>
 
 		<section
