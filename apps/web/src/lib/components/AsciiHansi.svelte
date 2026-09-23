@@ -4,6 +4,7 @@
 		canReach,
 		cellToWorld,
 		DEFAULT_LAYOUT,
+		idleScene,
 		layoutFor,
 		pawPosition,
 		render,
@@ -14,7 +15,8 @@
 	} from '$lib/hansi/engine';
 
 	// Hansi the cat, on a canvas as wide as its container. A fly follows the pointer across the
-	// canvas; when it comes within reach, the cat stalks it and swipes.
+	// canvas; when it comes within reach, the cat stalks it and swipes. Left alone, the cat does
+	// cat things: twitches an ear, blinks slowly, looks around, yawns, grooms a paw.
 	let { class: className = '' } = $props();
 
 	/** How long the cat stalks a fly in reach before swiping (random in this range). */
@@ -30,28 +32,32 @@
 	const FLY_DAMPING = 9;
 	const FLY_MAX_SPEED = 150;
 
-	let pre: HTMLPreElement | undefined = $state();
+	const MISS_PUZZLE_SECONDS = 1.3;
+	/** Idle behaviors: how often each is picked, and how long it takes. */
+	const IDLE_ACTIONS = [
+		{ kind: 'twitch', weight: 0.35, seconds: 0.45 },
+		{ kind: 'slowBlink', weight: 0.25, seconds: 1.4 },
+		{ kind: 'lookAround', weight: 0.15, seconds: 2.2 },
+		{ kind: 'yawn', weight: 0.12, seconds: 2.4 },
+		{ kind: 'groom', weight: 0.13, seconds: 3.6 }
+	] as const;
+	type IdleAction = {
+		kind: (typeof IDLE_ACTIONS)[number]['kind'];
+		start: number;
+		seconds: number;
+		side: 0 | 1;
+	};
 
-	const idle = (time: number): Scene => ({
-		time,
-		target: null,
-		fly: null,
-		trail: [],
-		swipe: 0,
-		swipeTarget: null,
-		crouch: 0,
-		tailPhase: time * 1.6,
-		tailEnergy: 0,
-		blink: false,
-		happy: false
-	});
+	let ink: HTMLPreElement | undefined = $state();
+	let fur: HTMLPreElement | undefined = $state();
 
 	// Server-rendered first frame at the default width; lines are right-aligned, so the cat sits
 	// where the full-width canvas will draw the cat.
-	const firstFrame = render(idle(0), DEFAULT_LAYOUT);
+	const firstFrame = render(idleScene(0), DEFAULT_LAYOUT);
 
 	onMount(() => {
-		const element = pre!;
+		const element = ink!;
+		const furElement = fur!;
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
 		const random = (range: [number, number]) => range[0] + Math.random() * (range[1] - range[0]);
@@ -72,6 +78,12 @@
 		let blinkUntil = 0;
 		let nextBlink = 2 + Math.random() * 3;
 		let crouch = 0;
+		let missedAt = -10;
+		let action: IdleAction | null = null;
+		let nextAction = 3 + Math.random() * 3;
+		/** When the pointer last moved, to notice a fly holding still. */
+		let pointerMovedAt = 0;
+		let tilt = 0;
 		let tailPhase = 0;
 		let tailEnergy = 0;
 		let visible = true;
@@ -126,6 +138,7 @@
 						layout
 					)
 				: null;
+			pointerMovedAt = performance.now();
 		};
 		const onPointerLeave = () => (pointer = null);
 
@@ -203,6 +216,8 @@
 					swipeStart = -1;
 					swipeAim = null;
 					cooldownUntil = time + MISS_COOLDOWN_SECONDS;
+					// Still a fly around after the swipe: it got away. Look at the paw, puzzled.
+					if (fly) missedAt = time;
 				}
 			} else if (target && time > cooldownUntil && canReach(target)) {
 				stalk += dt;
@@ -225,9 +240,53 @@
 			// The phase advances by the current speed, so changing speed never makes the tail jump.
 			tailPhase += dt * (1.6 + tailEnergy * 1.4);
 
+			// Idle behaviors, one at a time. A fly or a swipe interrupts the ones that need calm.
+			const busy = !!target || swipeStart >= 0 || celebrating;
+			if (action && (time > action.start + action.seconds || (busy && action.kind !== 'twitch'))) {
+				action = null;
+				nextAction = time + 2.5 + Math.random() * 3.5;
+			}
+			if (!action && time > nextAction) {
+				const options = busy ? IDLE_ACTIONS.filter((a) => a.kind === 'twitch') : IDLE_ACTIONS;
+				let pick = Math.random() * options.reduce((sum, a) => sum + a.weight, 0);
+				const chosen = options.find((a) => (pick -= a.weight) <= 0) ?? options[0]!;
+				action = {
+					kind: chosen.kind,
+					start: time,
+					seconds: chosen.seconds,
+					side: Math.random() < 0.5 ? 0 : 1
+				};
+			}
+			const progress = action ? (time - action.start) / action.seconds : 0;
+			const doing = (kind: IdleAction['kind']) => action?.kind === kind;
+			// Up quickly, down slowly: a flick.
+			const flick = progress < 0.3 ? progress / 0.3 : 1 - (progress - 0.3) / 0.7;
+			const swell = Math.sin(Math.PI * Math.min(progress, 1));
+
+			// Head tilt: while looking around, or at a fly that holds still out of reach.
+			const flyStill = !!target && performance.now() - pointerMovedAt > 700 && stalk < 0.2;
+			const tiltGoal = doing('lookAround')
+				? swell * (action!.side ? 0.12 : -0.12)
+				: flyStill
+					? Math.sign(target!.x || 1) * 0.1
+					: 0;
+			tilt = approach(tilt, tiltGoal, 5);
+
+			const puzzled = time < missedAt + MISS_PUZZLE_SECONDS && !celebrating;
+			const ears: [number, number] = puzzled
+				? [0.35, 0.35]
+				: doing('twitch')
+					? action!.side
+						? [0, flick]
+						: [flick, 0]
+					: doing('yawn')
+						? [0.4 * swell, 0.4 * swell]
+						: [0, 0];
+			const lickingLips = celebrating && time > celebrateUntil - CELEBRATE_SECONDS + 0.8;
+
 			const scene: Scene = {
-				time,
-				target,
+				...idleScene(time),
+				target: puzzled ? { x: 8, y: 30 } : target,
 				fly: target,
 				trail: target ? trail : [],
 				swipe,
@@ -235,8 +294,28 @@
 				crouch,
 				tailPhase,
 				tailEnergy,
-				blink: time < blinkUntil,
-				happy: celebrating
+				eyes: celebrating
+					? 'happy'
+					: doing('yawn') ||
+						  doing('groom') ||
+						  (doing('slowBlink') && progress > 0.2 && progress < 0.8)
+						? 'closed'
+						: time < blinkUntil
+							? 'blink'
+							: 'open',
+				mouth: lickingLips
+					? 'lick'
+					: celebrating
+						? 'happy'
+						: doing('yawn') && progress > 0.15 && progress < 0.85
+							? 'yawn'
+							: 'rest',
+				tilt,
+				ears,
+				// The wiggle before a pounce, once the crouch is deep.
+				wiggle: stalk > 0 && crouch > 0.5 ? Math.sin(time * 16) * (crouch - 0.5) * 2 : 0,
+				groom: doing('groom') ? Math.max(progress, 0.001) : 0,
+				puzzled
 			};
 
 			// At the top of the swipe, see whether the paw landed on the fly.
@@ -258,7 +337,9 @@
 				nextBlink = time + 2.5 + Math.random() * 4;
 			}
 
-			element.textContent = render(scene, layout);
+			const frameText = render(scene, layout);
+			element.textContent = frameText.ink;
+			furElement.textContent = frameText.fur;
 		};
 
 		// Pause while scrolled out of view.
@@ -278,8 +359,18 @@
 	});
 </script>
 
-<pre
-	bind:this={pre}
-	class="overflow-hidden text-right font-mono leading-none whitespace-pre text-stone-800 select-none [font-variant-ligatures:none] dark:text-stone-200 {className}"
+<!-- Two layers of the same size: fur shading underneath, lines and face on top. -->
+<div
+	class="relative font-mono leading-none whitespace-pre select-none [font-variant-ligatures:none] {className}"
 	role="img"
-	aria-label="Hansi the cat. Move your pointer nearby: a fly follows it, and Hansi tries to catch the fly.">{firstFrame}</pre>
+	aria-label="Hansi the cat. Move your pointer nearby: a fly follows it, and Hansi tries to catch the fly."
+>
+	<pre
+		bind:this={fur}
+		class="absolute inset-0 overflow-hidden text-right text-stone-400/80 dark:text-stone-600"
+		aria-hidden="true">{firstFrame.fur}</pre>
+	<pre
+		bind:this={ink}
+		class="relative overflow-hidden text-right text-stone-800 dark:text-stone-200"
+		aria-hidden="true">{firstFrame.ink}</pre>
+</div>
