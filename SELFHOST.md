@@ -35,8 +35,9 @@ database migrations on every start. Put a reverse proxy with TLS in front of it 
 nginx), then continue with [Set up the GitHub App](#set-up-the-github-app).
 
 To use the prebuilt image instead of building it, replace the `build:` section in
-`docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:main`. It is published for amd64
-and arm64 on every push to `main`.
+`docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
+for amd64 and arm64 with every [release](https://github.com/TorstenDittmann/hansi/releases), tagged
+with its version (e.g. `1.2.3` and `1.2`) and `latest`.
 
 ## Set up the GitHub App
 
@@ -163,5 +164,5 @@ Push to `main` and both redeploy.
 `HANS_ENCRYPTION_KEY`. Without the key, the stored provider keys and GitHub App credentials can't
 be decrypted.
 
-**Upgrade** by pulling or building the new image and restarting. Migrations run automatically when
+**Upgrade** by pulling the new release's image (or building from the new code) and restarting. Migrations run automatically when
 the web app starts.
