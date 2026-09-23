@@ -110,9 +110,8 @@
 			document.body.append(sample);
 			charWidth = sample.getBoundingClientRect().width / 100 || 5.4;
 			sample.remove();
-			layout = layoutFor(
-				Math.max(DEFAULT_LAYOUT.cols, Math.floor(element.clientWidth / charWidth))
-			);
+			// Fit exactly to the container so narrow phones show the whole cat instead of clipping.
+			layout = layoutFor(Math.max(1, Math.floor(element.clientWidth / charWidth)));
 		};
 		measure();
 		// Web fonts may arrive after the first measurement and change the character width.
