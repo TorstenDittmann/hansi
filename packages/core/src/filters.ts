@@ -39,7 +39,7 @@ export interface FilterResult {
 }
 
 /**
- * Applies default ignores plus `.hansi.yml` path filters. Filters without `!` are an allowlist;
+ * Applies default ignores plus `.hansi.json` path filters. Filters without `!` are an allowlist;
  * filters with `!` exclude. User filters can re-include a default-ignored path.
  */
 export function filterFiles(files: FileDiff[], pathFilters: string[] = []): FilterResult {

@@ -167,7 +167,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	const { included, excluded } = filterFiles(
 		parseUnifiedDiff(input.diff),
-		config.reviews.path_filters
+		config.reviews.pathFilters
 	);
 	emit({ type: 'files.filtered', data: { included: included.map((f) => f.path), excluded } });
 	if (included.length === 0) {
@@ -194,7 +194,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	}
 	if (shown.length === 0) return { status: 'skipped', reason: 'Diff too large to review' };
 
-	const pathInstructions = config.path_instructions.flatMap((entry) => {
+	const pathInstructions = config.pathInstructions.flatMap((entry) => {
 		const glob = new Bun.Glob(entry.path);
 		return shown.some((file) => glob.match(file.path))
 			? [`For files matching ${entry.path}: ${entry.instructions}`]
@@ -267,13 +267,13 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		return [placed];
 	});
 
-	// 3. Severity threshold from `.hansi.yml`.
+	// 3. Severity threshold from `.hansi.json`.
 	const relevant = positioned.filter((finding) => {
-		const keep = severityAtLeast(finding.severity, config.reviews.min_severity);
+		const keep = severityAtLeast(finding.severity, config.reviews.minSeverity);
 		if (!keep)
 			dropped.push({
 				...finding,
-				dropReason: `Below min_severity (${config.reviews.min_severity})`
+				dropReason: `Below minSeverity (${config.reviews.minSeverity})`
 			});
 		return keep;
 	});
@@ -285,7 +285,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// 5. Cap the number of comments, most severe first.
 	verified.sort(compareSeverity);
-	const capped = verified.slice(0, config.reviews.max_comments);
+	const capped = verified.slice(0, config.reviews.maxComments);
 
 	// 6. A suggestion is applied verbatim with one click: never post one that breaks the code.
 	const posted = await Promise.all(
@@ -299,8 +299,8 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			return withoutSuggestion(finding);
 		})
 	);
-	for (const finding of verified.slice(config.reviews.max_comments)) {
-		dropped.push({ ...finding, dropReason: `Over max_comments (${config.reviews.max_comments})` });
+	for (const finding of verified.slice(config.reviews.maxComments)) {
+		dropped.push({ ...finding, dropReason: `Over maxComments (${config.reviews.maxComments})` });
 	}
 
 	// 7. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.

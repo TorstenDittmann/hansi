@@ -1,4 +1,4 @@
-import { parseRepoConfig } from '@hans/config';
+import { parseRepoConfig, REPO_CONFIG_FILE } from '@hans/config';
 import { checkoutPullRequest, runChat, type ThreadMessage } from '@hans/core';
 import { schema } from '@hans/db';
 import {
@@ -56,7 +56,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		const pr = await getPullRequest(octokit, ref, payload.pullNumber);
 		// Settings and guidelines come from the base branch, which the PR author cannot change.
 		const { config } = parseRepoConfig(
-			await getFileContent(octokit, ref, '.hansi.yml', pr.baseSha)
+			await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.baseSha)
 		);
 
 		const comments =

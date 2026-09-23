@@ -35,7 +35,7 @@ const base: SummaryInput = {
 			category: 'maintainability',
 			title: 'Naming',
 			body: 'b',
-			dropReason: 'Below min_severity (minor)'
+			dropReason: 'Below minSeverity (minor)'
 		}
 	],
 	walkthrough: [{ path: 'src/paginate.ts', change: 'Switches to 1-based pages.\nAdds pageCount.' }],
@@ -62,7 +62,7 @@ describe('formatSummaryComment', () => {
 		expect(body).toContain('<summary><b>📂 Walkthrough</b> · 1</summary>');
 		expect(body).toContain('| `src/paginate.ts` | Switches to 1-based pages. Adds pageCount. |');
 		expect(body).toContain('- ~~Missing await~~ · `src/a.ts:9`');
-		expect(body).toContain('| Naming | Below min_severity (minor) |');
+		expect(body).toContain('| Naming | Below minSeverity (minor) |');
 		expect(body).not.toContain('Still open from earlier reviews');
 		expect(body).not.toContain('Latest changes');
 		expect(body).not.toContain('[!NOTE]');

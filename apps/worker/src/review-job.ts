@@ -1,6 +1,7 @@
 import {
 	blockingSeverity,
 	parseRepoConfig,
+	REPO_CONFIG_FILE,
 	severityAtLeast,
 	type RepoConfig,
 	type Severity
@@ -106,20 +107,20 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	if (pr.state !== 'open') return { status: 'skipped', summary: 'Pull request is closed' };
 
 	// Configuration comes from the base branch: a pull request must not rewrite its own review
-	// rules. Changes to .hansi.yml apply once they are merged.
+	// rules. Changes to .hansi.json apply once they are merged.
 	const { config, ...configResult } = parseRepoConfig(
-		await getFileContent(octokit, ref, '.hansi.yml', pr.baseSha)
+		await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.baseSha)
 	);
 	const isAutomatic = review.trigger === 'opened' || review.trigger === 'synchronize';
 	const skipReason = !config.reviews.enabled
-		? 'Reviews are disabled in .hansi.yml'
+		? 'Reviews are disabled in .hansi.json'
 		: isAutomatic && !config.reviews.auto
-			? 'Automatic reviews are disabled in .hansi.yml'
+			? 'Automatic reviews are disabled in .hansi.json'
 			: isAutomatic && pr.draft && !config.reviews.drafts
 				? 'Draft pull request'
 				: isAutomatic &&
-					  config.reviews.base_branches.length > 0 &&
-					  !config.reviews.base_branches.includes(pr.baseRef)
+					  config.reviews.baseBranches.length > 0 &&
+					  !config.reviews.baseBranches.includes(pr.baseRef)
 					? `Base branch ${pr.baseRef} is not configured for reviews`
 					: null;
 	if (skipReason) return { status: 'skipped', summary: skipReason };
@@ -343,7 +344,7 @@ async function approvalRestriction(
 	pr: { author: string; authorAssociation: string },
 	config: RepoConfig
 ): Promise<string | undefined> {
-	if (config.reviews.approve_outside_contributors) return undefined;
+	if (config.reviews.approveOutsideContributors) return undefined;
 	if (await isTrustedAuthor(octokit, ref, pr)) return undefined;
 	return `@${pr.author} does not have write access to this repository, so Hansi does not approve automatically. A maintainer can review and approve.`;
 }

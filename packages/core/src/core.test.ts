@@ -192,7 +192,7 @@ describe('runReview', () => {
 		expect(result.posted.map((f) => f.title)).toEqual(['Division by zero']);
 		expect(Object.fromEntries(result.dropped.map((f) => [f.title, f.dropReason]))).toEqual({
 			'Outside diff': 'Not on a changed line',
-			Nit: 'Below min_severity (minor)',
+			Nit: 'Below minSeverity (minor)',
 			'False positive': 'Verifier: not a bug'
 		});
 		expect(calls.map((c) => [c.role, c.usage.inputTokens])).toEqual([
@@ -206,7 +206,7 @@ describe('runReview', () => {
 			repoDir,
 			diff,
 			pullRequest: { title: 'Lockfile', body: '', author: 'octocat' },
-			config: parseRepoConfig('reviews:\n  path_filters: ["!src/**"]').config,
+			config: parseRepoConfig('{ "reviews": { "pathFilters": ["!src/**"] } }').config,
 			models: { review: { model: new MockLanguageModelV4(), provider: 'mock', modelId: 'mock-1' } }
 		});
 		expect(result).toEqual({ status: 'skipped', reason: 'No reviewable changes' });
