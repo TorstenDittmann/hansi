@@ -1,8 +1,8 @@
 // Hansi, drawn in ASCII from signed distance fields so every part can move smoothly.
 // World units: x right, y down. A character cell is 1.2 wide and 2 tall (monospace is ~0.6:1).
 //
-// A frame has two layers drawn on top of each other: `ink` (outlines, face, whiskers, the fly)
-// and `fur` (shading and the ground shadow), which the page shows in a lighter color.
+// A frame has three layers drawn on top of each other: `fur` (shading and the ground shadow),
+// `ink` (outlines, face, whiskers), and `fly` (the fly and its trail), each in its own color.
 
 export const ROWS = 52;
 const CELL_W = 1.2;
@@ -348,6 +348,7 @@ const LIGHT = { x: -0.6, y: -0.8 };
 export interface Frame {
 	ink: string;
 	fur: string;
+	fly: string;
 }
 
 export function render(scene: Scene, layout: Layout = DEFAULT_LAYOUT): Frame {
@@ -355,6 +356,7 @@ export function render(scene: Scene, layout: Layout = DEFAULT_LAYOUT): Frame {
 	const q = pose(scene);
 	const ink: string[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
 	const fur: string[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
+	const flyLayer: string[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
 	const body = new Float32Array(ROWS * COLS).fill(1);
 	const tail = new Float32Array(ROWS * COLS).fill(1);
 	const detail = new Float32Array(ROWS * COLS).fill(1);
@@ -429,15 +431,16 @@ export function render(scene: Scene, layout: Layout = DEFAULT_LAYOUT): Frame {
 		}
 	}
 
-	const put = (p: Vec, text: string, center = true) => {
+	/** Writes text centered on `p`, on the ink layer or the fly layer, clearing what is below. */
+	const put = (p: Vec, text: string, layer = ink) => {
 		const { col, row } = worldToCell(p, layout);
-		const start = center ? col - Math.floor(text.length / 2) : col;
+		const start = col - Math.floor(text.length / 2);
 		if (row < 0 || row >= ROWS) return;
 		for (let i = 0; i < text.length; i++) {
 			const c = start + i;
 			if (c < 0 || c >= COLS || text[i] === '\u0000') continue;
-			ink[row]![c] = text[i]!;
-			fur[row]![c] = ' ';
+			for (const below of [ink, fur, flyLayer]) below[row]![c] = ' ';
+			layer[row]![c] = text[i]!;
 		}
 	};
 	const onHead = (offset: Vec) =>
@@ -488,13 +491,14 @@ export function render(scene: Scene, layout: Layout = DEFAULT_LAYOUT): Frame {
 
 	// Fly with a dotted trail and flapping wings.
 	scene.trail.forEach((p, i) => {
-		if (i % 2 === 0) put(p, '.');
+		if (i % 2 === 0) put(p, '.', flyLayer);
 	});
-	if (scene.fly) put(scene.fly, Math.floor(scene.time * 24) % 2 === 0 ? '\\o/' : '-o-');
+	if (scene.fly) put(scene.fly, Math.floor(scene.time * 24) % 2 === 0 ? '\\o/' : '-o-', flyLayer);
 
 	return {
 		ink: ink.map((line) => line.join('')).join('\n'),
-		fur: fur.map((line) => line.join('')).join('\n')
+		fur: fur.map((line) => line.join('')).join('\n'),
+		fly: flyLayer.map((line) => line.join('')).join('\n')
 	};
 }
 

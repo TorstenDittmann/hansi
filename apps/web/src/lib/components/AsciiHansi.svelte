@@ -50,6 +50,7 @@
 
 	let ink: HTMLPreElement | undefined = $state();
 	let fur: HTMLPreElement | undefined = $state();
+	let flyPre: HTMLPreElement | undefined = $state();
 
 	// Server-rendered first frame at the default width; lines are right-aligned, so the cat sits
 	// where the full-width canvas will draw the cat.
@@ -58,6 +59,7 @@
 	onMount(() => {
 		const element = ink!;
 		const furElement = fur!;
+		const flyElement = flyPre!;
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
 		const random = (range: [number, number]) => range[0] + Math.random() * (range[1] - range[0]);
@@ -340,6 +342,7 @@
 			const frameText = render(scene, layout);
 			element.textContent = frameText.ink;
 			furElement.textContent = frameText.fur;
+			flyElement.textContent = frameText.fly;
 		};
 
 		// Pause while scrolled out of view.
@@ -359,7 +362,7 @@
 	});
 </script>
 
-<!-- Two layers of the same size: fur shading underneath, lines and face on top. -->
+<!-- Three layers of the same size: orange fur shading, the cat's lines and face, and the fly. -->
 <div
 	class="relative font-mono leading-none whitespace-pre select-none [font-variant-ligatures:none] {className}"
 	role="img"
@@ -367,10 +370,14 @@
 >
 	<pre
 		bind:this={fur}
-		class="absolute inset-0 overflow-hidden text-right text-stone-400/80 dark:text-stone-600"
+		class="absolute inset-0 overflow-hidden text-right text-orange-400 dark:text-orange-500/70"
 		aria-hidden="true">{firstFrame.fur}</pre>
 	<pre
 		bind:this={ink}
-		class="relative overflow-hidden text-right text-stone-800 dark:text-stone-200"
+		class="relative overflow-hidden text-right text-orange-800 dark:text-orange-300"
 		aria-hidden="true">{firstFrame.ink}</pre>
+	<pre
+		bind:this={flyPre}
+		class="absolute inset-0 overflow-hidden text-right text-stone-800 dark:text-stone-200"
+		aria-hidden="true">{firstFrame.fly}</pre>
 </div>
