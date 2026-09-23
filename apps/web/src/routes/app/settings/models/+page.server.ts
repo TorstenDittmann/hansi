@@ -1,8 +1,6 @@
 import { fail } from '@sveltejs/kit';
-import { schema, type ModelRole } from '@hans/db';
-import { decryptSecret, listModels, providerIds, providers, type ProviderId } from '@hans/llm';
-import { and, eq } from 'drizzle-orm';
-import { getContext } from '$lib/server/context';
+import type { ModelRole } from '@hans/db';
+import { listModels, providerIds, providers, type ProviderId } from '@hans/llm';
 import {
 	addCredential,
 	clearModelAssignment,
@@ -60,49 +58,20 @@ export const actions: Actions = {
 		} catch (err) {
 			return fail(400, { error: `Connection test failed: ${(err as Error).message}` });
 		}
-		await addCredential(organization.id, { provider, label: label!, apiKey, baseUrl, region });
-		return { added: true };
+		const credentialId = await addCredential(organization.id, {
+			provider,
+			label: label!,
+			apiKey,
+			baseUrl,
+			region
+		});
+		return { added: credentialId };
 	},
 
 	delete: async ({ locals, request }) => {
 		const organization = await requireOrganization(locals, request.headers);
 		const form = await request.formData();
 		await deleteCredential(organization.id, String(form.get('credentialId')));
-	},
-
-	/** Lists models for a stored credential, to fill the model picker. */
-	models: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
-		const form = await request.formData();
-		const credentialId = String(form.get('credentialId'));
-		const { db, env } = await getContext();
-		const [credential] = await db
-			.select()
-			.from(schema.providerCredentials)
-			.where(
-				and(
-					eq(schema.providerCredentials.id, credentialId),
-					eq(schema.providerCredentials.organizationId, organization.id)
-				)
-			);
-		if (!credential) return fail(404, { error: 'Unknown credential' });
-
-		try {
-			const apiKey = await decryptSecret(
-				credential.encryptedKey,
-				env.HANS_ENCRYPTION_KEY,
-				`provider_credentials:${credential.id}`
-			);
-			const models = await listModels({
-				provider: credential.provider,
-				apiKey,
-				baseUrl: credential.baseUrl,
-				region: credential.region
-			});
-			return { credentialId, models };
-		} catch (err) {
-			return fail(400, { error: (err as Error).message });
-		}
 	},
 
 	assign: async ({ locals, request }) => {
