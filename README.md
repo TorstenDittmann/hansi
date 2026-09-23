@@ -158,7 +158,9 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 **Deployment modes.** By default, one container runs both web and worker on a shared database
 file (`HANS_MODE=all`). To run them as separate containers, point both at
 [sqld](https://github.com/tursodatabase/libsql) with `DATABASE_URL=http://sqld:8080` and set
-`HANS_MODE=web` or `HANS_MODE=worker`.
+`HANS_MODE=web` or `HANS_MODE=worker`. For sqld behind HTTP Basic auth (such as Dokploy's libSQL
+service), put the credentials in the URL: `http://user:password@sqld:8080`. For a token, use
+`DATABASE_AUTH_TOKEN`.
 
 **Security model.** The agent can only read files and search the checkout; it never executes
 repository code. Everything in a pull request is treated as untrusted input that may try to steer

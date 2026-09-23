@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDatabase, resolveDatabaseUrl } from './client';
+import { createDatabase, resolveDatabaseUrl, splitBasicAuth } from './client';
+import { runMigrations } from './migrate';
 
 let root: string;
 beforeAll(async () => {
@@ -82,6 +83,67 @@ describe('local file databases', () => {
 			Array.from({ length: 10 }, () => client.execute('insert into child values (999)'))
 		);
 		expect(results.every((r) => r.status === 'rejected')).toBe(true);
+		client.close();
+	});
+});
+
+test('credentials in a remote URL become a Basic auth header', () => {
+	expect(splitBasicAuth('file:/data/hans.db')).toEqual({ url: 'file:/data/hans.db' });
+	expect(splitBasicAuth('http://sqld:8080')).toEqual({ url: 'http://sqld:8080' });
+	const { url, fetch } = splitBasicAuth('http://libsql:p%40ss@sqld:8080');
+	expect(url).toBe('http://sqld:8080');
+	expect(fetch).toBeFunction();
+});
+
+// Dokploy's libSQL service runs sqld behind HTTP Basic auth. Needs the sqld binary.
+describe.skipIf(!Bun.which('sqld'))('sqld with Basic auth', () => {
+	let dir: string;
+	let server: ReturnType<typeof Bun.spawn>;
+	const port = 18_000 + Math.floor(Math.random() * 1_000);
+
+	beforeAll(async () => {
+		dir = await mkdtemp(join(tmpdir(), 'hans-sqld-'));
+		server = Bun.spawn(
+			['sqld', '--db-path', join(dir, 'db'), '--http-listen-addr', `127.0.0.1:${port}`],
+			{
+				env: { ...process.env, SQLD_HTTP_AUTH: `basic:${btoa('libsql:s3cret')}` },
+				stdout: 'ignore',
+				stderr: 'ignore'
+			}
+		);
+		for (let i = 0; i < 100; i++) {
+			if (
+				await fetch(`http://127.0.0.1:${port}/health`).then(
+					(r) => r.ok,
+					() => false
+				)
+			)
+				return;
+			await Bun.sleep(100);
+		}
+		throw new Error('sqld did not start');
+	});
+	afterAll(async () => {
+		server.kill();
+		await server.exited;
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	test('migrations and queries run with credentials in the URL', async () => {
+		const { db, client, ready } = createDatabase({
+			url: `http://libsql:s3cret@127.0.0.1:${port}`
+		});
+		await ready;
+		await runMigrations(db);
+		const { rows } = await client.execute('select count(*) as n from jobs');
+		expect(Number(rows[0]!.n)).toBe(0);
+		client.close();
+	});
+
+	test('wrong credentials are rejected', async () => {
+		const { ready, client } = createDatabase({ url: `http://libsql:wrong@127.0.0.1:${port}` });
+		expect(ready).rejects.toThrow();
+		await ready.catch(() => {});
 		client.close();
 	});
 });
