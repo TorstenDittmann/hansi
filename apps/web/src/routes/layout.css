@@ -4,20 +4,6 @@
 @theme {
 	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-	--font-brand: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
-
-	/* Marketing site (dark, product-first). */
-	--color-night: #0b1019;
-	--color-night-panel: #111827;
-	--color-night-inset: #0e1420;
-	--color-night-line: #1e2736;
-	--color-night-text: #e8edf5;
-	--color-night-muted: #8a94a7;
-	--color-periwinkle: #a5b4ff;
-	--color-periwinkle-light: #c3cdff;
-	--color-grade-good: #3fcf8e;
-	--color-grade-warn: #f2b84b;
-	--color-grade-bad: #f26d6d;
 }
 
 @layer base {

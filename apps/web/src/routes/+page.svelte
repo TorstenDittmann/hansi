@@ -67,9 +67,9 @@
 	];
 
 	const focus =
-		'rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-periwinkle';
-	const button = `inline-flex items-center justify-center rounded-[0.6rem] bg-periwinkle font-semibold text-night transition-colors hover:bg-periwinkle-light motion-reduce:transition-none ${focus}`;
-	const navLink = `font-medium text-night-muted transition-colors hover:text-night-text motion-reduce:transition-none ${focus}`;
+		'rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-400';
+	const button = `inline-flex items-center justify-center rounded-[0.6rem] bg-stone-900 dark:bg-stone-100 font-semibold text-white dark:text-stone-900 transition-colors hover:bg-stone-700 dark:hover:bg-stone-300 motion-reduce:transition-none ${focus}`;
+	const navLink = `font-medium text-stone-500 dark:text-stone-400 transition-colors hover:text-stone-900 dark:hover:text-stone-100 motion-reduce:transition-none ${focus}`;
 	const sectionTitle =
 		'text-3xl font-bold tracking-[-0.035em] text-balance sm:text-[2.6rem] sm:leading-[1.1]';
 </script>
@@ -80,17 +80,11 @@
 		name="description"
 		content="hans reviews every pull request, points out real mistakes, approves the rest, and grades each one from S to F. Free during the beta."
 	/>
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-	<link
-		rel="stylesheet"
-		href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-	/>
 </svelte:head>
 
 {#snippet avatar(size: 'sm' | 'md')}
 	<span
-		class="grid shrink-0 place-items-center rounded-full bg-periwinkle font-bold text-night {size ===
+		class="grid shrink-0 place-items-center rounded-full bg-stone-900 font-bold text-white dark:bg-stone-100 dark:text-stone-900 {size ===
 		'sm'
 			? 'size-6 text-xs'
 			: 'size-8'}"
@@ -105,19 +99,23 @@
 		{#each rows as row, i (i)}
 			<div
 				class="w-max min-w-full pr-4 whitespace-pre {row.sign === '+'
-					? 'bg-grade-good/12'
+					? 'bg-emerald-50 dark:bg-emerald-950/50'
 					: row.sign === '-'
-						? 'bg-grade-bad/12'
+						? 'bg-red-50 dark:bg-red-950/50'
 						: ''}"
 			>
-				<span class="inline-block w-10 pr-3 text-right text-night-muted/55">{row.ln ?? ''}</span
-				><span class="inline-block w-5 text-night-muted">{row.sign}</span>{row.text}
+				<span class="inline-block w-10 pr-3 text-right text-stone-400 dark:text-stone-600"
+					>{row.ln ?? ''}</span
+				><span class="inline-block w-5 text-stone-500 dark:text-stone-400">{row.sign}</span
+				>{row.text}
 			</div>
 		{/each}
 	</div>
 {/snippet}
 
-<div class="min-h-screen bg-night font-brand text-night-text antialiased [color-scheme:dark]">
+<div
+	class="min-h-screen bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100"
+>
 	<header class="mx-auto flex h-18 max-w-[70rem] items-center justify-between px-4 sm:px-6">
 		<a href={resolve('/')} class="text-[1.35rem] font-bold tracking-[-0.03em] {focus}">hans</a>
 		<nav aria-label="Main" class="flex items-center gap-7">
@@ -135,13 +133,13 @@
 			>
 				The code reviewer that only speaks up when it matters.
 			</h1>
-			<p class="mt-6 max-w-[38rem] text-lg text-night-muted sm:text-xl">
+			<p class="mt-6 max-w-[38rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
 				hans reviews every pull request, points out real mistakes, and approves the rest. No
 				nitpicks, no walls of comments. Just a clear verdict and a grade.
 			</p>
 			<div class="mt-9 flex flex-wrap items-center gap-5">
 				<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
-				<span class="text-[0.95rem] text-night-muted">
+				<span class="text-[0.95rem] text-stone-500 dark:text-stone-400">
 					Free during the beta. Bring your own model key.
 				</span>
 			</div>
@@ -149,87 +147,99 @@
 
 		<!-- The product: a pull request as hans leaves it. -->
 		<figure
-			class="overflow-hidden rounded-2xl border border-night-line bg-night-panel shadow-[0_40px_80px_-40px_rgb(0_0_0/0.8)]"
+			class="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-[0_30px_60px_-30px_rgb(28_25_23/0.18)] dark:border-stone-800 dark:bg-stone-900 dark:shadow-none"
 			aria-label="A pull request reviewed by hans"
 		>
 			<div
-				class="flex items-start justify-between gap-4 border-b border-night-line px-4 py-5 sm:px-6"
+				class="flex items-start justify-between gap-4 border-b border-stone-200 px-4 py-5 sm:px-6 dark:border-stone-800"
 			>
 				<div class="min-w-0">
 					<p class="text-xl font-semibold tracking-[-0.01em]">
-						feat: let customers cancel orders <span class="font-normal text-night-muted">#42</span>
+						feat: let customers cancel orders <span
+							class="font-normal text-stone-500 dark:text-stone-400">#42</span
+						>
 					</p>
-					<p class="mt-1.5 flex flex-wrap items-center gap-2.5 text-sm text-night-muted">
+					<p
+						class="mt-1.5 flex flex-wrap items-center gap-2.5 text-sm text-stone-500 dark:text-stone-400"
+					>
 						<span
-							class="rounded-full bg-grade-good/15 px-2.5 py-0.5 text-xs font-semibold text-grade-good"
+							class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
 							>Open</span
 						>
 						anna wants to merge 3 commits into main
 					</p>
 				</div>
 				<span
-					class="grid size-11 shrink-0 place-items-center rounded-xl bg-grade-warn/14 text-2xl font-bold text-grade-warn ring-1 ring-grade-warn/35 ring-inset sm:size-13 sm:text-3xl"
+					class="grid size-11 shrink-0 place-items-center rounded-xl bg-amber-100 text-2xl font-bold text-amber-800 ring-1 ring-amber-300 ring-inset sm:size-13 sm:text-3xl dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800"
 					title="Tier B: needs changes">B</span
 				>
 			</div>
 
-			<div class="grid gap-6 bg-night-inset p-4 sm:p-6 lg:grid-cols-[0.9fr_1.1fr]">
+			<div class="grid gap-6 bg-stone-50 p-4 sm:p-6 lg:grid-cols-[0.9fr_1.1fr] dark:bg-stone-950">
 				<div class="flex min-w-0 gap-3">
 					{@render avatar('md')}
 					<div class="min-w-0 flex-1">
-						<p class="flex flex-wrap items-center gap-2 text-[0.925rem] text-night-muted">
-							<strong class="text-night-text">hans</strong> requested changes
+						<p
+							class="flex flex-wrap items-center gap-2 text-[0.925rem] text-stone-500 dark:text-stone-400"
+						>
+							<strong class="text-stone-900 dark:text-stone-100">hans</strong> requested changes
 							<span
-								class="rounded-full bg-grade-bad/14 px-2 py-px text-xs font-semibold text-grade-bad"
+								class="rounded-full bg-red-100 px-2 py-px text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-300"
 								>Changes requested</span
 							>
 						</p>
 						<div
-							class="mt-3 rounded-xl border border-night-line bg-night-panel p-4 text-[0.925rem]"
+							class="mt-3 rounded-xl border border-stone-200 bg-white p-4 text-[0.925rem] dark:border-stone-800 dark:bg-stone-900"
 						>
 							<p class="flex items-center gap-2 font-semibold">
 								<span
-									class="grid size-6 place-items-center rounded-md bg-grade-warn/14 text-sm font-bold text-grade-warn ring-1 ring-grade-warn/35 ring-inset"
+									class="grid size-6 place-items-center rounded-md bg-amber-100 text-sm font-bold text-amber-800 ring-1 ring-amber-300 ring-inset dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-800"
 									>B</span
 								>
 								Needs changes before merging
 							</p>
-							<p class="mt-2 text-night-muted">
+							<p class="mt-2 text-stone-500 dark:text-stone-400">
 								Adds order cancellation. One bug lets shipped orders be cancelled; everything else
 								looks good.
 							</p>
 							<div
-								class="mt-3.5 flex flex-wrap gap-x-4 gap-y-1 border-t border-night-line pt-3.5 text-sm text-night-muted"
+								class="mt-3.5 flex flex-wrap gap-x-4 gap-y-1 border-t border-stone-200 pt-3.5 text-sm text-stone-500 dark:border-stone-800 dark:text-stone-400"
 							>
-								<span><b class="text-night-text">1</b> comment</span>
-								<span><b class="text-night-text">3</b> files reviewed</span>
-								<span><b class="text-night-text">2</b> findings filtered out</span>
+								<span><b class="text-stone-900 dark:text-stone-100">1</b> comment</span>
+								<span><b class="text-stone-900 dark:text-stone-100">3</b> files reviewed</span>
+								<span
+									><b class="text-stone-900 dark:text-stone-100">2</b> findings filtered out</span
+								>
 							</div>
 						</div>
 					</div>
 				</div>
 
-				<div class="min-w-0 overflow-hidden rounded-xl border border-night-line bg-night-panel">
+				<div
+					class="min-w-0 overflow-hidden rounded-xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900"
+				>
 					<div
-						class="border-b border-night-line px-4 py-2.5 font-mono text-xs text-night-muted [font-variant-ligatures:none]"
+						class="border-b border-stone-200 px-4 py-2.5 font-mono text-xs text-stone-500 [font-variant-ligatures:none] dark:border-stone-800 dark:text-stone-400"
 					>
 						src/orders.ts
 					</div>
 					{@render codeRows(before)}
 					<div
-						class="mx-3 my-1.5 flex gap-3 rounded-lg border border-night-line bg-night-inset p-3.5 text-[0.9rem]"
+						class="mx-3 my-1.5 flex gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3.5 text-[0.9rem] dark:border-stone-800 dark:bg-stone-950"
 					>
 						{@render avatar('sm')}
 						<div class="min-w-0">
 							<p class="font-semibold">
 								Missing <code class="font-mono text-[0.88em]">await</code>
 							</p>
-							<p class="mt-1 text-night-muted">
+							<p class="mt-1 text-stone-500 dark:text-stone-400">
 								<code class="font-mono text-[0.88em]">find()</code> returns a promise, so
 								<code class="font-mono text-[0.88em]">order.status</code> is always undefined and shipped
 								orders can be cancelled.
 							</p>
-							<div class="mt-3 overflow-hidden rounded-md border border-night-line">
+							<div
+								class="mt-3 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800"
+							>
 								{@render codeRows([
 									{ sign: '+', text: '  const order = await db.orders.find(id);' }
 								])}
@@ -247,26 +257,31 @@
 		>
 			<div class="min-w-0">
 				<h2 class="text-xl font-semibold tracking-[-0.02em]">Speaks up only for real mistakes</h2>
-				<p class="mt-2.5 text-night-muted">
+				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
 					hans flags the bugs you would want a teammate to catch: a missing await, an inverted
 					check, an off-by-one. A second pass drops anything it can't confirm.
 				</p>
 				<div
-					class="mt-6 space-y-2 rounded-xl border border-night-line bg-night-panel p-4 text-sm"
+					class="mt-6 space-y-2 rounded-xl border border-stone-200 bg-white p-4 text-sm dark:border-stone-800 dark:bg-stone-900"
 					aria-label="One review: 3 possible issues found, 2 dropped, 1 posted"
 				>
 					<p class="flex items-center gap-3">
-						<span class="grid size-6 place-items-center rounded-md bg-night-line font-bold">3</span>
+						<span
+							class="grid size-6 place-items-center rounded-md bg-stone-100 font-bold dark:bg-stone-800"
+							>3</span
+						>
 						possible issues found
 					</p>
-					<p class="flex items-center gap-3 text-night-muted">
-						<span class="grid size-6 place-items-center rounded-md bg-night-line font-bold">2</span>
-						<span class="line-through decoration-night-muted/50">dropped after double-checking</span
+					<p class="flex items-center gap-3 text-stone-500 dark:text-stone-400">
+						<span
+							class="grid size-6 place-items-center rounded-md bg-stone-100 font-bold dark:bg-stone-800"
+							>2</span
 						>
+						<span class="line-through decoration-stone-400">dropped after double-checking</span>
 					</p>
 					<p class="flex items-center gap-3">
 						<span
-							class="grid size-6 place-items-center rounded-md bg-periwinkle font-bold text-night"
+							class="grid size-6 place-items-center rounded-md bg-stone-900 font-bold text-white dark:bg-stone-100 dark:text-stone-900"
 							>1</span
 						>
 						comment posted
@@ -276,54 +291,59 @@
 
 			<div class="min-w-0">
 				<h2 class="text-xl font-semibold tracking-[-0.02em]">Approves like a teammate</h2>
-				<p class="mt-2.5 text-night-muted">
+				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
 					Clean pull requests get approved. When something is wrong, hans requests changes, and once
 					you push the fix it checks again and approves.
 				</p>
-				<div class="mt-6 space-y-2 rounded-xl border border-night-line bg-night-panel p-4 text-sm">
+				<div
+					class="mt-6 space-y-2 rounded-xl border border-stone-200 bg-white p-4 text-sm dark:border-stone-800 dark:bg-stone-900"
+				>
 					<p class="flex items-center gap-2.5">
-						<span class="size-2 rounded-full bg-grade-bad"></span>hans requested changes
+						<span class="size-2 rounded-full bg-red-500"></span>hans requested changes
 					</p>
-					<p class="flex items-center gap-2.5 text-night-muted">
-						<span class="size-2 rounded-full bg-night-muted"></span>anna pushed 1 commit
+					<p class="flex items-center gap-2.5 text-stone-500 dark:text-stone-400">
+						<span class="size-2 rounded-full bg-stone-400"></span>anna pushed 1 commit
 					</p>
 					<p class="flex items-center gap-2.5">
-						<span class="size-2 rounded-full bg-grade-good"></span>hans approved these changes
+						<span class="size-2 rounded-full bg-emerald-500"></span>hans approved these changes
 					</p>
 				</div>
 			</div>
 
 			<div class="min-w-0">
 				<h2 class="text-xl font-semibold tracking-[-0.02em]">A grade for every pull request</h2>
-				<p class="mt-2.5 text-night-muted">
+				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
 					Each review ends with a grade from S, ready to merge, to F, do not merge. Open findings
 					cap the grade, so it always matches what hans found.
 				</p>
 				<div
-					class="mt-6 flex justify-between rounded-xl border border-night-line bg-night-panel p-4"
+					class="mt-6 flex justify-between rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-900"
 				>
 					{#each ['S', 'A', 'B', 'C', 'D', 'F'] as letter (letter)}
 						<span
 							class="grid size-9 place-items-center rounded-lg text-lg font-bold {letter === 'S'
-								? 'bg-grade-good/14 text-grade-good ring-1 ring-grade-good/35 ring-inset'
-								: 'text-night-muted'}">{letter}</span
+								? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300 ring-inset dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800'
+								: 'text-stone-500 dark:text-stone-400'}">{letter}</span
 						>
 					{/each}
 				</div>
 			</div>
 		</section>
 
-		<section class="border-t border-night-line py-20" aria-labelledby="how-title">
+		<section
+			class="border-t border-stone-200 py-20 dark:border-stone-800"
+			aria-labelledby="how-title"
+		>
 			<h2 id="how-title" class={sectionTitle}>Up and running in three steps</h2>
 			<ol class="mt-10 grid gap-8 md:grid-cols-3 md:gap-12">
 				{#each steps as step, i (step.title)}
 					<li class="min-w-0">
 						<span
-							class="grid size-8 place-items-center rounded-full border border-night-line text-sm font-semibold text-periwinkle"
+							class="grid size-8 place-items-center rounded-full border border-stone-200 text-sm font-semibold text-stone-900 dark:border-stone-800 dark:text-stone-100"
 							>{i + 1}</span
 						>
 						<h3 class="mt-4 text-lg font-semibold">{step.title}</h3>
-						<p class="mt-1.5 text-night-muted">{step.body}</p>
+						<p class="mt-1.5 text-stone-500 dark:text-stone-400">{step.body}</p>
 					</li>
 				{/each}
 			</ol>
@@ -331,19 +351,22 @@
 
 		<section
 			id="pricing"
-			class="grid items-center gap-10 border-t border-night-line py-20 md:grid-cols-[1fr_24rem] md:gap-16"
+			class="grid items-center gap-10 border-t border-stone-200 py-20 md:grid-cols-[1fr_24rem] md:gap-16 dark:border-stone-800"
 			aria-labelledby="pricing-title"
 		>
 			<div class="min-w-0">
 				<h2 id="pricing-title" class={sectionTitle}>Free during the beta</h2>
-				<p class="mt-4 max-w-[32rem] text-night-muted">
+				<p class="mt-4 max-w-[32rem] text-stone-500 dark:text-stone-400">
 					Unlimited repositories and reviews while hans is in beta. You pay your model provider
 					directly for the tokens each review uses, and hans shows you the cost of every review.
 				</p>
 			</div>
-			<div class="rounded-2xl border border-night-line bg-night-panel p-7">
+			<div
+				class="rounded-2xl border border-stone-200 bg-white p-7 dark:border-stone-800 dark:bg-stone-900"
+			>
 				<p class="text-5xl leading-none font-bold tracking-[-0.04em]">
-					$0<span class="ml-1.5 text-base font-medium tracking-normal text-night-muted"
+					$0<span
+						class="ml-1.5 text-base font-medium tracking-normal text-stone-500 dark:text-stone-400"
 						>per month</span
 					>
 				</p>
@@ -351,7 +374,7 @@
 					{#each plan as item (item)}
 						<li class="flex items-center gap-2.5">
 							<svg
-								class="size-4 shrink-0 text-grade-good"
+								class="size-4 shrink-0 text-emerald-700 dark:text-emerald-300"
 								viewBox="0 0 16 16"
 								fill="none"
 								aria-hidden="true"
@@ -374,31 +397,34 @@
 
 		<section
 			id="faq"
-			class="grid gap-10 border-t border-night-line py-20 md:grid-cols-[1fr_2fr] md:gap-16"
+			class="grid gap-10 border-t border-stone-200 py-20 md:grid-cols-[1fr_2fr] md:gap-16 dark:border-stone-800"
 			aria-labelledby="faq-title"
 		>
 			<h2 id="faq-title" class={sectionTitle}>Questions</h2>
 			<div class="min-w-0">
 				{#each faqs as item (item.q)}
-					<details class="group border-b border-night-line first:border-t">
+					<details class="group border-b border-stone-200 first:border-t dark:border-stone-800">
 						<summary
 							class="flex cursor-pointer list-none items-center justify-between gap-4 py-4 font-semibold [&::-webkit-details-marker]:hidden {focus}"
 						>
 							{item.q}
-							<span class="text-xl leading-none font-normal text-night-muted" aria-hidden="true">
+							<span
+								class="text-xl leading-none font-normal text-stone-500 dark:text-stone-400"
+								aria-hidden="true"
+							>
 								<span class="group-open:hidden">+</span><span class="hidden group-open:inline"
 									>−</span
 								>
 							</span>
 						</summary>
-						<p class="max-w-[40rem] pb-5 text-night-muted">{item.a}</p>
+						<p class="max-w-[40rem] pb-5 text-stone-500 dark:text-stone-400">{item.a}</p>
 					</details>
 				{/each}
 			</div>
 		</section>
 
 		<section
-			class="flex flex-wrap items-center justify-between gap-8 border-t border-night-line pt-20 pb-24"
+			class="flex flex-wrap items-center justify-between gap-8 border-t border-stone-200 pt-20 pb-24 dark:border-stone-800"
 		>
 			<h2 class="max-w-[20ch] {sectionTitle}">Let hans review your next pull request.</h2>
 			<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
@@ -406,7 +432,7 @@
 	</main>
 
 	<footer
-		class="mx-auto flex max-w-[70rem] items-center justify-between border-t border-night-line px-4 py-8 sm:px-6"
+		class="mx-auto flex max-w-[70rem] items-center justify-between border-t border-stone-200 px-4 py-8 sm:px-6 dark:border-stone-800"
 	>
 		<span class="text-lg font-bold tracking-[-0.03em]">hans</span>
 		<a href={start} class={navLink}>Sign in</a>
