@@ -370,7 +370,7 @@
 >
 	<pre
 		bind:this={fur}
-		class="absolute inset-0 overflow-hidden text-right text-orange-400 dark:text-orange-500/70"
+		class="absolute inset-0 overflow-hidden text-right text-orange-300/70 dark:text-orange-900"
 		aria-hidden="true">{firstFrame.fur}</pre>
 	<pre
 		bind:this={ink}
