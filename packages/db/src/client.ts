@@ -1,5 +1,5 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import * as schema from './schema';
@@ -11,7 +11,35 @@ export interface DatabaseOptions {
 	authToken?: string;
 }
 
-export function createDatabase({ url, authToken }: DatabaseOptions) {
+/** The nearest ancestor directory whose package.json declares workspaces (the repository root). */
+export function findWorkspaceRoot(from: string): string | null {
+	for (let dir = resolve(from); ; dir = dirname(dir)) {
+		const manifest = join(dir, 'package.json');
+		if (existsSync(manifest)) {
+			try {
+				if (JSON.parse(readFileSync(manifest, 'utf8')).workspaces) return dir;
+			} catch {
+				// Unreadable manifest: keep looking upwards.
+			}
+		}
+		if (dirname(dir) === dir) return null;
+	}
+}
+
+/**
+ * Makes relative `file:` URLs relative to the repository root instead of the working directory,
+ * so web (apps/web), worker (apps/worker), and migrations (packages/db) share one database file.
+ */
+export function resolveDatabaseUrl(url: string, cwd = process.cwd()): string {
+	if (!url.startsWith('file:')) return url;
+	const path = url.slice('file:'.length);
+	if (path === ':memory:' || isAbsolute(path)) return url;
+	return `file:${resolve(findWorkspaceRoot(cwd) ?? cwd, path)}`;
+}
+
+export function createDatabase(options: DatabaseOptions) {
+	const url = resolveDatabaseUrl(options.url);
+	const { authToken } = options;
 	const isLocalFile = url.startsWith('file:');
 	if (isLocalFile) mkdirSync(dirname(url.slice('file:'.length)), { recursive: true });
 

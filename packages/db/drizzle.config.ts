@@ -1,3 +1,4 @@
+import { resolveDatabaseUrl } from './src/client';
 import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
@@ -5,7 +6,7 @@ export default defineConfig({
 	schema: './src/schema/index.ts',
 	out: './drizzle',
 	dbCredentials: {
-		url: process.env.DATABASE_URL ?? 'file:../../data/hans.db',
+		url: resolveDatabaseUrl(process.env.DATABASE_URL ?? 'file:./data/hans.db'),
 		authToken: process.env.DATABASE_AUTH_TOKEN
 	}
 });
