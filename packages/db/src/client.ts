@@ -50,8 +50,9 @@ export function splitBasicAuth(url: string): { url: string; fetch?: typeof fetch
 	);
 	parsed.username = '';
 	parsed.password = '';
-	const withAuth = ((...args: Parameters<typeof fetch>) => {
-		const request = new Request(...args);
+	const withAuth = ((input: string | URL | Request, init?: RequestInit) => {
+		const request =
+			input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
 		request.headers.set('authorization', `Basic ${credentials}`);
 		return fetch(request);
 	}) as typeof fetch;
