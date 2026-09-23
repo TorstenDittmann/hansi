@@ -67,6 +67,10 @@ export interface SummaryInput {
 	stillOpen: { path: string; startLine: number; title: string; severity: Severity }[];
 	dropped: DroppedFinding[];
 	walkthrough: { path: string; change: string }[];
+	/** Incremental reviews: what the newest commits changed. */
+	latestChanges?: string | null;
+	/** Why hans did not approve although nothing is blocking. */
+	approvalWithheld?: string | null;
 	incrementalFrom?: string;
 	detailsUrl?: string;
 	/** The bot's handle, e.g. `@hans-review`. */
@@ -84,6 +88,7 @@ export function formatSummaryComment(input: SummaryInput): string {
 	];
 	if (input.tierReason) parts.push(`> ${cell(input.tierReason)}`);
 	parts.push(input.summary);
+	if (input.latestChanges) parts.push(`**Latest changes:** ${input.latestChanges}`);
 
 	parts.push(
 		[
@@ -92,6 +97,8 @@ export function formatSummaryComment(input: SummaryInput): string {
 			`| ${verdictText[input.verdict]} | ${input.posted.length} | ${input.resolved.length} | ${input.stillOpen.length} |`
 		].join('\n')
 	);
+
+	if (input.approvalWithheld) parts.push(`> [!NOTE]\n> ${cell(input.approvalWithheld)}`);
 
 	if (input.posted.length) {
 		parts.push(

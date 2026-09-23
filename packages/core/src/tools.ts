@@ -141,13 +141,31 @@ const GUIDELINE_FILES = [
 ];
 const MAX_GUIDELINE_CHARS = 20_000;
 
-/** Project conventions the review should respect, from the files agents already use. */
-export async function loadRepoGuidelines(repoDir: string): Promise<string> {
+export interface TrustedSource {
+	/** Commit to read from, typically the PR's base: a PR must not rewrite its own review rules. */
+	ref: string;
+	/** Installation token, for blobs a partial clone still has to download. */
+	token?: string;
+}
+
+/**
+ * Project conventions the review should respect, from the files agents already use. With a
+ * `trusted` source they come from that commit instead of the (untrusted) PR checkout.
+ */
+export async function loadRepoGuidelines(
+	repoDir: string,
+	trusted?: TrustedSource
+): Promise<string> {
+	const read = (file: string) =>
+		trusted
+			? git(['show', `${trusted.ref}:${file}`], { cwd: repoDir, token: trusted.token })
+			: readFile(resolve(repoDir, file), 'utf8');
+
 	const sections: string[] = [];
 	let budget = MAX_GUIDELINE_CHARS;
 	for (const file of GUIDELINE_FILES) {
 		if (budget <= 0) break;
-		const content = await readFile(resolve(repoDir, file), 'utf8').catch(() => null);
+		const content = await read(file).catch(() => null);
 		if (!content?.trim()) continue;
 		const excerpt = content.slice(0, budget);
 		budget -= excerpt.length;

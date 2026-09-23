@@ -86,7 +86,8 @@ requests labeled `run-evals`.
 
 ## Repository configuration
 
-Add `.hans.yml` to the repository root. Every field is optional:
+Add `.hans.yml` to the repository root. hans reads it, and guideline files like `AGENTS.md`, from
+the pull request's base branch, so changes take effect once merged. Every field is optional:
 
 ```yaml
 reviews:
@@ -100,6 +101,7 @@ reviews:
   max_comments: 15
   approve: true # approve PRs without blocking findings
   request_changes: major # severity that blocks a PR; `never` to only comment
+  approve_outside_contributors: false # approve PRs from people without write access
 instructions: |
   We use Result types instead of exceptions in src/domain.
 path_instructions:
@@ -157,7 +159,10 @@ file (`HANS_MODE=all`). To run them as separate containers, point both at
 `HANS_MODE=web` or `HANS_MODE=worker`.
 
 **Security model.** The agent can only read files and search the checkout; it never executes
-repository code. Provider keys and GitHub App secrets are encrypted with AES-256-GCM using
+repository code. Everything in a pull request is treated as untrusted input that may try to steer
+the model, so approvals are guarded outside the model: `.hans.yml` and guideline files come from
+the base branch, PRs from people without write access are never approved automatically, and a
+review that could not see the whole diff never approves. Provider keys and GitHub App secrets are encrypted with AES-256-GCM using
 `HANS_ENCRYPTION_KEY`. Webhooks are signature-verified and deduplicated. Mentions only trigger
 reviews for owners, members, and collaborators, since every review spends your API credits.
 

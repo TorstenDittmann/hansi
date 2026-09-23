@@ -9,4 +9,10 @@ export * from './suggestions';
 export * from './tier';
 export * from './verdict';
 export * from './verdict';
-export { createRepoTools, loadRepoGuidelines, type EmitEvent, type ReviewEvent } from './tools';
+export {
+	createRepoTools,
+	loadRepoGuidelines,
+	type EmitEvent,
+	type ReviewEvent,
+	type TrustedSource
+} from './tools';

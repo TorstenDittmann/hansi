@@ -4,7 +4,7 @@ import { parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { chatInstructions } from './prompts';
 import type { ModelCall, ReviewModel } from './review';
-import { createRepoTools, loadRepoGuidelines, type EmitEvent } from './tools';
+import { createRepoTools, loadRepoGuidelines, type EmitEvent, type TrustedSource } from './tools';
 
 export interface ThreadMessage {
 	author: string;
@@ -24,6 +24,8 @@ export interface ChatInput {
 	focus?: { path: string; line?: number; diffHunk?: string };
 	learnings: string[];
 	language: string;
+	/** Where to read repository guidelines from; defaults to the (untrusted) PR checkout. */
+	trustedSource?: TrustedSource;
 	model: ReviewModel;
 	/** Stores a team preference for future reviews. */
 	onRemember: (rule: string) => Promise<void>;
@@ -79,7 +81,7 @@ export async function runChat(input: ChatInput): Promise<string> {
 	const parts = [
 		`<pull_request author="${input.pullRequest.author}">\n<title>${input.pullRequest.title}</title>\n<description>\n${input.pullRequest.body || '(none)'}\n</description>\n</pull_request>`
 	];
-	const guidelines = await loadRepoGuidelines(input.repoDir);
+	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
 	if (guidelines) parts.push(`<repository_guidelines>\n${guidelines}\n</repository_guidelines>`);
 	if (input.learnings.length) {
 		parts.push(

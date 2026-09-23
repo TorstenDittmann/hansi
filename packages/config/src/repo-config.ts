@@ -29,7 +29,12 @@ export const repoConfigSchema = z.object({
 			 * Findings at or above this severity block the PR: hans requests changes. `never` only
 			 * comments (and never approves a PR with major or critical findings).
 			 */
-			request_changes: z.enum([...severities, 'never']).default('major')
+			request_changes: z.enum([...severities, 'never']).default('major'),
+			/**
+			 * Approve PRs from people without write access (outside contributors, forks). Off by
+			 * default: their PR content could try to talk the model into approving.
+			 */
+			approve_outside_contributors: z.boolean().default(false)
 		})
 		.prefault({}),
 	/** Free-form instructions appended to the review prompt. */

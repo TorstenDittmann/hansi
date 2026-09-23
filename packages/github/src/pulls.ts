@@ -19,6 +19,7 @@ export async function getPullRequest(octokit: Octokit, ref: RepoRef, pullNumber:
 		title: data.title,
 		body: data.body ?? '',
 		author: data.user?.login ?? 'unknown',
+		authorAssociation: data.author_association,
 		draft: data.draft ?? false,
 		state: data.state,
 		baseRef: data.base.ref,
@@ -29,6 +30,30 @@ export async function getPullRequest(octokit: Octokit, ref: RepoRef, pullNumber:
 }
 
 export type PullRequest = Awaited<ReturnType<typeof getPullRequest>>;
+
+const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+/**
+ * Whether the PR author can write to the repository. The author association is checked first;
+ * members with private org membership can show up as CONTRIBUTOR there, so anyone else is
+ * checked against their actual repository permission. Errors count as untrusted.
+ */
+export async function isTrustedAuthor(
+	octokit: Octokit,
+	ref: RepoRef,
+	pr: { author: string; authorAssociation: string }
+): Promise<boolean> {
+	if (TRUSTED_ASSOCIATIONS.has(pr.authorAssociation)) return true;
+	try {
+		const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+			...ref,
+			username: pr.author
+		});
+		return data.permission === 'admin' || data.permission === 'write';
+	} catch {
+		return false;
+	}
+}
 
 /** Reads a file at a ref, or `null` when it does not exist. */
 export async function getFileContent(

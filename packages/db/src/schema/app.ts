@@ -140,6 +140,8 @@ export const reviews = sqliteTable(
 		/** Merge confidence, S (best) to F. */
 		tier: text('tier', { enum: tiers }),
 		tierReason: text('tier_reason'),
+		/** Per-file walkthrough of the whole PR; the next incremental review builds on it. */
+		walkthrough: text('walkthrough', { mode: 'json' }).$type<{ path: string; change: string }[]>(),
 		error: text('error'),
 		inputTokens: integer('input_tokens').notNull().default(0),
 		outputTokens: integer('output_tokens').notNull().default(0),

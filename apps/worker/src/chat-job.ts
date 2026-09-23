@@ -53,7 +53,8 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 
 	try {
 		const pr = await getPullRequest(octokit, ref, payload.pullNumber);
-		const { config } = parseRepoConfig(await getFileContent(octokit, ref, '.hans.yml', pr.headSha));
+		// Settings and guidelines come from the base branch, which the PR author cannot change.
+		const { config } = parseRepoConfig(await getFileContent(octokit, ref, '.hans.yml', pr.baseSha));
 
 		const comments =
 			payload.kind === 'review'
@@ -93,11 +94,12 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		const usage = await createUsageRecorder(db, { organizationId: payload.organizationId });
 		const learnings = await loadLearnings(db, payload.organizationId, payload.repositoryId);
 
+		const token = await getInstallationToken(octokit);
 		const answer = await withWorkdir(env, async (repoDir) => {
 			const diff = await checkoutPullRequest({
 				dir: repoDir,
 				cloneUrl: pr.cloneUrl,
-				token: await getInstallationToken(octokit),
+				token,
 				pullNumber: pr.number,
 				baseSha: pr.baseSha,
 				headSha: pr.headSha
@@ -109,6 +111,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				thread,
 				focus,
 				learnings,
+				trustedSource: { ref: pr.baseSha, token },
 				language: config.language,
 				model,
 				onModelCall: usage.record,

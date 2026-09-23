@@ -64,6 +64,23 @@ describe('formatSummaryComment', () => {
 		expect(body).toContain('- ~~Missing await~~ · `src/a.ts:9`');
 		expect(body).toContain('| Naming | Below min_severity (minor) |');
 		expect(body).not.toContain('Still open from earlier reviews');
+		expect(body).not.toContain('Latest changes');
+		expect(body).not.toContain('[!NOTE]');
+	});
+
+	test('shows the latest changes and why approval was withheld', () => {
+		const withNotes = formatSummaryComment({
+			...base,
+			verdict: 'comment',
+			latestChanges: 'Adds pageCount.',
+			approvalWithheld: '@stranger does not have write access to this repository.'
+		});
+		expect(withNotes).toContain(
+			'Adds pagination to the items endpoint.\n\n**Latest changes:** Adds pageCount.'
+		);
+		expect(withNotes).toContain(
+			'> [!NOTE]\n> @stranger does not have write access to this repository.'
+		);
 	});
 
 	test('ends with how to interact', () => {

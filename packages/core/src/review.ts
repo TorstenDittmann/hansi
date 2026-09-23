@@ -29,7 +29,13 @@ import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from '.
 import { finalTier, tierCap, tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
 import { decideVerdict, type Verdict } from './verdict';
-import { createRepoTools, loadRepoGuidelines, resolveRepoPath, type EmitEvent } from './tools';
+import {
+	createRepoTools,
+	loadRepoGuidelines,
+	resolveRepoPath,
+	type EmitEvent,
+	type TrustedSource
+} from './tools';
 
 export interface ReviewModel {
 	model: LanguageModel;
@@ -63,6 +69,15 @@ export interface ReviewInput {
 	openFindings?: OpenFinding[];
 	/** Team preferences from earlier conversations (see `remember` in chat). */
 	learnings?: string[];
+	/** Where to read repository guidelines from; defaults to the (untrusted) PR checkout. */
+	trustedSource?: TrustedSource;
+	/** When set, hans may not approve, for this reason (e.g. an outside contributor). */
+	withholdApproval?: string;
+	/**
+	 * Summary and walkthrough from the last review. Incremental reviews update them so the
+	 * summary keeps describing the whole pull request, not just the newest commits.
+	 */
+	previousSummary?: { summary: string; walkthrough: WalkthroughEntry[] };
 	pullRequest: { title: string; body: string; author: string };
 	config: RepoConfig;
 	models: { review: ReviewModel; verify?: ReviewModel };
@@ -70,6 +85,11 @@ export interface ReviewInput {
 	onModelCall?: (call: ModelCall) => void | Promise<void>;
 	signal?: AbortSignal;
 	limits?: { maxDiffChars?: number; maxReviewSteps?: number; maxVerifySteps?: number };
+}
+
+export interface WalkthroughEntry {
+	path: string;
+	change: string;
 }
 
 export interface OpenFinding {
@@ -98,8 +118,12 @@ export type ReviewResult =
 			/** Merge confidence for the whole PR, S (best) to F. */
 			tier: Tier;
 			tierReason: string;
-			/** What changed, per file, for the summary comment. */
-			walkthrough: { path: string; change: string }[];
+			/** What changed, per file, across the whole pull request. */
+			walkthrough: WalkthroughEntry[];
+			/** Incremental reviews: what the newest commits changed. */
+			latestChanges: string | null;
+			/** Why hans did not approve although it found nothing blocking. */
+			approvalWithheld: string | null;
 	  };
 
 const submissionSchema = z.object({
@@ -114,6 +138,10 @@ const submissionSchema = z.object({
 		.array(z.object({ path: z.string(), change: z.string() }))
 		.default([])
 		.describe('One short line per changed file (or group of files) describing what changed'),
+	latest_changes: z
+		.string()
+		.optional()
+		.describe('Incremental reviews only: one sentence on what the newest commits changed'),
 	tier_reason: z.string().optional().describe('One sentence explaining the tier')
 });
 const verdictsSchema = z.object({
@@ -176,7 +204,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const tools = createRepoTools(input.repoDir, emit);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
-		guidelines: await loadRepoGuidelines(input.repoDir),
+		guidelines: await loadRepoGuidelines(input.repoDir, input.trustedSource),
 		config,
 		pathInstructions,
 		diff: shown.map(renderFileDiff).join('\n\n'),
@@ -184,7 +212,11 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		incrementalFrom: input.incrementalFrom,
 		learnings: input.learnings,
 		previousFindings,
-		openFindings: input.openFindings
+		openFindings: input.openFindings,
+		previousSummary: input.incrementalFrom ? input.previousSummary : undefined,
+		pullRequestFiles: input.incrementalFrom
+			? (pullRequestFiles ?? []).map((f) => f.path)
+			: undefined
 	});
 
 	// 1. Review: an agent loop that explores the repo, then submits findings.
@@ -275,7 +307,15 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
-	const verdict = decideVerdict({ posted, stillOpen: stillOpenBlocking, config });
+	let verdict = decideVerdict({ posted, stillOpen: stillOpenBlocking, config });
+	// Approval is the one outcome an attacker would want: only grant it when it is safe to.
+	const truncated = shown.length < included.length;
+	const approvalWithheld =
+		verdict !== 'approve'
+			? null
+			: (input.withholdApproval ??
+				(truncated ? 'Part of the diff was too large to review, so hans did not approve.' : null));
+	if (approvalWithheld) verdict = 'comment';
 	const open = [...posted, ...stillOpen].sort(compareSeverity);
 	// Without a grade from the model, the open findings decide (S when nothing is open).
 	const tier = finalTier(submitted.tier, tierCap(open.map((f) => f.severity)));
@@ -305,8 +345,31 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		verdict,
 		tier,
 		tierReason,
-		walkthrough: submitted.walkthrough
+		walkthrough: mergeWalkthrough(
+			submitted.walkthrough,
+			input.incrementalFrom ? input.previousSummary?.walkthrough : undefined,
+			pullRequestFiles?.map((f) => f.path)
+		),
+		latestChanges: input.incrementalFrom ? (submitted.latest_changes ?? null) : null,
+		approvalWithheld
 	};
+}
+
+/**
+ * The walkthrough from this review, plus entries from the previous one for files the model did
+ * not mention again but that are still part of the pull request.
+ */
+export function mergeWalkthrough(
+	current: WalkthroughEntry[],
+	previous: WalkthroughEntry[] = [],
+	pullRequestPaths?: string[]
+): WalkthroughEntry[] {
+	const covered = new Set(current.map((entry) => entry.path));
+	const carried = previous.filter(
+		(entry) =>
+			!covered.has(entry.path) && (!pullRequestPaths || pullRequestPaths.includes(entry.path))
+	);
+	return [...current, ...carried];
 }
 
 function withoutSuggestion(finding: Finding): Finding {

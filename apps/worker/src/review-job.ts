@@ -1,4 +1,10 @@
-import { blockingSeverity, parseRepoConfig, severityAtLeast, type Severity } from '@hans/config';
+import {
+	blockingSeverity,
+	parseRepoConfig,
+	severityAtLeast,
+	type RepoConfig,
+	type Severity
+} from '@hans/config';
 import {
 	checkoutPullRequest,
 	diffSince,
@@ -20,6 +26,7 @@ import {
 	getFileContent,
 	getInstallationToken,
 	getPullRequest,
+	isTrustedAuthor,
 	listReviewComments,
 	RequestError,
 	startCheckRun,
@@ -42,7 +49,7 @@ import {
 type Review = typeof schema.reviews.$inferSelect;
 type Outcome = Pick<
 	typeof schema.reviews.$inferInsert,
-	'status' | 'summary' | 'verdict' | 'tier' | 'tierReason'
+	'status' | 'summary' | 'verdict' | 'tier' | 'tierReason' | 'walkthrough'
 >;
 
 const reviewEvents = {
@@ -97,8 +104,10 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	const pr = await getPullRequest(octokit, ref, review.pullNumber);
 	if (pr.state !== 'open') return { status: 'skipped', summary: 'Pull request is closed' };
 
+	// Configuration comes from the base branch: a pull request must not rewrite its own review
+	// rules. Changes to .hans.yml apply once they are merged.
 	const { config, ...configResult } = parseRepoConfig(
-		await getFileContent(octokit, ref, '.hans.yml', pr.headSha)
+		await getFileContent(octokit, ref, '.hans.yml', pr.baseSha)
 	);
 	const isAutomatic = review.trigger === 'opened' || review.trigger === 'synchronize';
 	const skipReason = !config.reviews.enabled
@@ -189,7 +198,10 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				incrementalFrom,
 				previousFindings: history.findings,
 				openFindings: history.open,
+				previousSummary: history.previousSummary,
 				learnings,
+				trustedSource: { ref: pr.baseSha, token },
+				withholdApproval: await approvalRestriction(connection, pr, config),
 				pullRequest: pr,
 				config,
 				models,
@@ -237,6 +249,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					),
 					dropped: result.dropped,
 					walkthrough: result.walkthrough,
+					latestChanges: result.latestChanges,
+					approvalWithheld: result.approvalWithheld,
 					incrementalFrom,
 					detailsUrl,
 					mention: connection.mention
@@ -296,7 +310,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				summary: result.summary,
 				verdict: result.verdict,
 				tier: result.tier,
-				tierReason: result.tierReason
+				tierReason: result.tierReason,
+				walkthrough: result.walkthrough
 			} satisfies Outcome;
 		});
 	} catch (error) {
@@ -308,6 +323,20 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 		}).catch((e) => log.warn({ err: e }, 'failed to complete check run'));
 		throw error;
 	}
+}
+
+/**
+ * Why hans may not approve this PR, if anything. Content from people without write access could
+ * try to talk the model into approving, so their PRs get findings but never an approval.
+ */
+async function approvalRestriction(
+	{ octokit, ref }: RepositoryConnection,
+	pr: { author: string; authorAssociation: string },
+	config: RepoConfig
+): Promise<string | undefined> {
+	if (config.reviews.approve_outside_contributors) return undefined;
+	if (await isTrustedAuthor(octokit, ref, pr)) return undefined;
+	return `@${pr.author} does not have write access to this repository, so hans does not approve automatically. A maintainer can review and approve.`;
 }
 
 /**
@@ -383,7 +412,11 @@ async function loadReviewHistory(db: Database, review: Review) {
 		ne(schema.reviews.id, review.id)
 	);
 	const [last] = await db
-		.select({ headSha: schema.reviews.headSha })
+		.select({
+			headSha: schema.reviews.headSha,
+			summary: schema.reviews.summary,
+			walkthrough: schema.reviews.walkthrough
+		})
 		.from(schema.reviews)
 		.where(samePullRequest)
 		.orderBy(desc(schema.reviews.finishedAt))
@@ -418,6 +451,10 @@ async function loadReviewHistory(db: Database, review: Review) {
 	const findings = rows.filter((f) => f.status !== 'resolved');
 	return {
 		lastHeadSha: last?.headSha || undefined,
+		previousSummary:
+			last?.summary && last.walkthrough
+				? { summary: last.summary, walkthrough: last.walkthrough }
+				: undefined,
 		lastDecisiveVerdict: decisive?.verdict ?? undefined,
 		findings,
 		open
