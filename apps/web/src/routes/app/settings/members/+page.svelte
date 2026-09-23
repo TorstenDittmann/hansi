@@ -9,7 +9,7 @@
 	<header>
 		<h1 class="text-2xl font-semibold">Members</h1>
 		<p class="muted">
-			Invite teammates by the email address on their GitHub account. They join this workspace the
+			Invite teammates by the email address on their GitHub account. They join this organization the
 			first time they sign in.
 		</p>
 	</header>

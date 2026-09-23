@@ -24,7 +24,7 @@ export const actions: Actions = {
 		await setRepositoryEnabled(organization.id, repositoryId, form.get('enabled') === 'true');
 	},
 
-	/** Links every installation the signed-in GitHub user can access to this workspace. */
+	/** Links every installation the signed-in GitHub user can access to this organization. */
 	sync: async ({ locals, request }) => {
 		const organization = await requireOrganization(locals, request.headers);
 		const credentials = await getGitHubCredentials();

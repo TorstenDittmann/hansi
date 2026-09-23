@@ -1,15 +1,32 @@
 import { error } from '@sveltejs/kit';
 import { getAuth } from './auth';
 
+/** A URL-friendly slug from a name, with a random suffix so names don't need to be unique. */
+export function organizationSlug(name: string) {
+	const base = name
+		.toLowerCase()
+		.normalize('NFKD')
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 32);
+	return `${base || 'org'}-${crypto.randomUUID().slice(0, 6)}`;
+}
+
 /**
- * The signed-in user's active organization. New users get a personal workspace on first visit,
- * so there is always somewhere to attach GitHub installations and provider keys.
+ * The signed-in user's active organization, and all organizations they belong to. New users get
+ * a "Personal" organization on first visit, so there is always somewhere to attach GitHub
+ * installations and provider keys.
  */
 export async function requireOrganization(locals: App.Locals, headers: Headers) {
+	const { active } = await organizationsFor(locals, headers);
+	return active;
+}
+
+export async function organizationsFor(locals: App.Locals, headers: Headers) {
 	if (!locals.user || !locals.session) error(401, 'Not signed in');
 	const auth = await getAuth();
 
-	// Join workspaces this user was invited to before falling back to a personal one.
+	// Join organizations this user was invited to before falling back to a personal one.
 	// better-auth only matches invitations to verified emails (GitHub reports verification).
 	if (locals.user.emailVerified) {
 		const invitations = await auth.api.listUserInvitations({ headers });
@@ -24,10 +41,7 @@ export async function requireOrganization(locals: App.Locals, headers: Headers) 
 	if (organizations.length === 0) {
 		await auth.api.createOrganization({
 			headers,
-			body: {
-				name: `${locals.user.name || locals.user.email}'s workspace`,
-				slug: `ws-${locals.user.id.slice(0, 12).toLowerCase()}`
-			}
+			body: { name: 'Personal', slug: organizationSlug('personal') }
 		});
 		organizations = await auth.api.listOrganizations({ headers });
 	}
@@ -35,10 +49,10 @@ export async function requireOrganization(locals: App.Locals, headers: Headers) 
 	const active =
 		organizations.find((org) => org.id === locals.session?.activeOrganizationId) ??
 		organizations[0];
-	if (!active) error(500, 'Could not create a workspace');
+	if (!active) error(500, 'Could not create an organization');
 
 	if (active.id !== locals.session.activeOrganizationId) {
 		await auth.api.setActiveOrganization({ headers, body: { organizationId: active.id } });
 	}
-	return active;
+	return { active, organizations };
 }

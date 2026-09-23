@@ -128,7 +128,7 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 						: undefined
 					: payload.pull_request?.number;
 			if (payload.action !== 'created' || !comment || !pullNumber || !payload.repository) break;
-			// Every answer spends the workspace's API credits; only trusted people can ask.
+			// Every answer spends the organization's API credits; only trusted people can ask.
 			if (comment.user.type === 'Bot' || !TRUSTED_ASSOCIATIONS.has(comment.author_association)) {
 				break;
 			}
