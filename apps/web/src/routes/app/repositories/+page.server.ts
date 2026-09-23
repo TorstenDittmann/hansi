@@ -5,7 +5,7 @@ import {
 	disconnectInstallation,
 	listInstallations,
 	listRepositories,
-	setRepositoryEnabled
+	setRepositoriesEnabled
 } from '$lib/server/data';
 import { listUserInstallationIds, syncInstallation } from '$lib/server/installations';
 import { requireOrganization } from '$lib/server/organization';
@@ -21,12 +21,14 @@ export const load: PageServerLoad = async ({ parent }) => {
 };
 
 export const actions: Actions = {
+	/** Turns reviews on or off for one repository, or several at once (`repositoryId` repeated). */
 	toggle: async ({ locals, request }) => {
 		const organization = await requireOrganization(locals, request.headers);
 		const form = await request.formData();
-		const repositoryId = Number(form.get('repositoryId'));
-		if (!Number.isInteger(repositoryId)) return fail(400, { message: 'Invalid repository' });
-		await setRepositoryEnabled(organization.id, repositoryId, form.get('enabled') === 'true');
+		const ids = form.getAll('repositoryId').map(Number);
+		if (ids.some((id) => !Number.isInteger(id)))
+			return fail(400, { message: 'Invalid repository' });
+		await setRepositoriesEnabled(organization.id, ids, form.get('enabled') === 'true');
 	},
 
 	/**

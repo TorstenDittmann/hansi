@@ -2,7 +2,7 @@
 // filters by it; SQLite has no row-level security, so this module is the tenancy boundary.
 import { schema, type ModelRole, type ProviderId } from '@hans/db';
 import { encryptSecret, keyHint } from '@hans/llm';
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { getContext } from './context';
 
 export async function listRepositories(organizationId: string) {
@@ -52,11 +52,13 @@ export async function disconnectInstallation(organizationId: string, installatio
 		);
 }
 
-export async function setRepositoryEnabled(
+/** Turns reviews on or off for repositories, limited to the organization's installations. */
+export async function setRepositoriesEnabled(
 	organizationId: string,
-	repositoryId: number,
+	repositoryIds: number[],
 	enabled: boolean
 ) {
+	if (repositoryIds.length === 0) return;
 	const { db } = await getContext();
 	const owned = db
 		.select({ id: schema.githubInstallations.id })
@@ -67,7 +69,7 @@ export async function setRepositoryEnabled(
 		.set({ enabled })
 		.where(
 			and(
-				eq(schema.repositories.id, repositoryId),
+				inArray(schema.repositories.id, repositoryIds),
 				sql`${schema.repositories.installationId} in ${owned}`
 			)
 		);

@@ -13,6 +13,8 @@
 		enabled: enabledCount,
 		disabled: data.repositories.length - enabledCount
 	});
+	/** A search or filter is active, so bulk actions apply to what is shown, not everything. */
+	const narrowed = $derived(filter !== 'all' || query.trim() !== '');
 	const shown = $derived(
 		data.repositories.filter(
 			(repo) =>
@@ -143,6 +145,21 @@
 						onclick={() => (filter = option)}
 						>{option} <span class="tabular-nums opacity-60">{counts[option]}</span></button
 					>
+				{/each}
+			</div>
+			<div class="ml-auto flex gap-2">
+				{#each [true, false] as enable (enable)}
+					{@const targets = shown.filter((repo) => repo.enabled !== enable)}
+					<form method="post" action="?/toggle" use:enhance>
+						{#each targets as repo (repo.id)}
+							<input type="hidden" name="repositoryId" value={repo.id} />
+						{/each}
+						<input type="hidden" name="enabled" value={String(enable)} />
+						<button class="btn" disabled={targets.length === 0}>
+							{enable ? 'Enable' : 'Disable'}
+							{narrowed ? `${shown.length} shown` : 'all'}
+						</button>
+					</form>
 				{/each}
 			</div>
 		</div>
