@@ -116,6 +116,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/evals": {
+      "name": "@hans/evals",
+      "dependencies": {
+        "@hans/config": "workspace:*",
+        "@hans/core": "workspace:*",
+        "@hans/llm": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/github": {
       "name": "@hans/github",
       "dependencies": {
@@ -331,6 +343,8 @@
     "@hans/core": ["@hans/core@workspace:packages/core"],
 
     "@hans/db": ["@hans/db@workspace:packages/db"],
+
+    "@hans/evals": ["@hans/evals@workspace:packages/evals"],
 
     "@hans/github": ["@hans/github@workspace:packages/github"],
 

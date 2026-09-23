@@ -61,7 +61,23 @@ the GitHub App.
 | `bun run test`        | Unit and integration tests (in-memory libSQL, mocked models) |
 | `bun run lint`        | Prettier and ESLint                                          |
 | `bun run build`       | Production build of the web app                              |
+| `bun run eval`        | Score review quality with a real model (see below)           |
 | `bun run db:generate` | Generate a migration after changing `packages/db/src/schema` |
+
+## Evals
+
+`packages/evals` measures review quality on small pull requests with known bugs (TypeScript,
+Python, Go) and on clean changes where any comment is noise. It builds a real git repository per
+case, runs the review engine, and reports precision, recall, F1, and cost:
+
+```sh
+EVAL_PROVIDER=anthropic EVAL_MODEL=<model id> EVAL_API_KEY=… bun run eval
+bun run eval -- --case sql --repeat 3 --min-f1 0.6
+```
+
+Run it before and after changing prompts or models. Add a case to `packages/evals/src/cases` for
+every bug hans should have caught. The `Evals` workflow runs the suite on demand or on pull
+requests labeled `run-evals`.
 
 ## Repository configuration
 
@@ -102,6 +118,7 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 | `packages/llm`    | Provider registry, key encryption, model listing, models.dev pricing     |
 | `packages/github` | GitHub App auth, manifest flow, pull request and check run helpers       |
 | `packages/config` | Environment and `.hans.yml` schemas                                      |
+| `packages/evals`  | Review-quality benchmark: cases with known bugs, scoring, runner         |
 
 **Deployment modes.** By default, one container runs both web and worker on a shared database
 file (`HANS_MODE=all`). To run them as separate containers, point both at

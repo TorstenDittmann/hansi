@@ -1,0 +1,19 @@
+{
+	"name": "@hans/evals",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"check": "tsc -p .",
+		"test": "bun test --pass-with-no-tests",
+		"eval": "bun --env-file=../../.env src/run.ts"
+	},
+	"dependencies": {
+		"@hans/config": "workspace:*",
+		"@hans/core": "workspace:*",
+		"@hans/llm": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

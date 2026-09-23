@@ -27,7 +27,8 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"db:generate": "bun run --cwd packages/db generate",
-		"db:migrate": "bun run --cwd packages/db migrate"
+		"db:migrate": "bun run --cwd packages/db migrate",
+		"eval": "bun run --cwd packages/evals eval"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
