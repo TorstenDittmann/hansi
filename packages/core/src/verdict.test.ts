@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
-import { formatReviewBody } from './format';
 import { finalTier, tierCap } from './tier';
 import { decideVerdict } from './verdict';
 
@@ -52,21 +51,4 @@ describe('tiers', () => {
 		expect(finalTier('B', 'S')).toBe('B');
 		expect(finalTier(undefined, 'B')).toBe('B');
 	});
-});
-
-test('the review body leads with the tier', () => {
-	const body = formatReviewBody({
-		summary: 'Adds pagination.',
-		tier: 'C',
-		tierReason: 'Limited by an open major finding: Off by one',
-		posted: 1,
-		dropped: 0,
-		resolved: 1,
-		stillOpen: 0,
-		reviewedFiles: 2
-	});
-	expect(body).toStartWith(
-		'### hans review · Tier C\n\n**Needs changes before merging.** Limited by an open major finding'
-	);
-	expect(body).toContain('1 comment on 2 reviewed files. 1 earlier finding fixed.');
 });

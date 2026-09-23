@@ -5,6 +5,7 @@ export * from './findings';
 export * from './format';
 export * from './git';
 export * from './review';
+export * from './suggestions';
 export * from './tier';
 export * from './verdict';
 export * from './verdict';

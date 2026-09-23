@@ -27,6 +27,7 @@ import {
 } from './findings';
 import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
 import { finalTier, tierCap, tiers, type Tier } from './tier';
+import { checkSuggestion } from './suggestions';
 import { decideVerdict, type Verdict } from './verdict';
 import { createRepoTools, loadRepoGuidelines, resolveRepoPath, type EmitEvent } from './tools';
 
@@ -97,6 +98,8 @@ export type ReviewResult =
 			/** Merge confidence for the whole PR, S (best) to F. */
 			tier: Tier;
 			tierReason: string;
+			/** What changed, per file, for the summary comment. */
+			walkthrough: { path: string; change: string }[];
 	  };
 
 const submissionSchema = z.object({
@@ -107,10 +110,24 @@ const submissionSchema = z.object({
 		.default([])
 		.describe('Ids of <open_findings> that the current code fixes'),
 	tier: z.enum(tiers).optional().describe('Merge confidence for the whole pull request'),
+	walkthrough: z
+		.array(z.object({ path: z.string(), change: z.string() }))
+		.default([])
+		.describe('One short line per changed file (or group of files) describing what changed'),
 	tier_reason: z.string().optional().describe('One sentence explaining the tier')
 });
 const verdictsSchema = z.object({
-	verdicts: z.array(z.object({ id: z.string(), keep: z.boolean(), reason: z.string() }))
+	verdicts: z.array(
+		z.object({
+			id: z.string(),
+			keep: z.boolean(),
+			reason: z.string(),
+			suggestion_ok: z
+				.boolean()
+				.optional()
+				.describe('For findings with a suggestion: is applying it correct?')
+		})
+	)
 });
 
 const DEFAULT_LIMITS = { maxDiffChars: 150_000, maxReviewSteps: 40, maxVerifySteps: 20 };
@@ -236,12 +253,25 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// 5. Cap the number of comments, most severe first.
 	verified.sort(compareSeverity);
-	const posted = verified.slice(0, config.reviews.max_comments);
+	const capped = verified.slice(0, config.reviews.max_comments);
+
+	// 6. A suggestion is applied verbatim with one click: never post one that breaks the code.
+	const posted = await Promise.all(
+		capped.map(async (finding) => {
+			const check = await checkSuggestion(input.repoDir, finding);
+			if (check.ok) return finding;
+			emit({
+				type: 'suggestion.removed',
+				data: { path: finding.path, title: finding.title, reason: check.reason }
+			});
+			return withoutSuggestion(finding);
+		})
+	);
 	for (const finding of verified.slice(config.reviews.max_comments)) {
 		dropped.push({ ...finding, dropReason: `Over max_comments (${config.reviews.max_comments})` });
 	}
 
-	// 6. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
+	// 7. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
@@ -274,8 +304,15 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		stillOpenBlocking,
 		verdict,
 		tier,
-		tierReason
+		tierReason,
+		walkthrough: submitted.walkthrough
 	};
+}
+
+function withoutSuggestion(finding: Finding): Finding {
+	const copy = { ...finding };
+	delete copy.suggestion;
+	return copy;
 }
 
 /** Clamps a finding onto commentable lines of a single hunk, or returns null. */
@@ -310,7 +347,11 @@ async function verifyFindings(
 				finding.startLine,
 				finding.endLine
 			);
-			return `<finding id="F${i + 1}" path="${finding.path}" lines="${finding.startLine}-${finding.endLine}" severity="${finding.severity}">\n${finding.title}\n\n${finding.body}\n\n<code>\n${context}\n</code>\n</finding>`;
+			const suggestion =
+				finding.suggestion === undefined
+					? ''
+					: `\n\n<suggestion replaces_lines="${finding.startLine}-${finding.endLine}">\n${finding.suggestion}\n</suggestion>`;
+			return `<finding id="F${i + 1}" path="${finding.path}" lines="${finding.startLine}-${finding.endLine}" severity="${finding.severity}">\n${finding.title}\n\n${finding.body}\n\n<code>\n${context}\n</code>${suggestion}\n</finding>`;
 		})
 	);
 
@@ -337,11 +378,20 @@ async function verifyFindings(
 	input.onEvent?.({ type: 'verify.completed', data: { verdicts } });
 
 	// A finding without a verdict is kept: a flaky verifier must not silently hide real bugs.
-	return findings.filter((finding, i) => {
+	return findings.flatMap((finding, i) => {
 		const verdict = byId.get(`F${i + 1}`);
-		if (verdict && !verdict.keep)
+		if (verdict && !verdict.keep) {
 			dropped.push({ ...finding, dropReason: `Verifier: ${verdict.reason}` });
-		return !verdict || verdict.keep;
+			return [];
+		}
+		if (verdict?.suggestion_ok === false && finding.suggestion !== undefined) {
+			input.onEvent?.({
+				type: 'suggestion.removed',
+				data: { path: finding.path, title: finding.title, reason: 'verifier rejected it' }
+			});
+			return [withoutSuggestion(finding)];
+		}
+		return [finding];
 	});
 }
 

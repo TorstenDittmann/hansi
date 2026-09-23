@@ -1,10 +1,12 @@
-import { parseRepoConfig, type Severity } from '@hans/config';
+import { blockingSeverity, parseRepoConfig, severityAtLeast, type Severity } from '@hans/config';
 import {
 	checkoutPullRequest,
 	diffSince,
 	formatFindingComment,
 	formatReviewBody,
+	formatSummaryComment,
 	runReview,
+	SUMMARY_MARKER,
 	tierMeaning,
 	type Finding,
 	type OpenFinding,
@@ -21,6 +23,7 @@ import {
 	listReviewComments,
 	RequestError,
 	startCheckRun,
+	upsertMarkedComment,
 	type ReviewEvent
 } from '@hans/github';
 import type { Job, ReviewJobPayload } from '@hans/queue';
@@ -213,25 +216,60 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					.where(inArray(schema.reviewFindings.id, result.resolved));
 			}
 
-			const body = formatReviewBody({
-				summary: result.summary,
-				tier: result.tier,
-				tierReason: result.tierReason,
-				resolved: result.resolved.length,
-				stillOpen: result.stillOpenBlocking,
-				posted: result.posted.length,
-				dropped: result.dropped.length,
-				reviewedFiles: result.reviewedFiles.length,
-				incrementalFrom,
-				detailsUrl
-			});
-			const commentIds = await postReview(
-				connection,
-				pr,
-				{ body, event: reviewEvents[result.verdict] },
-				result.posted,
-				log
+			// One summary comment per PR, edited in place on every review.
+			const threshold = blockingSeverity(config);
+			const summary = await upsertMarkedComment(
+				octokit,
+				ref,
+				pr.number,
+				SUMMARY_MARKER,
+				formatSummaryComment({
+					repository: connection.repository.fullName,
+					headSha: pr.headSha,
+					summary: result.summary,
+					tier: result.tier,
+					tierReason: result.tierReason,
+					verdict: result.verdict,
+					posted: result.posted,
+					resolved: history.open.filter((f) => result.resolved.includes(f.id)),
+					stillOpen: history.open.filter(
+						(f) => !result.resolved.includes(f.id) && severityAtLeast(f.severity, threshold)
+					),
+					dropped: result.dropped,
+					walkthrough: result.walkthrough,
+					incrementalFrom,
+					detailsUrl,
+					mention: connection.mention
+				})
 			);
+
+			// A GitHub review is only submitted when it adds something: inline comments, or a change
+			// of hans's approve / request-changes state. Otherwise the summary update is enough.
+			const stateChanged =
+				result.verdict !== 'comment' && result.verdict !== history.lastDecisiveVerdict;
+			const commentIds =
+				result.posted.length || stateChanged
+					? await postReview(
+							connection,
+							pr,
+							{
+								body: formatReviewBody({
+									tier: result.tier,
+									verdict: result.verdict,
+									blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
+										.length,
+									summaryUrl: summary.url
+								}),
+								event: reviewEvents[result.verdict]
+							},
+							result.posted,
+							log
+						)
+					: [];
+			record({
+				type: 'review.posted',
+				data: { summaryUrl: summary.url, submittedReview: result.posted.length > 0 || stateChanged }
+			});
 
 			const findingRows = [
 				...result.posted.map((f, i) => ({
@@ -350,6 +388,13 @@ async function loadReviewHistory(db: Database, review: Review) {
 		.where(samePullRequest)
 		.orderBy(desc(schema.reviews.finishedAt))
 		.limit(1);
+	// hans's current approve / request-changes state on GitHub is its latest such review.
+	const [decisive] = await db
+		.select({ verdict: schema.reviews.verdict })
+		.from(schema.reviews)
+		.where(and(samePullRequest, inArray(schema.reviews.verdict, ['approve', 'request_changes'])))
+		.orderBy(desc(schema.reviews.finishedAt))
+		.limit(1);
 	const rows = await db
 		.select({
 			id: schema.reviewFindings.id,
@@ -371,5 +416,10 @@ async function loadReviewHistory(db: Database, review: Review) {
 		.map((f) => ({ ...f, severity: f.severity as Severity }));
 	// Resolved findings may be reported again if the problem comes back; dismissed ones may not.
 	const findings = rows.filter((f) => f.status !== 'resolved');
-	return { lastHeadSha: last?.headSha || undefined, findings, open };
+	return {
+		lastHeadSha: last?.headSha || undefined,
+		lastDecisiveVerdict: decisive?.verdict ?? undefined,
+		findings,
+		open
+	};
 }

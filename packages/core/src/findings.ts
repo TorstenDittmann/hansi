@@ -30,7 +30,7 @@ export const findingSchema = z.object({
 		.string()
 		.optional()
 		.describe(
-			'Exact replacement code for lines startLine..endLine, without code fences. Omit unless the fix is small and certain.'
+			'Code only, never prose. GitHub replaces lines startLine..endLine verbatim with this text when the author clicks "Apply", so it must be the complete, correctly indented replacement for exactly those lines and keep the code compiling (every block it opens must close). No code fences, no comments explaining the fix. Omit unless the fix is small, local, and certain; explain larger fixes in the body instead.'
 		)
 });
 

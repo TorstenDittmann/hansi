@@ -31,7 +31,7 @@ Grade the whole pull request's merge confidence as a tier, considering your find
 S = exemplary, merge with confidence; A = safe to merge; B = mergeable after minor fixes; C = needs changes before merging; D = significant problems; F = do not merge (broken, dangerous, or data-destroying).
 Give a one-sentence tier_reason.
 
-When done, call submit_review exactly once with a short summary of the change (2-4 sentences, what it does, not a judgement) and your findings.`;
+When done, call submit_review exactly once with a short summary of the change (2-4 sentences, what it does, not a judgement), a walkthrough (one short line per changed file), and your findings.`;
 }
 
 export function verifierInstructions(): string {
@@ -40,6 +40,8 @@ export function verifierInstructions(): string {
 For each finding, use the tools to check the actual code and decide:
 - keep: the problem is real, correctly described, and reachable in practice.
 - drop: the problem is not real, is already handled elsewhere, is speculative, is a style nit, or is on the wrong lines.
+
+When a finding has a <suggestion>, GitHub will replace the finding's lines with it verbatim if the author clicks "Apply". Set suggestion_ok to false if applying it would not be correct, complete code for exactly those lines (prose, partial code, broken indentation or blocks, or a change that does not fix the problem).
 
 Call submit_verdicts exactly once with a verdict for every finding id.`;
 }

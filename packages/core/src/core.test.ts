@@ -115,8 +115,9 @@ test('formatFindingComment renders a suggestion block', () => {
 		body: 'User input reaches the query.',
 		suggestion: 'db.query(sql, [id]);\n'
 	});
-	expect(comment).toContain('🔴 Critical · security');
-	expect(comment).toEndWith('```suggestion\ndb.query(sql, [id]);\n```');
+	expect(comment).toStartWith('**SQL injection**\n\nUser input reaches the query.');
+	expect(comment).toContain('```suggestion\ndb.query(sql, [id]);\n```');
+	expect(comment).toContain('<sub>🔴 Critical · security');
 });
 
 describe('runReview', () => {
@@ -259,6 +260,48 @@ describe('runReview', () => {
 		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
 		expect(prompt).toContain('incremental review');
 		expect(prompt).toContain('already_reported');
+	});
+
+	test('never posts a suggestion that would break the code', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [
+						{
+							...finding(2, 'Division by zero'),
+							suggestion: 'Check that b is not zero before dividing.'
+						},
+						{ ...finding(3, 'Returns NaN'), suggestion: '  return result ?? 0;' }
+					]
+				}),
+				// Even when the verifier waves the prose suggestion through, the syntax check stops it.
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real', suggestion_ok: true },
+						{ id: 'F2', keep: true, reason: 'real', suggestion_ok: false }
+					]
+				})
+			]
+		});
+		const events: string[] = [];
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			onEvent: (e) => void events.push(`${e.type}:${String(e.data?.reason ?? '')}`)
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.suggestion])).toEqual([
+			['Division by zero', undefined],
+			['Returns NaN', undefined]
+		]);
+		expect(events).toContain('suggestion.removed:verifier rejected it');
+		expect(events.some((e) => e.startsWith('suggestion.removed:applying it introduces'))).toBe(
+			true
+		);
 	});
 
 	test('resolves fixed findings, approves, and grades the PR', async () => {

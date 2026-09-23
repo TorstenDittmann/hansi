@@ -5,6 +5,7 @@ import type { Env } from '@hans/config';
 import type { ModelCall, ReviewModel } from '@hans/core';
 import { schema, type Database } from '@hans/db';
 import {
+	botMention,
 	getInstallationOctokit,
 	loadGitHubAppCredentials,
 	parseFullName,
@@ -32,6 +33,8 @@ export interface RepositoryConnection {
 	repository: typeof schema.repositories.$inferSelect;
 	octokit: Octokit;
 	ref: RepoRef;
+	/** The bot's handle, e.g. `@hans-review`. */
+	mention: string;
 }
 
 /** Installation-authenticated access to a repository, or null if it is no longer installed. */
@@ -54,7 +57,8 @@ export async function connectRepository(
 	return {
 		repository: row.repository,
 		octokit: await getInstallationOctokit(credentials, row.installationId),
-		ref: parseFullName(row.repository.fullName)
+		ref: parseFullName(row.repository.fullName),
+		mention: botMention(credentials)
 	};
 }
 

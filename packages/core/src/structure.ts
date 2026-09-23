@@ -11,7 +11,7 @@ import python from '@ast-grep/lang-python';
 import ruby from '@ast-grep/lang-ruby';
 import rust from '@ast-grep/lang-rust';
 import swift from '@ast-grep/lang-swift';
-import { findInFiles, registerDynamicLanguage } from '@ast-grep/napi';
+import { findInFiles, parse, registerDynamicLanguage } from '@ast-grep/napi';
 
 const builtIn = ['TypeScript', 'Tsx', 'JavaScript', 'Html', 'Css'] as const;
 const dynamic = { python, go, rust, java, kotlin, ruby, php, csharp, c, cpp, swift };
@@ -85,4 +85,35 @@ export async function astSearch(options: {
 	);
 	if (failure) throw failure;
 	return matches.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
+}
+
+const builtInExtensions: Record<string, AstLanguage> = {
+	ts: 'TypeScript',
+	mts: 'TypeScript',
+	cts: 'TypeScript',
+	tsx: 'Tsx',
+	js: 'JavaScript',
+	mjs: 'JavaScript',
+	cjs: 'JavaScript',
+	jsx: 'JavaScript',
+	html: 'Html',
+	css: 'Css'
+};
+
+/** The ast-grep language for a file path, or null when none is available. */
+export function languageForPath(path: string): AstLanguage | null {
+	const extension = path.split('.').pop()?.toLowerCase() ?? '';
+	if (builtInExtensions[extension]) return builtInExtensions[extension];
+	for (const [name, language] of Object.entries(dynamic)) {
+		if (language.extensions.includes(extension)) return name as AstLanguage;
+	}
+	return null;
+}
+
+/** Number of syntax errors tree-sitter finds in `source`. */
+export function countSyntaxErrors(language: AstLanguage, source: string): number {
+	ensureLanguages();
+	return parse(language, source)
+		.root()
+		.findAll({ rule: { kind: 'ERROR' } }).length;
 }
