@@ -140,7 +140,17 @@ const verdictsSchema = z.object({
 			suggestion_ok: z
 				.boolean()
 				.optional()
-				.describe('For findings with a suggestion: is applying it correct?')
+				.describe('For findings with a suggestion: is applying it correct?'),
+			start_line: z
+				.number()
+				.int()
+				.optional()
+				.describe('Only when the finding points at the wrong lines: the correct first line'),
+			end_line: z
+				.number()
+				.int()
+				.optional()
+				.describe('Only when the finding points at the wrong lines: the correct last line')
 		})
 	)
 });
@@ -240,9 +250,12 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	// 2. Validate positions: GitHub rejects comments outside the PR diff. For incremental reviews
 	//    the finding must be on a newly changed line *and* on a line of the full PR diff.
 	const dropped: DroppedFinding[] = [];
+	const place = (finding: Finding) => {
+		const placed = placeFinding(finding, shown);
+		return placed && pullRequestFiles ? placeFinding(placed, pullRequestFiles) : placed;
+	};
 	const positioned = findings.flatMap((finding) => {
-		let placed = placeFinding(finding, shown);
-		if (placed && pullRequestFiles) placed = placeFinding(placed, pullRequestFiles);
+		const placed = place(finding);
 		if (!placed) {
 			dropped.push({ ...finding, dropReason: 'Not on a changed line' });
 			return [];
@@ -267,7 +280,11 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// 4. Verify: a second, skeptical pass removes false positives.
 	const verified = relevant.length
-		? await verifyFindings(relevant, input, tools, limits.maxVerifySteps, dropped)
+		? await verifyFindings(relevant, input, tools, limits.maxVerifySteps, dropped, (finding) => {
+				// A relocation must not land on something already reported.
+				const placed = place(finding);
+				return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
+			})
 		: [];
 
 	// 5. Cap the number of comments, most severe first.
@@ -365,6 +382,36 @@ function withoutSuggestion(finding: Finding): Finding {
 	return copy;
 }
 
+/**
+ * Moves a kept finding to the lines the verifier says it is really about. The original position
+ * already passed validation, so it stays when the corrected one is not commentable or would
+ * repeat an earlier finding.
+ */
+function relocate(
+	finding: Finding,
+	verdict: { start_line?: number; end_line?: number },
+	place: (finding: Finding) => Finding | null,
+	emit?: EmitEvent
+): Finding {
+	const startLine = verdict.start_line ?? verdict.end_line;
+	const endLine = verdict.end_line ?? verdict.start_line;
+	if (startLine === undefined || endLine === undefined) return finding;
+	if (startLine === finding.startLine && endLine === finding.endLine) return finding;
+	const placed = place({ ...finding, startLine, endLine });
+	if (!placed) return finding;
+	emit?.({
+		type: 'finding.relocated',
+		data: {
+			path: finding.path,
+			title: finding.title,
+			from: [finding.startLine, finding.endLine],
+			to: [placed.startLine, placed.endLine]
+		}
+	});
+	// A suggestion replaces exactly the lines it was written for.
+	return withoutSuggestion(placed);
+}
+
 /** Clamps a finding onto commentable lines of a single hunk, or returns null. */
 export function placeFinding(finding: Finding, files: FileDiff[]): Finding | null {
 	const file = files.find((f) => f.path === finding.path);
@@ -386,7 +433,8 @@ async function verifyFindings(
 	input: ReviewInput,
 	tools: ReturnType<typeof createRepoTools>,
 	maxSteps: number,
-	dropped: DroppedFinding[]
+	dropped: DroppedFinding[],
+	place: (finding: Finding) => Finding | null
 ): Promise<Finding[]> {
 	const verifyModel = input.models.verify ?? input.models.review;
 	const listing = await Promise.all(
@@ -428,12 +476,13 @@ async function verifyFindings(
 	input.onEvent?.({ type: 'verify.completed', data: { verdicts } });
 
 	// A finding without a verdict is kept: a flaky verifier must not silently hide real bugs.
-	return findings.flatMap((finding, i) => {
+	return findings.flatMap((original, i) => {
 		const verdict = byId.get(`F${i + 1}`);
 		if (verdict && !verdict.keep) {
-			dropped.push({ ...finding, dropReason: `Verifier: ${verdict.reason}` });
+			dropped.push({ ...original, dropReason: `Verifier: ${verdict.reason}` });
 			return [];
 		}
+		const finding = verdict ? relocate(original, verdict, place, input.onEvent) : original;
 		if (verdict?.suggestion_ok === false && finding.suggestion !== undefined) {
 			input.onEvent?.({
 				type: 'suggestion.removed',
