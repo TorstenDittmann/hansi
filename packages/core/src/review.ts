@@ -343,8 +343,13 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const open = [...posted, ...stillOpen].sort(compareSeverity);
 	// The model grades before its findings are verified and placed, so its grade may rest on
 	// findings that were dropped. With nothing open, the PR is mergeable: S. Otherwise the model's
-	// grade stands, but never better than the open findings allow.
-	const tier = open.length ? finalTier(submitted.tier, tierCap(open.map((f) => f.severity))) : 'S';
+	// grade stands, but never better than the open findings allow — and never worse than A when
+	// approving, since B+ means "needs changes" and would contradict the verdict.
+	const cap = open.length ? tierCap(open.map((f) => f.severity)) : 'S';
+	let tier = open.length ? finalTier(submitted.tier, cap) : 'S';
+	if (verdict === 'approve' && tiers.indexOf(tier) > tiers.indexOf('A')) {
+		tier = cap === 'S' ? 'S' : 'A';
+	}
 	const limitedBy = open.length && tier !== submitted.tier ? open[0] : undefined;
 	const tierReason = limitedBy
 		? `Limited by an open ${limitedBy.severity} finding: ${limitedBy.title}`

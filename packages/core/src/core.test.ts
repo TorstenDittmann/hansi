@@ -397,6 +397,48 @@ describe('runReview', () => {
 		expect(blocked.tierReason).toBe('Limited by an open major finding: NaN leaks into totals');
 	});
 
+	test('does not grade below A when approving with only minor findings still open', async () => {
+		// Same shape as a flaky re-review: model says B ("needs changes") while nothing blocking
+		// remains, which would contradict an approve.
+		const submission = toolCall('submit_review', {
+			summary: 'Still the SEO metadata change.',
+			findings: [],
+			resolved: [],
+			tier: 'B',
+			tier_reason: 'The previously reported robots meta issue remains unresolved.'
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			openFindings: [
+				{
+					id: 'f-robots',
+					path: 'src/math.ts',
+					startLine: 2,
+					endLine: 2,
+					severity: 'minor',
+					title: '/api responses bypass this robots meta tag',
+					body: 'Explained.'
+				}
+			],
+			pullRequest: { title: 'SEO', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: {
+				review: {
+					model: new MockLanguageModelV4({ doGenerate: [submission] }),
+					provider: 'mock',
+					modelId: 'mock-1'
+				}
+			}
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.verdict).toBe('approve');
+		expect(result.tier).toBe('A');
+		expect(result.tierReason).toBe(
+			'Limited by an open minor finding: /api responses bypass this robots meta tag'
+		);
+	});
+
 	test('grades S when the findings behind a lower grade were all dropped', async () => {
 		// The only finding is not on a changed line, so it is dropped before posting.
 		const submission = toolCall('submit_review', {
