@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import './layout.css';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import favicon from '$lib/assets/favicon.svg';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import Menu from '$lib/components/Menu.svelte';
+	import { startAnalytics } from '$lib/analytics';
 	import { authClient } from '$lib/auth-client';
+	import { onMount } from 'svelte';
+	import type { PostHog } from 'posthog-js';
 
 	let { data, children } = $props();
 	// The landing page brings its own full-width layout.
@@ -55,6 +58,26 @@
 	];
 	const menuItem =
 		'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-stone-100 dark:hover:bg-stone-800';
+
+	// Analytics on hansi.codes (see $lib/analytics): page views, and who is signed in by user id.
+	let posthog: PostHog | null = $state(null);
+	onMount(() => {
+		void startAnalytics().then((client) => {
+			posthog = client;
+			client?.capture('$pageview');
+		});
+	});
+	afterNavigate(({ type }) => {
+		if (type !== 'enter') posthog?.capture('$pageview');
+	});
+	$effect(() => {
+		if (!posthog) return;
+		if (data.user) posthog.identify(data.user.id);
+		else posthog.reset();
+	});
+	$effect(() => {
+		if (posthog && activeOrganization) posthog.group('organization', activeOrganization.id);
+	});
 
 	async function signOut() {
 		await authClient.signOut();

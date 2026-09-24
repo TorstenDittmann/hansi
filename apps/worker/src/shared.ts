@@ -1,3 +1,4 @@
+import type { Analytics } from '@hans/analytics';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,6 +28,7 @@ export interface WorkerContext {
 	db: Database;
 	env: Env;
 	logger: Logger;
+	analytics: Analytics;
 }
 
 export interface RepositoryConnection {

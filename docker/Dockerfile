@@ -6,6 +6,7 @@ FROM base AS deps
 COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
+COPY packages/analytics/package.json packages/analytics/
 COPY packages/config/package.json packages/config/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/

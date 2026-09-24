@@ -12,6 +12,7 @@
 		"typescript": "catalog:"
 	},
 	"dependencies": {
+		"@hans/analytics": "workspace:*",
 		"@hans/config": "workspace:*",
 		"@hans/core": "workspace:*",
 		"@hans/db": "workspace:*",

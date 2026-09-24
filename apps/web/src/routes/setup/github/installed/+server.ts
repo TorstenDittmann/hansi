@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { getGitHubUserToken } from '$lib/server/github-user';
 import { getContext, getGitHubCredentials } from '$lib/server/context';
 import { listUserInstallationIds, syncInstallation } from '$lib/server/installations';
+import { track } from '$lib/server/analytics';
 import { requireOrganization } from '$lib/server/organization';
 import type { RequestHandler } from './$types';
 
@@ -25,5 +26,11 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 	const organization = await requireOrganization(locals, request.headers);
 	const { db } = await getContext();
 	const linked = await syncInstallation(db, credentials, installationId, organization.id);
+	await track({
+		distinctId: locals.user!.id,
+		event: 'github app installed',
+		organizationId: organization.id,
+		properties: { linked }
+	});
 	redirect(303, linked ? '/app/repositories' : '/app/repositories?elsewhere=1');
 };

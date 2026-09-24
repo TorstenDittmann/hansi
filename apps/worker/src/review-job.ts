@@ -36,7 +36,7 @@ import {
 	type ReviewEvent
 } from '@hans/github';
 import type { Job, ReviewJobPayload } from '@hans/queue';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import {
 	connectRepository,
@@ -85,6 +85,7 @@ export async function handleReviewJob(ctx: WorkerContext, job: Job<ReviewJobPayl
 		const outcome = await executeReview(ctx, review, log);
 		await setReview({ ...outcome, finishedAt: new Date() });
 		log.info({ status: outcome.status }, 'review finished');
+		if (outcome.status === 'completed') await trackReviewCompleted(ctx, review);
 	} catch (error) {
 		const final = job.attempts >= job.maxAttempts;
 		const message = error instanceof Error ? error.message : String(error);
@@ -93,8 +94,38 @@ export async function handleReviewJob(ctx: WorkerContext, job: Job<ReviewJobPayl
 				? { status: 'failed', error: message, finishedAt: new Date() }
 				: { status: 'queued', error: message }
 		);
+		if (final) {
+			ctx.analytics.capture({
+				distinctId: `organization:${review.organizationId}`,
+				event: 'review failed',
+				organizationId: review.organizationId,
+				properties: { trigger: review.trigger }
+			});
+		}
 		throw error;
 	}
+}
+
+/** Reports a finished review: its outcome and cost, never code or repository names. */
+async function trackReviewCompleted({ db, analytics }: WorkerContext, review: Review) {
+	const [row] = await db
+		.select({
+			verdict: schema.reviews.verdict,
+			tier: schema.reviews.tier,
+			costUsd: schema.reviews.costUsd,
+			inputTokens: schema.reviews.inputTokens,
+			outputTokens: schema.reviews.outputTokens,
+			comments: sql<number>`(select count(*) from ${schema.reviewFindings} where ${schema.reviewFindings.reviewId} = ${schema.reviews.id} and ${schema.reviewFindings.status} = 'posted')`
+		})
+		.from(schema.reviews)
+		.where(eq(schema.reviews.id, review.id));
+	if (!row) return;
+	analytics.capture({
+		distinctId: `organization:${review.organizationId}`,
+		event: 'review completed',
+		organizationId: review.organizationId,
+		properties: { trigger: review.trigger, ...row }
+	});
 }
 
 async function executeReview(ctx: WorkerContext, review: Review, log: Logger): Promise<Outcome> {

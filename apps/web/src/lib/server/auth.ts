@@ -5,6 +5,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
 import { organization } from 'better-auth/plugins';
 import { and, count, eq, gt } from 'drizzle-orm';
+import { track } from './analytics';
 import { getContext, getGitHubCredentials } from './context';
 
 async function createAuth() {
@@ -69,6 +70,9 @@ async function createAuth() {
 								message: 'Sign-ups on this instance are restricted. Ask an admin for an invitation.'
 							});
 						}
+					},
+					after: async (user) => {
+						await track({ distinctId: user.id, event: 'signed up' });
 					}
 				}
 			}

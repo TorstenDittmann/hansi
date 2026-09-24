@@ -1,3 +1,4 @@
+import { createAnalytics } from '@hans/analytics';
 import { parseEnv } from '@hans/config';
 import { createDatabase } from '@hans/db';
 import { Queue, queues, type ChatJobPayload, type ReviewJobPayload } from '@hans/queue';
@@ -16,7 +17,8 @@ await ready;
 
 const queue = new Queue(db);
 const controller = new AbortController();
-const ctx = { db, env, logger };
+const analytics = createAnalytics(env.APP_URL);
+const ctx = { db, env, logger, analytics };
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {
@@ -51,6 +53,7 @@ await Promise.all([
 	})
 ]);
 
+await analytics.shutdown();
 client.close();
 logger.info('worker stopped');
 // Exit explicitly: under `bun --watch` (dev) the process otherwise keeps watching after the

@@ -158,6 +158,12 @@ Run any number of workers. They claim jobs from the database, so each review run
 
 Push to `main` and both redeploy.
 
+## Analytics
+
+Self-hosted instances send no analytics. The hosted service at hansi.codes uses PostHog, and the
+code only turns it on when the instance runs at `hansi.codes`, based on the browser's hostname and
+on `APP_URL`.
+
 ## Backups and upgrades
 
 **Back up** the database (`/data/hans.db` in the default setup, or sqld's data directory) and

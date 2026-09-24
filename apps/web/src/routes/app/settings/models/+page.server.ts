@@ -9,6 +9,7 @@ import {
 	listModelAssignments,
 	setModelAssignment
 } from '$lib/server/data';
+import { track } from '$lib/server/analytics';
 import { requireOrganization } from '$lib/server/organization';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -65,6 +66,12 @@ export const actions: Actions = {
 			baseUrl,
 			region
 		});
+		await track({
+			distinctId: locals.user!.id,
+			event: 'provider connected',
+			organizationId: organization.id,
+			properties: { provider }
+		});
 		return { added: credentialId };
 	},
 
@@ -92,6 +99,12 @@ export const actions: Actions = {
 		} catch (err) {
 			return fail(400, { error: (err as Error).message });
 		}
+		await track({
+			distinctId: locals.user!.id,
+			event: 'model chosen',
+			organizationId: organization.id,
+			properties: { role, model: modelId }
+		});
 		return { assigned: role };
 	}
 };
