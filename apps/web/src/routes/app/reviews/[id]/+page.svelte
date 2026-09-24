@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
@@ -11,29 +10,37 @@
 		tierMeaning,
 		verdictLabel
 	} from '$lib/format';
-	import {
-		isLiveReviewStatus,
-		pendingReviewMessage,
-		pollWhileVisible,
-		reviewInvalidateKey
-	} from '$lib/live';
+	import { isLiveReviewStatus, pendingReviewMessage } from '$lib/live';
+	import Stream from './stream.svelte';
 
 	let { data } = $props();
-	const review = $derived(data.review);
+	let visible = $state(true);
+	let cached = $state<typeof data.review | null>(null);
+	let previousId = '';
+
+	const review = $derived(cached ?? data.review);
+	// Hide the tab and the stream unmounts, which closes the connection. Showing it again remounts.
+	const streaming = $derived(visible && isLiveReviewStatus(review.status));
 	// Posted findings stay listed after a conversation resolves or dismisses them.
 	const posted = $derived(review.findings.filter((f) => f.status !== 'dropped'));
 	const dropped = $derived(review.findings.filter((f) => f.status === 'dropped'));
-	// Primitives so the polling effect does not restart on every invalidate (new review object).
-	const reviewId = $derived(review.id);
-	const live = $derived(isLiveReviewStatus(review.status));
 	const pending = $derived(pendingReviewMessage(review.status));
 	const elapsed = $derived(Boolean(review.startedAt) && !review.finishedAt);
 	let now = $state(Date.now());
 
 	$effect(() => {
-		if (!live) return;
-		const key = reviewInvalidateKey(reviewId);
-		return pollWhileVisible({ refresh: () => invalidate(key) });
+		const id = data.review.id;
+		if (previousId && previousId !== id) cached = null;
+		previousId = id;
+	});
+
+	$effect(() => {
+		const update = () => {
+			visible = document.visibilityState !== 'hidden';
+		};
+		update();
+		document.addEventListener('visibilitychange', update);
+		return () => document.removeEventListener('visibilitychange', update);
 	});
 
 	$effect(() => {
@@ -43,6 +50,10 @@
 		return () => clearInterval(id);
 	});
 </script>
+
+{#if streaming}
+	<Stream id={review.id} onReview={(next) => (cached = next)} />
+{/if}
 
 <div class="space-y-8">
 	<header>

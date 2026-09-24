@@ -1,14 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createTestDatabase, schema } from '@hans/db';
 import { eq } from 'drizzle-orm';
-import {
-	isLiveReviewStatus,
-	pendingReviewMessage,
-	pollWhileVisible,
-	REVIEW_POLL_MS,
-	reviewInvalidateKey,
-	type VisibilityDocument
-} from './live';
+import { isLiveReviewStatus, pendingReviewMessage, REVIEW_STREAM_MS, streamReview } from './live';
 
 test('only queued and running reviews are live', () => {
 	expect(isLiveReviewStatus('queued')).toBe(true);
@@ -25,183 +18,104 @@ test('empty-state copy matches the in-flight status', () => {
 	expect(pendingReviewMessage('superseded')).toBeNull();
 });
 
-test('the invalidate key is scoped to the review so the app layout is not a dependency', () => {
-	expect(reviewInvalidateKey('abc')).toBe('app:review:abc');
-	expect(REVIEW_POLL_MS).toBe(2_000);
+test('the stream interval is two seconds', () => {
+	expect(REVIEW_STREAM_MS).toBe(2_000);
 });
 
-describe('pollWhileVisible', () => {
-	test('polls on an interval while visible, pauses when hidden, and refreshes on return', () => {
-		const { document, hide, show } = fakeDocument('visible');
-		const { timers, advance } = fakeTimers();
-		const refresh = counter();
+describe('streamReview', () => {
+	const immediate = async () => {};
 
-		const stop = pollWhileVisible({
-			refresh,
-			intervalMs: 2_000,
-			document,
-			timers
-		});
-
-		advance(2_000);
-		advance(2_000);
-		expect(refresh.calls).toBe(2);
-
-		hide();
-		advance(10_000);
-		expect(refresh.calls).toBe(2);
-
-		show();
-		expect(refresh.calls).toBe(3);
-		advance(2_000);
-		expect(refresh.calls).toBe(4);
-
-		stop();
-		advance(10_000);
-		expect(refresh.calls).toBe(4);
+	test('yields while running and stops after the first terminal snapshot', async () => {
+		const statuses = ['running', 'running', 'completed', 'completed'];
+		let reads = 0;
+		const seen: string[] = [];
+		for await (const review of streamReview(
+			async () => ({ status: statuses[reads++] ?? 'completed' }),
+			{ signal: new AbortController().signal, sleep: immediate }
+		)) {
+			seen.push(review.status);
+		}
+		expect(seen).toEqual(['running', 'running', 'completed']);
+		expect(reads).toBe(3);
 	});
 
-	test('does not poll while the tab starts hidden, then refreshes when it becomes visible', () => {
-		const { document, show } = fakeDocument('hidden');
-		const { timers, advance } = fakeTimers();
-		const refresh = counter();
+	test('stops when the client disconnects', async () => {
+		const controller = new AbortController();
+		let reads = 0;
+		const seen: string[] = [];
+		for await (const review of streamReview(
+			async () => {
+				reads += 1;
+				if (reads === 2) controller.abort();
+				return { status: 'running' };
+			},
+			{ signal: controller.signal, sleep: immediate }
+		)) {
+			seen.push(review.status);
+		}
+		expect(seen).toEqual(['running', 'running']);
+		expect(reads).toBe(2);
+	});
 
-		pollWhileVisible({ refresh, intervalMs: 2_000, document, timers });
-		advance(10_000);
-		expect(refresh.calls).toBe(0);
-
-		show();
-		expect(refresh.calls).toBe(1);
-		advance(2_000);
-		expect(refresh.calls).toBe(2);
+	test('stops without yielding when the review is missing', async () => {
+		const seen: string[] = [];
+		for await (const review of streamReview(async () => null, {
+			signal: new AbortController().signal,
+			sleep: immediate
+		})) {
+			seen.push(review.status);
+		}
+		expect(seen).toEqual([]);
 	});
 });
 
 describe('seeded review', () => {
-	test('polling a running review stops once it is completed', async () => {
+	test('a running review streams until it is completed', async () => {
 		const { db, id } = await seedReview('running');
-		const { document } = fakeDocument('visible');
-		const { timers, advance } = fakeTimers();
+		let reads = 0;
 		const seen: string[] = [];
-
-		const statusOf = async () => {
-			const [row] = await db
-				.select({ status: schema.reviews.status })
-				.from(schema.reviews)
-				.where(eq(schema.reviews.id, id));
-			return row!.status;
-		};
-
-		let inflight = Promise.resolve();
-		let stop = () => {};
-		const follow = (status: string) => {
-			stop();
-			if (!isLiveReviewStatus(status)) return;
-			stop = pollWhileVisible({
-				intervalMs: 2_000,
-				document,
-				timers,
-				refresh: () => {
-					inflight = statusOf().then((next) => {
-						seen.push(next);
-						if (!isLiveReviewStatus(next)) stop();
-					});
+		for await (const review of streamReview(
+			async () => {
+				reads += 1;
+				if (reads === 2) {
+					await db
+						.update(schema.reviews)
+						.set({ status: 'completed', finishedAt: new Date() })
+						.where(eq(schema.reviews.id, id));
 				}
-			});
-		};
-
-		follow(await statusOf());
-		advance(2_000);
-		await inflight;
-		expect(seen).toEqual(['running']);
-
-		await db
-			.update(schema.reviews)
-			.set({ status: 'completed', finishedAt: new Date() })
-			.where(eq(schema.reviews.id, id));
-		advance(2_000);
-		await inflight;
+				const [row] = await db
+					.select({ status: schema.reviews.status })
+					.from(schema.reviews)
+					.where(eq(schema.reviews.id, id));
+				return row ?? null;
+			},
+			{ signal: new AbortController().signal, sleep: async () => {} }
+		)) {
+			seen.push(review.status);
+		}
 		expect(seen).toEqual(['running', 'completed']);
-
-		advance(6_000);
-		await inflight;
-		expect(seen).toEqual(['running', 'completed']);
-		expect(isLiveReviewStatus(await statusOf())).toBe(false);
+		expect(isLiveReviewStatus(seen.at(-1)!)).toBe(false);
 	});
 
 	test('superseded is terminal, same as completed', async () => {
 		const { db, id } = await seedReview('queued');
-		expect(isLiveReviewStatus('queued')).toBe(true);
 		await db.update(schema.reviews).set({ status: 'superseded' }).where(eq(schema.reviews.id, id));
-		const [row] = await db
-			.select({ status: schema.reviews.status })
-			.from(schema.reviews)
-			.where(eq(schema.reviews.id, id));
-		expect(isLiveReviewStatus(row!.status)).toBe(false);
+		const seen: string[] = [];
+		for await (const review of streamReview(
+			async () => {
+				const [row] = await db
+					.select({ status: schema.reviews.status })
+					.from(schema.reviews)
+					.where(eq(schema.reviews.id, id));
+				return row ?? null;
+			},
+			{ signal: new AbortController().signal, sleep: async () => {} }
+		)) {
+			seen.push(review.status);
+		}
+		expect(seen).toEqual(['superseded']);
 	});
 });
-
-function counter() {
-	const fn = () => {
-		fn.calls += 1;
-	};
-	fn.calls = 0;
-	return fn;
-}
-
-function fakeDocument(initial: Document['visibilityState']) {
-	let visibilityState = initial;
-	const listeners = new Set<() => void>();
-	const document: VisibilityDocument = {
-		get visibilityState() {
-			return visibilityState;
-		},
-		addEventListener(type, listener) {
-			if (type === 'visibilitychange') listeners.add(listener);
-		},
-		removeEventListener(type, listener) {
-			if (type === 'visibilitychange') listeners.delete(listener);
-		}
-	};
-	const set = (state: Document['visibilityState']) => {
-		visibilityState = state;
-		for (const listener of listeners) listener();
-	};
-	return { document, hide: () => set('hidden'), show: () => set('visible') };
-}
-
-function fakeTimers() {
-	let now = 0;
-	let nextId = 1;
-	const intervals = new Map<number, { fn: () => void; ms: number; next: number }>();
-	const timers = {
-		setInterval(handler: () => void, interval: number) {
-			const id = nextId++;
-			intervals.set(id, { fn: handler, ms: interval, next: now + interval });
-			return id;
-		},
-		clearInterval(id: unknown) {
-			intervals.delete(id as number);
-		}
-	};
-	const advance = (ms: number) => {
-		const target = now + ms;
-		while (intervals.size) {
-			let soonest: { id: number; next: number } | undefined;
-			for (const [id, timer] of intervals) {
-				if (!soonest || timer.next < soonest.next) soonest = { id, next: timer.next };
-			}
-			if (!soonest || soonest.next > target) break;
-			now = soonest.next;
-			const timer = intervals.get(soonest.id);
-			if (!timer) continue;
-			timer.next += timer.ms;
-			timer.fn();
-		}
-		now = target;
-	};
-	return { timers, advance };
-}
 
 async function seedReview(status: 'queued' | 'running') {
 	const { db } = await createTestDatabase();
