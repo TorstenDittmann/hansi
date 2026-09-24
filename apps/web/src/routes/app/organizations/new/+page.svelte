@@ -6,10 +6,6 @@
 
 <div class="mx-auto max-w-md">
 	<h1 class="text-2xl font-semibold">New organization</h1>
-	<p class="muted mt-1">
-		An organization has its own repositories, model keys, members, and learnings. You can switch
-		between organizations at any time.
-	</p>
 
 	<form method="post" use:enhance class="card mt-6 space-y-4 p-6">
 		<div>

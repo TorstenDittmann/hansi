@@ -35,11 +35,10 @@
 	<form method="post" action="?/rename" use:enhance class="card overflow-hidden">
 		<div class="p-5">
 			<label class="font-medium" for="name">Name</label>
-			<p class="muted mb-3">Shown in the organization switcher and to invited members.</p>
 			<input
 				id="name"
 				name="name"
-				class="input max-w-sm"
+				class="input mt-3 max-w-sm"
 				required
 				maxlength="60"
 				value={data.organization.name}
