@@ -195,7 +195,8 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 - Provider keys and GitHub App secrets are encrypted with AES-256-GCM using `HANS_ENCRYPTION_KEY`.
 - Webhooks are signature-verified and deduplicated.
 - Only owners, members, and collaborators can trigger reviews or answers by mention, since each
-  one spends your API credits.
+  one spends your API credits. Other GitHub Apps on the pull request can too (for example Cursor
+  replying in a finding thread); Hansi ignores its own comments.
 
 ## License
 

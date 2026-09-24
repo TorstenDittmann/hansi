@@ -1,5 +1,5 @@
 import { schema } from '@hans/db';
-import { classifyMention, verifyWebhookSignature } from '@hans/github';
+import { canTriggerFromComment, classifyMention, verifyWebhookSignature } from '@hans/github';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { getContext, getGitHubCredentials } from './context';
 import { removeRepositories, upsertInstallation, upsertRepositories } from './installations';
@@ -34,9 +34,6 @@ type Payload = {
 		in_reply_to_id?: number;
 	};
 };
-
-/** Commenters allowed to trigger a review: BYOK keys are spent on every review. */
-const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 export async function handleGitHubWebhook(request: Request): Promise<Response> {
 	const credentials = await getGitHubCredentials();
@@ -128,10 +125,8 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 						: undefined
 					: payload.pull_request?.number;
 			if (payload.action !== 'created' || !comment || !pullNumber || !payload.repository) break;
-			// Every answer spends the organization's API credits; only trusted people can ask.
-			if (comment.user.type === 'Bot' || !TRUSTED_ASSOCIATIONS.has(comment.author_association)) {
-				break;
-			}
+			// Every answer spends API credits; trusted humans and other apps may ask, not ourselves.
+			if (!canTriggerFromComment(comment, credentials.slug)) break;
 
 			const repo = await findActiveRepository(payload.repository.id);
 			if (!repo) break;
