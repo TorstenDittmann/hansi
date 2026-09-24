@@ -75,8 +75,7 @@
 		if (data.user) {
 			const { id, name, email, login } = data.user;
 			posthog.identify(id, { name, email, github_login: login });
-		}
-		else posthog.reset();
+		} else posthog.reset();
 	});
 	$effect(() => {
 		if (posthog && activeOrganization) {
