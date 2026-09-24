@@ -13,15 +13,17 @@ jobs:
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - run: sudo apt-get install -y ripgrep
       - run: bun install --frozen-lockfile
       - name: Restore workspace-utils build cache
         uses: actions/cache@v4
         with:
           path: .wsu
-          key: wsu-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}-${{ github.sha }}
+          key: wsu-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/bun.lock', '**/bun.lockb', '**/pnpm-lock.yaml', '**/package-lock.json', '**/yarn.lock') }}-${{ github.sha }}
           restore-keys: |
-            wsu-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}-
+            wsu-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/bun.lock', '**/bun.lockb', '**/pnpm-lock.yaml', '**/package-lock.json', '**/yarn.lock') }}-
             wsu-${{ runner.os }}-${{ runner.arch }}-
       - run: bun run lint
       - run: bun run check
