@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
@@ -10,12 +11,37 @@
 		tierMeaning,
 		verdictLabel
 	} from '$lib/format';
+	import {
+		isLiveReviewStatus,
+		pendingReviewMessage,
+		pollWhileVisible,
+		reviewInvalidateKey
+	} from '$lib/live';
 
 	let { data } = $props();
 	const review = $derived(data.review);
 	// Posted findings stay listed after a conversation resolves or dismisses them.
 	const posted = $derived(review.findings.filter((f) => f.status !== 'dropped'));
 	const dropped = $derived(review.findings.filter((f) => f.status === 'dropped'));
+	// Primitives so the polling effect does not restart on every invalidate (new review object).
+	const reviewId = $derived(review.id);
+	const live = $derived(isLiveReviewStatus(review.status));
+	const pending = $derived(pendingReviewMessage(review.status));
+	const elapsed = $derived(Boolean(review.startedAt) && !review.finishedAt);
+	let now = $state(Date.now());
+
+	$effect(() => {
+		if (!live) return;
+		const key = reviewInvalidateKey(reviewId);
+		return pollWhileVisible({ refresh: () => invalidate(key) });
+	});
+
+	$effect(() => {
+		if (!elapsed) return;
+		now = Date.now();
+		const id = setInterval(() => (now = Date.now()), 1_000);
+		return () => clearInterval(id);
+	});
 </script>
 
 <div class="space-y-8">
@@ -34,7 +60,7 @@
 		<dl class="muted mt-3 flex flex-wrap gap-x-6 gap-y-1">
 			<div>Trigger: {review.trigger}</div>
 			<div>Created: {formatDate(review.createdAt)}</div>
-			<div>Duration: {formatDuration(review.startedAt, review.finishedAt)}</div>
+			<div>Duration: {formatDuration(review.startedAt, review.finishedAt, now)}</div>
 			<div>
 				Tokens: {formatTokens(review.inputTokens)} in / {formatTokens(review.outputTokens)} out
 			</div>
@@ -105,7 +131,7 @@
 		{#if posted.length}
 			{@render findingList(posted)}
 		{:else}
-			<p class="muted mt-2">No comments posted.</p>
+			<p class="muted mt-2">{pending ?? 'No comments posted.'}</p>
 		{/if}
 	</section>
 
@@ -149,7 +175,7 @@
 				</table>
 			</div>
 		{:else}
-			<p class="muted mt-2">No model calls recorded.</p>
+			<p class="muted mt-2">{pending ?? 'No model calls recorded.'}</p>
 		{/if}
 	</section>
 
@@ -166,7 +192,7 @@
 				{/each}
 			</ol>
 		{:else}
-			<p class="muted mt-2">No events recorded.</p>
+			<p class="muted mt-2">{pending ?? 'No events recorded.'}</p>
 		{/if}
 	</section>
 </div>
