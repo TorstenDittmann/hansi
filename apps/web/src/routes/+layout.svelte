@@ -62,7 +62,7 @@
 	// Analytics on hansi.codes (see $lib/analytics): page views, and who is signed in.
 	let posthog: PostHog | null = $state(null);
 	onMount(() => {
-		void startAnalytics().then((client) => {
+		void startAnalytics(data.user?.id).then((client) => {
 			posthog = client;
 			client?.capture('$pageview');
 		});
