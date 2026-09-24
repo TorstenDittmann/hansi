@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { Octokit } from './app';
-import { resolveReviewThreads } from './pulls';
+import { getFailedChecks, getLinkedIssues, resolveReviewThreads } from './pulls';
 
 const thread = (id: string, root: number, isResolved = false) => ({
 	id,
@@ -44,4 +44,70 @@ test('does nothing without comments to resolve', async () => {
 	expect(
 		await resolveReviewThreads(octokit as unknown as Octokit, { owner: 'o', repo: 'r' }, 1, [])
 	).toBe(0);
+});
+
+test('getLinkedIssues keeps only issues from the same repository', async () => {
+	const issue = (number: number, repo: string) => ({
+		number,
+		title: `Issue ${number}`,
+		body: 'x'.repeat(5_000),
+		repository: { nameWithOwner: repo }
+	});
+	const octokit = {
+		graphql: async () => ({
+			repository: {
+				pullRequest: {
+					closingIssuesReferences: { nodes: [issue(1, 'O/R'), issue(2, 'o/private')] }
+				}
+			}
+		})
+	} as unknown as Octokit;
+
+	const issues = await getLinkedIssues(octokit, { owner: 'o', repo: 'r' }, 7);
+	expect(issues.map((i) => i.number)).toEqual([1]);
+	expect(issues[0]!.body).toEndWith('… truncated');
+});
+
+test('getFailedChecks returns failed runs of other apps with their annotations', async () => {
+	const run = (id: number, name: string, conclusion: string | null, appId = 1) => ({
+		id,
+		name,
+		status: conclusion ? 'completed' : 'in_progress',
+		conclusion,
+		app: { id: appId },
+		output: {
+			title: `${name} title`,
+			summary: null,
+			text: null,
+			annotations_count: id === 1 ? 2 : 0
+		}
+	});
+	const octokit = {
+		paginate: async () => [
+			run(1, 'test', 'failure'),
+			run(2, 'lint', 'success'),
+			run(3, 'build', null),
+			run(4, 'Hansi', 'failure', 99)
+		],
+		rest: {
+			checks: {
+				listForRef: {},
+				listAnnotations: async () => ({
+					data: [
+						{ path: 'a.ts', start_line: 3, annotation_level: 'failure', message: 'boom' },
+						{ path: 'b.ts', start_line: 1, annotation_level: 'notice', message: 'fyi' }
+					]
+				})
+			}
+		}
+	} as unknown as Octokit;
+
+	expect(await getFailedChecks(octokit, { owner: 'o', repo: 'r' }, 'sha', '99')).toEqual([
+		{
+			name: 'test',
+			conclusion: 'failure',
+			output: 'test title',
+			annotations: [{ path: 'a.ts', line: 3, message: 'boom' }]
+		}
+	]);
 });

@@ -360,3 +360,108 @@ export async function upsertMarkedComment(
 	});
 	return { id: data.id, url: data.html_url };
 }
+
+const MAX_LINKED_ISSUES = 3;
+const MAX_ISSUE_BODY_CHARS = 4_000;
+
+interface ClosingIssuesPage {
+	repository: {
+		pullRequest: {
+			closingIssuesReferences: {
+				nodes: {
+					number: number;
+					title: string;
+					body: string;
+					repository: { nameWithOwner: string };
+				}[];
+			};
+		} | null;
+	};
+}
+
+/**
+ * Issues a pull request resolves, from closing keywords ("Fixes #12") or the sidebar link. Only
+ * issues in the same repository: one from another private repository could leak into the review.
+ */
+export async function getLinkedIssues(octokit: Octokit, ref: RepoRef, pullNumber: number) {
+	const page: ClosingIssuesPage = await octokit.graphql(
+		`query($owner: String!, $repo: String!, $number: Int!) {
+			repository(owner: $owner, name: $repo) {
+				pullRequest(number: $number) {
+					closingIssuesReferences(first: 10) {
+						nodes { number title body repository { nameWithOwner } }
+					}
+				}
+			}
+		}`,
+		{ ...ref, number: pullNumber }
+	);
+	const fullName = `${ref.owner}/${ref.repo}`.toLowerCase();
+	return (page.repository.pullRequest?.closingIssuesReferences.nodes ?? [])
+		.filter((issue) => issue.repository.nameWithOwner.toLowerCase() === fullName)
+		.slice(0, MAX_LINKED_ISSUES)
+		.map((issue) => ({
+			number: issue.number,
+			title: issue.title,
+			body: truncate(issue.body, MAX_ISSUE_BODY_CHARS)
+		}));
+}
+
+const MAX_FAILED_CHECKS = 5;
+const MAX_CHECK_OUTPUT_CHARS = 3_000;
+const MAX_CHECK_ANNOTATIONS = 20;
+const FAILED_CONCLUSIONS = new Set(['failure', 'timed_out']);
+
+/**
+ * Check runs that already failed on a commit, with their output and annotations, excluding the
+ * app's own. Checks still running are left out: a review starts as soon as a PR is pushed, so
+ * CI has often not finished yet.
+ */
+export async function getFailedChecks(
+	octokit: Octokit,
+	ref: RepoRef,
+	headSha: string,
+	ownAppId: string
+) {
+	const runs = await octokit.paginate(octokit.rest.checks.listForRef, {
+		...ref,
+		ref: headSha,
+		filter: 'latest',
+		per_page: 100
+	});
+	const failed = runs
+		.filter(
+			(run) =>
+				run.status === 'completed' &&
+				FAILED_CONCLUSIONS.has(run.conclusion ?? '') &&
+				String(run.app?.id) !== ownAppId
+		)
+		.slice(0, MAX_FAILED_CHECKS);
+
+	return Promise.all(
+		failed.map(async (run) => {
+			const annotations = run.output.annotations_count
+				? await octokit.rest.checks
+						.listAnnotations({ ...ref, check_run_id: run.id, per_page: 100 })
+						.then(({ data }) => data)
+				: [];
+			return {
+				name: run.name,
+				conclusion: run.conclusion ?? 'failure',
+				output: truncate(
+					[run.output.title, run.output.summary, run.output.text].filter(Boolean).join('\n\n'),
+					MAX_CHECK_OUTPUT_CHARS
+				),
+				annotations: annotations
+					.filter((a) => a.annotation_level !== 'notice')
+					.slice(0, MAX_CHECK_ANNOTATIONS)
+					.map((a) => ({ path: a.path, line: a.start_line, message: a.message ?? '' }))
+			};
+		})
+	);
+}
+
+function truncate(text: string | null | undefined, max: number): string {
+	const trimmed = (text ?? '').trim();
+	return trimmed.length > max ? `${trimmed.slice(0, max)}\n… truncated` : trimmed;
+}

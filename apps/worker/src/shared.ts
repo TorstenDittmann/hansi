@@ -37,6 +37,8 @@ export interface RepositoryConnection {
 	ref: RepoRef;
 	/** The bot's handle, e.g. `@hansi-codes`. */
 	mention: string;
+	/** The GitHub App's id, to tell its own check runs apart. */
+	appId: string;
 }
 
 /** Installation-authenticated access to a repository, or null if it is no longer installed. */
@@ -60,7 +62,8 @@ export async function connectRepository(
 		repository: row.repository,
 		octokit: await getInstallationOctokit(credentials, row.installationId),
 		ref: parseFullName(row.repository.fullName),
-		mention: botMention(credentials)
+		mention: botMention(credentials),
+		appId: credentials.appId
 	};
 }
 

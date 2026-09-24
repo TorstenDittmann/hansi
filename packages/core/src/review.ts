@@ -65,6 +65,10 @@ export interface ReviewInput {
 	 */
 	previousSummary?: { summary: string; walkthrough: WalkthroughEntry[] };
 	pullRequest: { title: string; body: string; author: string };
+	/** Issues the pull request says it resolves: what the change is meant to do. */
+	linkedIssues?: LinkedIssue[];
+	/** Checks that already failed on the head commit, such as tests or type checks. */
+	failedChecks?: FailedCheck[];
 	config: RepoConfig;
 	models: { review: ReviewModel; verify?: ReviewModel };
 	onEvent?: EmitEvent;
@@ -72,6 +76,20 @@ export interface ReviewInput {
 	onModelError?: (failure: ModelFailure) => void | Promise<void>;
 	signal?: AbortSignal;
 	limits?: { maxDiffChars?: number; maxReviewSteps?: number; maxVerifySteps?: number };
+}
+
+export interface LinkedIssue {
+	number: number;
+	title: string;
+	body: string;
+}
+
+export interface FailedCheck {
+	name: string;
+	conclusion: string;
+	/** The check's own report, e.g. a test summary. */
+	output: string;
+	annotations: { path: string; line: number; message: string }[];
 }
 
 export interface WalkthroughEntry {
@@ -198,9 +216,11 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: [];
 	});
 
-	const tools = createRepoTools(input.repoDir, emit);
+	const tools = createRepoTools(input.repoDir, emit, { token: input.trustedSource?.token });
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
+		linkedIssues: input.linkedIssues,
+		failedChecks: input.failedChecks,
 		guidelines: await loadRepoGuidelines(input.repoDir, input.trustedSource),
 		config,
 		pathInstructions,

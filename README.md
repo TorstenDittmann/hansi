@@ -18,7 +18,10 @@ Amazon Bedrock, Google, xAI, OpenRouter, or any OpenAI-compatible endpoint.
 
 1. Install the GitHub App on your repositories and add a model key.
 2. When a pull request is opened or updated, Hansi checks out the code and explores the repository
-   the way a reviewer would: it reads files, searches for usages, and follows the change.
+   the way a reviewer would: it reads files, searches for usages, follows the change, and looks at
+   the history of the lines it touches. It also reads the issues the pull request closes, and any
+   checks that already failed on the commit, so it knows what the change is meant to do and what
+   CI found.
 3. A second, skeptical pass double-checks every finding. Only the ones that hold up are posted, as
    inline comments with a suggested fix when there is one.
 4. Hansi submits a real review, **Approve** or **Request changes**, and grades the pull request
@@ -181,6 +184,8 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 ### Security model
 
 - The agent can only read and search the checkout; it never runs repository code.
+- Linked issues are only read from the same repository, so content from another private repository
+  never reaches a review.
 - Pull request content is treated as untrusted input that may try to steer the model, so approvals
   are guarded outside the model:
   - `.hansi.json` and guideline files come from the base branch;
