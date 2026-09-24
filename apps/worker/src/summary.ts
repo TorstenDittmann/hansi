@@ -6,7 +6,7 @@ import {
 	type SummaryInput
 } from '@hans/core';
 import { schema, type Database } from '@hans/db';
-import { upsertMarkedComment } from '@hans/github';
+import { getMarkedComment, upsertMarkedComment } from '@hans/github';
 import type { Severity, Verdict } from '@hans/config';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import type { RepositoryConnection } from './shared';
@@ -23,6 +23,28 @@ type FindingRow = {
 	status: string;
 	dropReason: string | null;
 };
+
+/** Fields that live only in the summary comment, not on the review row. */
+export type SummaryExtras = {
+	latestChanges?: string | null;
+	approvalWithheld?: string | null;
+	incrementalFrom?: string;
+};
+
+/**
+ * Recovers review-context details from an existing summary body so a settlement rebuild does not
+ * drop them. These are not stored on the review row.
+ */
+export function summaryExtrasFromBody(body: string): SummaryExtras {
+	const latestChanges = body.match(/\*\*Latest changes:\*\* (.+)/)?.[1] ?? null;
+	const approvalWithheld = body.match(/> \[!NOTE\]\n> (.+)/)?.[1] ?? null;
+	const incrementalFrom = body.match(/Reviewed the commits since <code>([0-9a-f]+)<\/code>/i)?.[1];
+	return {
+		latestChanges,
+		approvalWithheld,
+		...(incrementalFrom ? { incrementalFrom } : {})
+	};
+}
 
 /** Rebuilds the summary comment after a finding is resolved or dismissed in a thread. */
 export async function refreshSummaryAfterSettlement(input: {
@@ -82,6 +104,9 @@ export async function refreshSummaryAfterSettlement(input: {
 		)
 		.limit(200);
 
+	const existing = await getMarkedComment(octokit, ref, pullNumber, SUMMARY_MARKER);
+	const extras = existing ? summaryExtrasFromBody(existing.body) : {};
+
 	const summaryInput = summaryAfterSettlement({
 		repository: repository.fullName,
 		headSha: last.headSha,
@@ -91,7 +116,8 @@ export async function refreshSummaryAfterSettlement(input: {
 		latestReviewId: last.id,
 		findings: rows,
 		detailsUrl: `${env.APP_URL.replace(/\/+$/, '')}/app/reviews/${last.id}`,
-		mention
+		mention,
+		...extras
 	});
 
 	await upsertMarkedComment(
@@ -111,17 +137,19 @@ export async function refreshSummaryAfterSettlement(input: {
  * Turns the latest review plus remaining findings into a summary comment body.
  * Dismissed findings are already excluded from `findings`.
  */
-export function summaryAfterSettlement(input: {
-	repository: string;
-	headSha: string;
-	summary: string;
-	verdict: Verdict;
-	walkthrough: { path: string; change: string }[];
-	latestReviewId: string;
-	findings: FindingRow[];
-	detailsUrl: string;
-	mention: string;
-}): SummaryInput {
+export function summaryAfterSettlement(
+	input: {
+		repository: string;
+		headSha: string;
+		summary: string;
+		verdict: Verdict;
+		walkthrough: { path: string; change: string }[];
+		latestReviewId: string;
+		findings: FindingRow[];
+		detailsUrl: string;
+		mention: string;
+	} & SummaryExtras
+): SummaryInput {
 	const toFinding = (row: FindingRow): Finding => ({
 		path: row.path,
 		startLine: row.startLine,
@@ -165,6 +193,9 @@ export function summaryAfterSettlement(input: {
 		stillOpen,
 		dropped,
 		walkthrough: input.walkthrough,
+		latestChanges: input.latestChanges,
+		approvalWithheld: input.approvalWithheld,
+		incrementalFrom: input.incrementalFrom,
 		detailsUrl: input.detailsUrl,
 		mention: input.mention
 	};

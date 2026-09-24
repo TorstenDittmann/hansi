@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { formatSummaryComment } from '@hans/core';
-import { summaryAfterSettlement } from './summary';
+import { summaryAfterSettlement, summaryExtrasFromBody } from './summary';
 
 const base = {
 	repository: 'acme/api',
@@ -74,5 +74,49 @@ describe('summaryAfterSettlement', () => {
 		expect(input.posted).toHaveLength(1);
 		expect(input.stillOpen).toEqual([]);
 		expect(input.tier).toBe('A');
+	});
+
+	test('carries latest-changes, withheld approval, and incremental scope through a rebuild', () => {
+		const input = summaryAfterSettlement({
+			...base,
+			verdict: 'comment',
+			findings: [],
+			latestChanges: 'Adds pageCount.',
+			approvalWithheld: '@stranger does not have write access to this repository.',
+			incrementalFrom: '11e59f1'
+		});
+		const body = formatSummaryComment(input);
+		expect(body).toContain('**Latest changes:** Adds pageCount.');
+		expect(body).toContain('> [!NOTE]\n> @stranger does not have write access to this repository.');
+		expect(body).toContain('Reviewed the commits since <code>11e59f1</code>');
+	});
+});
+
+describe('summaryExtrasFromBody', () => {
+	test('reads review-context details that are only in the comment body', () => {
+		const body = formatSummaryComment(
+			summaryAfterSettlement({
+				...base,
+				verdict: 'comment',
+				findings: [],
+				latestChanges: 'Adds pageCount.',
+				approvalWithheld: '@stranger does not have write access.',
+				incrementalFrom: 'abcdef1234567890'
+			})
+		);
+		expect(summaryExtrasFromBody(body)).toEqual({
+			latestChanges: 'Adds pageCount.',
+			approvalWithheld: '@stranger does not have write access.',
+			incrementalFrom: 'abcdef1'
+		});
+	});
+
+	test('returns nulls when those sections are absent', () => {
+		expect(
+			summaryExtrasFromBody(formatSummaryComment(summaryAfterSettlement({ ...base, findings: [] })))
+		).toEqual({
+			latestChanges: null,
+			approvalWithheld: null
+		});
 	});
 });
