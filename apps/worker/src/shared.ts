@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '@hans/config';
-import type { ModelCall, ReviewModel } from '@hans/core';
+import type { ModelCall, ModelFailure, ReviewModel } from '@hans/core';
 import { schema, type Database } from '@hans/db';
 import {
 	botMention,
@@ -157,12 +157,8 @@ export async function createUsageRecorder(
 			costUsd: cost,
 			durationMs: call.durationMs
 		});
-		analytics.capture({
-			distinctId: `organization:${scope.organizationId}`,
-			event: '$ai_generation',
-			organizationId: scope.organizationId,
-			properties: {
-				$ai_trace_id: scope.traceId,
+		analytics.capture(
+			generation({
 				$ai_span_name: call.role,
 				$ai_provider: call.provider,
 				$ai_model: call.modelId,
@@ -171,10 +167,30 @@ export async function createUsageRecorder(
 				$ai_cache_read_input_tokens: call.usage.inputTokenDetails?.cacheReadTokens ?? 0,
 				$ai_latency: call.durationMs / 1000,
 				...(cost == null ? {} : { $ai_total_cost_usd: cost })
-			}
-		});
+			})
+		);
 	};
-	return { record, totals };
+	/** Failed calls cost nothing and aren't stored, but show up in LLM analytics as errors. */
+	const recordError = (failure: ModelFailure) => {
+		analytics.capture(
+			generation({
+				$ai_span_name: failure.role,
+				$ai_provider: failure.provider,
+				$ai_model: failure.modelId,
+				$ai_latency: failure.durationMs / 1000,
+				$ai_is_error: true,
+				$ai_error: failure.message,
+				...(failure.status ? { $ai_http_status: failure.status } : {})
+			})
+		);
+	};
+	const generation = (properties: Record<string, unknown>) => ({
+		distinctId: `organization:${scope.organizationId}`,
+		event: '$ai_generation',
+		organizationId: scope.organizationId,
+		properties: { $ai_trace_id: scope.traceId, ...properties }
+	});
+	return { record, recordError, totals };
 }
 
 /** Runs `fn` with a fresh temporary directory that is always removed afterwards. */

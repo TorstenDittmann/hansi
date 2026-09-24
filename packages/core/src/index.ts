@@ -4,6 +4,7 @@ export * from './filters';
 export * from './findings';
 export * from './format';
 export * from './git';
+export * from './model-call';
 export * from './review';
 export * from './suggestions';
 export * from './tier';

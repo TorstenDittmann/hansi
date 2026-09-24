@@ -1,13 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { blockingSeverity, severityAtLeast, type RepoConfig, type Severity } from '@hans/config';
-import {
-	generateText,
-	hasToolCall,
-	isStepCount,
-	tool,
-	type LanguageModel,
-	type LanguageModelUsage
-} from 'ai';
+import { generateText, hasToolCall, isStepCount, tool, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
 	commentableLines,
@@ -17,6 +10,7 @@ import {
 	type FileDiff
 } from './diff';
 import { filterFiles } from './filters';
+import { callModel, type ModelCall, type ModelFailure } from './model-call';
 import {
 	compareSeverity,
 	findingSchema,
@@ -41,14 +35,6 @@ export interface ReviewModel {
 	model: LanguageModel;
 	provider: string;
 	modelId: string;
-}
-
-export interface ModelCall {
-	role: 'review' | 'verify' | 'chat';
-	provider: string;
-	modelId: string;
-	usage: LanguageModelUsage;
-	durationMs: number;
 }
 
 export interface ReviewInput {
@@ -83,6 +69,7 @@ export interface ReviewInput {
 	models: { review: ReviewModel; verify?: ReviewModel };
 	onEvent?: EmitEvent;
 	onModelCall?: (call: ModelCall) => void | Promise<void>;
+	onModelError?: (failure: ModelFailure) => void | Promise<void>;
 	signal?: AbortSignal;
 	limits?: { maxDiffChars?: number; maxReviewSteps?: number; maxVerifySteps?: number };
 }
@@ -470,22 +457,4 @@ async function codeContext(repoDir: string, path: string, start: number, end: nu
 	} catch {
 		return '(file unavailable)';
 	}
-}
-
-async function callModel<T extends { usage: LanguageModelUsage }>(
-	role: ModelCall['role'],
-	model: ReviewModel,
-	input: ReviewInput,
-	run: () => Promise<T>
-): Promise<T> {
-	const started = performance.now();
-	const result = await run();
-	await input.onModelCall?.({
-		role,
-		provider: model.provider,
-		modelId: model.modelId,
-		usage: result.usage,
-		durationMs: Math.round(performance.now() - started)
-	});
-	return result;
 }

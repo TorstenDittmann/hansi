@@ -123,6 +123,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				language: config.language,
 				model,
 				onModelCall: usage.record,
+				onModelError: usage.recordError,
 				onRemember: async (rule) => {
 					await db.insert(schema.learnings).values({
 						organizationId: payload.organizationId,

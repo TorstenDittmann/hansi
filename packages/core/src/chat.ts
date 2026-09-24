@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { chatInstructions } from './prompts';
-import type { ModelCall, ReviewModel } from './review';
+import { callModel, type ModelCall, type ModelFailure } from './model-call';
+import type { ReviewModel } from './review';
 import { createRepoTools, loadRepoGuidelines, type EmitEvent, type TrustedSource } from './tools';
 
 export interface ThreadMessage {
@@ -33,6 +34,7 @@ export interface ChatInput {
 	onMarkFinding?: (status: 'resolved' | 'dismissed', reason: string) => Promise<void>;
 	onEvent?: EmitEvent;
 	onModelCall?: (call: ModelCall) => void | Promise<void>;
+	onModelError?: (failure: ModelFailure) => void | Promise<void>;
 	signal?: AbortSignal;
 }
 
@@ -103,22 +105,16 @@ export async function runChat(input: ChatInput): Promise<string> {
 			.join('\n')}\n</conversation>`
 	);
 
-	const started = performance.now();
-	const result = await generateText({
-		model: input.model.model,
-		instructions: chatInstructions(input.language, !!input.onMarkFinding),
-		prompt: parts.join('\n\n'),
-		tools,
-		stopWhen: isStepCount(20),
-		abortSignal: input.signal
-	});
-	await input.onModelCall?.({
-		role: 'chat',
-		provider: input.model.provider,
-		modelId: input.model.modelId,
-		usage: result.usage,
-		durationMs: Math.round(performance.now() - started)
-	});
+	const result = await callModel('chat', input.model, input, () =>
+		generateText({
+			model: input.model.model,
+			instructions: chatInstructions(input.language, !!input.onMarkFinding),
+			prompt: parts.join('\n\n'),
+			tools,
+			stopWhen: isStepCount(20),
+			abortSignal: input.signal
+		})
+	);
 
 	return result.text.trim() || "Sorry, I couldn't come up with an answer to that.";
 }

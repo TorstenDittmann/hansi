@@ -60,3 +60,44 @@ test('each model call is stored and reported to LLM analytics without prompts or
 	]);
 	expect(usage.totals.costUsd).toBeCloseTo(4.5);
 });
+
+test('a failed model call is reported to LLM analytics as an error and not stored', async () => {
+	const { db } = await createTestDatabase();
+	const captured: Parameters<Analytics['capture']>[0][] = [];
+	const analytics: Analytics = {
+		capture: (event) => void captured.push(event),
+		shutdown: async () => {}
+	};
+	const usage = await createUsageRecorder(
+		{ db, analytics },
+		{ organizationId: 'org-1', traceId: 'chat-1' }
+	);
+
+	usage.recordError({
+		role: 'chat',
+		provider: 'openai',
+		modelId: 'gpt-5.5',
+		durationMs: 800,
+		message: 'Rate limit exceeded',
+		status: 429
+	});
+
+	expect(await db.select().from(schema.llmCalls)).toEqual([]);
+	expect(captured).toEqual([
+		{
+			distinctId: 'organization:org-1',
+			event: '$ai_generation',
+			organizationId: 'org-1',
+			properties: {
+				$ai_trace_id: 'chat-1',
+				$ai_span_name: 'chat',
+				$ai_provider: 'openai',
+				$ai_model: 'gpt-5.5',
+				$ai_latency: 0.8,
+				$ai_is_error: true,
+				$ai_error: 'Rate limit exceeded',
+				$ai_http_status: 429
+			}
+		}
+	]);
+});

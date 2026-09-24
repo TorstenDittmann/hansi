@@ -8,7 +8,8 @@ import { commentableLines, parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { isDuplicateFinding, titleSimilarity } from './findings';
 import { formatFindingComment } from './format';
-import { placeFinding, runReview, type ModelCall } from './review';
+import type { ModelCall } from './model-call';
+import { placeFinding, runReview } from './review';
 import { resolveRepoPath } from './tools';
 
 const diff = `diff --git a/src/math.ts b/src/math.ts

@@ -240,7 +240,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				config,
 				models,
 				onEvent: record,
-				onModelCall: usage.record
+				onModelCall: usage.record,
+				onModelError: usage.recordError
 			});
 			await pendingWrites;
 			await db.update(schema.reviews).set(usage.totals).where(eq(schema.reviews.id, review.id));
