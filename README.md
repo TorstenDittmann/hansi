@@ -64,7 +64,7 @@ branch, so changes take effect once they are merged. Every field is optional:
 		"drafts": false,
 		"baseBranches": [],
 		"pathFilters": ["!docs/**", "!**/*.snap"],
-		"profile": "chill",
+		"profile": "balanced",
 		"minSeverity": "minor",
 		"maxComments": 15,
 		"approve": true,
@@ -79,22 +79,22 @@ branch, so changes take effect once they are merged. Every field is optional:
 }
 ```
 
-| Field                                | Default | What it does                                                                        |
-| ------------------------------------ | ------- | ----------------------------------------------------------------------------------- |
-| `reviews.enabled`                    | `true`  | Review pull requests in this repository.                                            |
-| `reviews.auto`                       | `true`  | Review when a pull request is opened or updated. Mentions always work.              |
-| `reviews.drafts`                     | `false` | Also review draft pull requests.                                                    |
-| `reviews.baseBranches`               | `[]`    | Only review pull requests into these branches. Empty means all.                     |
-| `reviews.pathFilters`                | `[]`    | Globs for the files to review; prefix with `!` to exclude.                          |
-| `reviews.profile`                    | `chill` | `chill` flags confirmed bugs only; `balanced` and `strict` dig deeper.              |
-| `reviews.minSeverity`                | `minor` | Findings below this severity (`info`, `minor`, `major`, `critical`) are not posted. |
-| `reviews.maxComments`                | `15`    | The most inline comments in one review.                                             |
-| `reviews.approve`                    | `true`  | Approve pull requests without blocking findings.                                    |
-| `reviews.requestChanges`             | `major` | Severity from which Hansi requests changes; `never` to only comment.                |
-| `reviews.approveOutsideContributors` | `false` | Approve pull requests from people without write access.                             |
-| `instructions`                       | `""`    | Extra review instructions for the repository.                                       |
-| `pathInstructions`                   | `[]`    | Instructions for files matching a glob.                                             |
-| `language`                           | `en`    | Language for review comments.                                                       |
+| Field                                | Default    | What it does                                                                        |
+| ------------------------------------ | ---------- | ----------------------------------------------------------------------------------- |
+| `reviews.enabled`                    | `true`     | Review pull requests in this repository.                                            |
+| `reviews.auto`                       | `true`     | Review when a pull request is opened or updated. Mentions always work.              |
+| `reviews.drafts`                     | `false`    | Also review draft pull requests.                                                    |
+| `reviews.baseBranches`               | `[]`       | Only review pull requests into these branches. Empty means all.                     |
+| `reviews.pathFilters`                | `[]`       | Globs for the files to review; prefix with `!` to exclude.                          |
+| `reviews.profile`                    | `balanced` | `chill` flags confirmed bugs only; `balanced` and `strict` dig deeper.              |
+| `reviews.minSeverity`                | `minor`    | Findings below this severity (`info`, `minor`, `major`, `critical`) are not posted. |
+| `reviews.maxComments`                | `15`       | The most inline comments in one review.                                             |
+| `reviews.approve`                    | `true`     | Approve pull requests without blocking findings.                                    |
+| `reviews.requestChanges`             | `major`    | Severity from which Hansi requests changes; `never` to only comment.                |
+| `reviews.approveOutsideContributors` | `false`    | Approve pull requests from people without write access.                             |
+| `instructions`                       | `""`       | Extra review instructions for the repository.                                       |
+| `pathInstructions`                   | `[]`       | Instructions for files matching a glob.                                             |
+| `language`                           | `en`       | Language for review comments.                                                       |
 
 ### Verdicts and tiers
 
