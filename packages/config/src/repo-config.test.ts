@@ -10,7 +10,7 @@ import {
 describe('parseRepoConfig', () => {
 	test('returns defaults for a missing file', () => {
 		expect(parseRepoConfig(null)).toEqual({ ok: true, config: defaultRepoConfig });
-		expect(defaultRepoConfig.reviews.profile).toBe('chill');
+		expect(defaultRepoConfig.reviews.profile).toBe('balanced');
 	});
 
 	test('merges partial config with defaults', () => {
