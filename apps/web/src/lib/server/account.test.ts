@@ -73,6 +73,37 @@ test('refuses when the user is the last owner of an organization with other memb
 	).toBe(1);
 });
 
+test('does not delete a solo organization when a shared-org ownership check fails', async () => {
+	const { db, now } = await setup();
+	await db.insert(schema.member).values([
+		{
+			id: 'm-solo',
+			organizationId: 'org-solo',
+			userId: 'user-a',
+			role: 'owner',
+			createdAt: now
+		},
+		{
+			id: 'm-shared-a',
+			organizationId: 'org-shared',
+			userId: 'user-a',
+			role: 'owner',
+			createdAt: now
+		},
+		{
+			id: 'm-shared-b',
+			organizationId: 'org-shared',
+			userId: 'user-b',
+			role: 'member',
+			createdAt: now
+		}
+	]);
+
+	await expect(prepareAccountDeletion(db, 'user-a')).rejects.toThrow(/Transfer ownership/);
+	const orgs = await db.select({ id: schema.organization.id }).from(schema.organization);
+	expect(orgs.map((o) => o.id).sort()).toEqual(['org-shared', 'org-solo']);
+});
+
 test('allows deletion when another owner remains', async () => {
 	const { db, now } = await setup();
 	await db.insert(schema.member).values([
