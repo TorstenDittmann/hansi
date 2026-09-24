@@ -11,9 +11,20 @@ export function formatDate(value: Date | string | number | null | undefined) {
 	);
 }
 
-export function formatDuration(from: Date | null | undefined, to: Date | null | undefined) {
-	if (!from || !to) return '–';
-	const seconds = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000);
+/**
+ * Elapsed time from `from` to `to`. When `to` is missing (a review still running), uses `now`
+ * so the detail page can tick while `finishedAt` is null.
+ */
+export function formatDuration(
+	from: Date | string | number | null | undefined,
+	to: Date | string | number | null | undefined,
+	now: Date | string | number = Date.now()
+) {
+	if (!from) return '–';
+	const seconds = Math.max(
+		0,
+		Math.round((new Date(to ?? now).getTime() - new Date(from).getTime()) / 1000)
+	);
 	return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 

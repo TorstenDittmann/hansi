@@ -10,13 +10,50 @@
 		tierMeaning,
 		verdictLabel
 	} from '$lib/format';
+	import { isLiveReviewStatus, pendingReviewMessage } from '$lib/live';
+	import Stream from './stream.svelte';
 
 	let { data } = $props();
-	const review = $derived(data.review);
+	let visible = $state(true);
+	let cached = $state<typeof data.review | null>(null);
+	let previousId = '';
+
+	const review = $derived(cached ?? data.review);
+	// Hide the tab and the stream unmounts, which closes the connection. Showing it again remounts.
+	const streaming = $derived(visible && isLiveReviewStatus(review.status));
 	// Posted findings stay listed after a conversation resolves or dismisses them.
 	const posted = $derived(review.findings.filter((f) => f.status !== 'dropped'));
 	const dropped = $derived(review.findings.filter((f) => f.status === 'dropped'));
+	const pending = $derived(pendingReviewMessage(review.status));
+	const elapsed = $derived(Boolean(review.startedAt) && !review.finishedAt);
+	let now = $state(Date.now());
+
+	$effect(() => {
+		const id = data.review.id;
+		if (previousId && previousId !== id) cached = null;
+		previousId = id;
+	});
+
+	$effect(() => {
+		const update = () => {
+			visible = document.visibilityState !== 'hidden';
+		};
+		update();
+		document.addEventListener('visibilitychange', update);
+		return () => document.removeEventListener('visibilitychange', update);
+	});
+
+	$effect(() => {
+		if (!elapsed) return;
+		now = Date.now();
+		const id = setInterval(() => (now = Date.now()), 1_000);
+		return () => clearInterval(id);
+	});
 </script>
+
+{#if streaming}
+	<Stream id={review.id} onReview={(next) => (cached = next)} />
+{/if}
 
 <div class="space-y-8">
 	<header>
@@ -34,7 +71,7 @@
 		<dl class="muted mt-3 flex flex-wrap gap-x-6 gap-y-1">
 			<div>Trigger: {review.trigger}</div>
 			<div>Created: {formatDate(review.createdAt)}</div>
-			<div>Duration: {formatDuration(review.startedAt, review.finishedAt)}</div>
+			<div>Duration: {formatDuration(review.startedAt, review.finishedAt, now)}</div>
 			<div>
 				Tokens: {formatTokens(review.inputTokens)} in / {formatTokens(review.outputTokens)} out
 			</div>
@@ -105,7 +142,7 @@
 		{#if posted.length}
 			{@render findingList(posted)}
 		{:else}
-			<p class="muted mt-2">No comments posted.</p>
+			<p class="muted mt-2">{pending ?? 'No comments posted.'}</p>
 		{/if}
 	</section>
 
@@ -149,7 +186,7 @@
 				</table>
 			</div>
 		{:else}
-			<p class="muted mt-2">No model calls recorded.</p>
+			<p class="muted mt-2">{pending ?? 'No model calls recorded.'}</p>
 		{/if}
 	</section>
 
@@ -166,7 +203,7 @@
 				{/each}
 			</ol>
 		{:else}
-			<p class="muted mt-2">No events recorded.</p>
+			<p class="muted mt-2">{pending ?? 'No events recorded.'}</p>
 		{/if}
 	</section>
 </div>
