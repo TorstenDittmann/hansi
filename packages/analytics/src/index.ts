@@ -4,8 +4,8 @@ import { analyticsEnabled, POSTHOG_HOST, POSTHOG_KEY } from './constants';
 export * from './constants';
 
 /**
- * Product analytics on the server, sent to PostHog. Events never carry code, repository names, or
- * personal details: people are identified by their Hansi user id only.
+ * Product analytics on the server, sent to PostHog. Events never carry code or repository names,
+ * and identify people by their Hansi user id; the browser attaches name and email to that id.
  */
 export interface Analytics {
 	capture(event: {
