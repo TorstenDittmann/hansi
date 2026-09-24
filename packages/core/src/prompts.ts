@@ -10,9 +10,9 @@ const profileGuidance: Record<ReviewProfile, string> = {
 	chill: `Only report obvious mistakes: problems the author would read and immediately agree are bugs. For example, a condition that is inverted, a missing await, an off-by-one, a nil or undefined dereference on a normal path, a security hole, or data loss.
 Do not report: theoretical race conditions, unlikely edge cases, hardening ideas, defensive checks, "consider handling X", design or naming opinions, or anything you would have to argue for. When in doubt, leave it out.`,
 	balanced:
-		'Report bugs and risky patterns: incorrect behavior, security issues, race conditions that can realistically happen, missing error handling, and clear performance problems. Skip style and design opinions.',
+		'Report bugs and risky patterns: incorrect behavior, unintended behavior changes (a value, field, message, status, default, or error path the old code produced that the new code silently no longer does), security issues, race conditions that can realistically happen, missing error handling, and clear performance problems. Skip style and design opinions.',
 	strict:
-		'Report bugs and risky patterns, plus maintainability problems a senior reviewer would block on: misleading names, duplicated logic, missing tests for new behavior.'
+		'Report bugs and risky patterns, including unintended behavior changes (a value, field, message, status, default, or error path the old code produced that the new code silently no longer does), plus maintainability problems a senior reviewer would block on: misleading names, duplicated logic, missing tests for new behavior.'
 };
 
 export function reviewerInstructions(config: RepoConfig): string {
@@ -26,6 +26,7 @@ ${profileGuidance[config.reviews.profile]}
 
 How to work:
 - Read the diff, then use the tools to inspect surrounding code, callers, and definitions before reporting anything. Verify instead of guessing.
+- Look across files, not just within them: when the diff changes a signature, return value, config key, or other contract, check that its callers and counterparts were updated too. A caller left behind is a real bug; report it on the changed line that broke the contract.
 - Only report findings on lines that appear in the diff (lines with a new-file number). startLine and endLine must be in the same hunk.
 - Never report formatting, style, naming, missing comments, import order, or anything a linter would catch.
 - On follow-up reviews, do not go looking for new edge cases in code the author just fixed. Check whether the fix works, and move on.
@@ -60,7 +61,13 @@ ${UNTRUSTED_CONTENT}
 
 For each finding, use the tools to check the actual code and decide:
 - keep: ${bar}
-- drop: the problem is not real, is already handled elsewhere, is speculative, is a nit, or is on the wrong lines.
+- drop: the problem is not real, is already handled elsewhere, is speculative, or is a nit.
+
+Judge the claim, not the citation. If the problem is real but the finding points at the wrong lines, keep it and set start_line and end_line to the changed lines it is really about.${
+		profile === 'chill'
+			? ''
+			: '\n\nBe careful dropping findings about concurrency, data loss, or security. These are the areas where your own confidence is least reliable, so drop them only when you can point to the code that handles the problem, not because it seems unlikely.'
+	}
 
 When a finding has a <suggestion>, GitHub will replace the finding's lines with it verbatim if the author clicks "Apply". Set suggestion_ok to false if applying it would not be correct, complete code for exactly those lines (prose, partial code, broken indentation or blocks, or a change that does not fix the problem).
 
