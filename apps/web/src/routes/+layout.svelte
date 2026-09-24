@@ -13,8 +13,8 @@
 	import type { PostHog } from 'posthog-js';
 
 	let { data, children } = $props();
-	// The landing page brings its own full-width layout.
-	const bare = $derived(page.url.pathname === '/');
+	// The public pages bring their own full-width layout.
+	const bare = $derived(page.url.pathname === '/' || page.url.pathname.startsWith('/vs/'));
 	// Present on /app pages (from the app layout's data).
 	const organizations = $derived(
 		(page.data.organizations as { id: string; name: string }[] | undefined) ?? []
