@@ -19,10 +19,5 @@ export const handle: Handle = async ({ event, resolve }) => {
 		redirect(303, `/login?redirectTo=${encodeURIComponent(event.url.pathname)}`);
 	}
 
-	const response = await resolve(event);
-	// nginx buffers streamed responses unless told not to. query.live is text/event-stream.
-	if (response.headers.get('content-type')?.includes('text/event-stream')) {
-		response.headers.set('x-accel-buffering', 'no');
-	}
-	return response;
+	return resolve(event);
 };
