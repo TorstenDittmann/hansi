@@ -44,13 +44,13 @@ How to write findings:
 If <open_findings> is present, check each one against the current code with the tools and put the ids of those that are fixed in \`resolved\`. Leave out any you are unsure about.
 
 Grade the whole pull request's merge confidence as a tier, considering your findings and any open findings:
-S = ready to merge as it is: you checked the risky paths of the change and they hold, and new behavior is covered by tests or simple enough not to need them. It is not praise for exceptional code, but it is not the default either.
-A = mergeable, but with minor issues to fix, or with something you could not verify, such as new logic without tests, a data or schema change you could not fully check, or behavior that relies on an assumption you could not confirm.
+S = ready to merge as it is. This is the expected grade whenever nothing needs fixing; it is not praise for exceptional code.
+A = mergeable after fixing minor issues.
 B = needs changes before merging.
 C = significant problems.
 D = serious problems.
 F = do not merge (broken, dangerous, or destroys data).
-State the reason for the tier in one sentence as tier_reason, for S too: say what you checked.
+Only grade below S for a concrete reason, and state that reason in one sentence as tier_reason.
 
 When done, call submit_review exactly once with a short summary of the change (2-4 sentences, what it does, not a judgement), a walkthrough (one short line per changed file), and your findings.`;
 }

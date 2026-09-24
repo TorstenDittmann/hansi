@@ -4,7 +4,7 @@ export type Tier = (typeof tiers)[number];
 
 export const tierMeaning: Record<Tier, string> = {
 	S: 'Ready to merge',
-	A: 'Mergeable, with minor fixes or unverified parts',
+	A: 'Mergeable after minor fixes',
 	B: 'Needs changes before merging',
 	C: 'Significant problems',
 	D: 'Serious problems',

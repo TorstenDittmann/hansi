@@ -107,14 +107,14 @@ Each review is submitted to GitHub as **Approve**, **Request changes**, or **Com
 
 The tier grades merge confidence:
 
-| Tier | Meaning                                         |
-| ---- | ----------------------------------------------- |
-| S    | Ready to merge: the risky paths were checked    |
-| A    | Mergeable, with minor fixes or unverified parts |
-| B    | Needs changes                                   |
-| C    | Significant problems                            |
-| D    | Serious problems                                |
-| F    | Do not merge                                    |
+| Tier | Meaning                     |
+| ---- | --------------------------- |
+| S    | Ready to merge              |
+| A    | Mergeable after minor fixes |
+| B    | Needs changes               |
+| C    | Significant problems        |
+| D    | Serious problems            |
+| F    | Do not merge                |
 
 The model grades the pull request, but open findings cap the tier: a minor finding means at most
 **A**, a major one at most **B**, a critical one at most **D**. Informational notes don't lower it.
