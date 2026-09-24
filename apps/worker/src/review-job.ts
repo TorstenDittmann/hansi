@@ -179,9 +179,10 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	};
 	if (!configResult.ok) record({ type: 'config.invalid', data: { errors: configResult.errors } });
 
-	const usage = await createUsageRecorder(db, {
+	const usage = await createUsageRecorder(ctx, {
 		organizationId: review.organizationId,
-		reviewId: review.id
+		reviewId: review.id,
+		traceId: review.id
 	});
 
 	try {

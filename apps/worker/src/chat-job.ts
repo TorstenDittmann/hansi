@@ -95,7 +95,11 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 
 		let settled = false;
 		const { review: model } = await loadModels(ctx, payload.organizationId);
-		const usage = await createUsageRecorder(db, { organizationId: payload.organizationId });
+		// Each answer is its own trace in PostHog's LLM analytics.
+		const usage = await createUsageRecorder(ctx, {
+			organizationId: payload.organizationId,
+			traceId: job.id
+		});
 		const learnings = await loadLearnings(db, payload.organizationId, payload.repositoryId);
 
 		const token = await getInstallationToken(octokit);

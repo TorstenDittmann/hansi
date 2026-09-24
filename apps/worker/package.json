@@ -5,7 +5,8 @@
 	"scripts": {
 		"dev": "bun --watch --env-file=../../.env src/index.ts",
 		"start": "bun src/index.ts",
-		"check": "tsc -p ."
+		"check": "tsc -p .",
+		"test": "bun test --pass-with-no-tests"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

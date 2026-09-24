@@ -126,9 +126,14 @@ export async function loadLearnings(db: Database, organizationId: string, reposi
 }
 
 /** Writes each model call to `llm_calls` with its cost, and keeps running totals. */
+/**
+ * Records each model call's tokens and cost in the database, and reports it to PostHog's LLM
+ * analytics as a `$ai_generation` (on hansi.codes only). Prompts and outputs are never sent: they
+ * contain the customer's code.
+ */
 export async function createUsageRecorder(
-	db: Database,
-	scope: { organizationId: string; reviewId?: string }
+	{ db, analytics }: Pick<WorkerContext, 'db' | 'analytics'>,
+	scope: { organizationId: string; reviewId?: string; traceId: string }
 ) {
 	const catalog = await loadPriceCatalog();
 	const totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -151,6 +156,22 @@ export async function createUsageRecorder(
 			cachedInputTokens: call.usage.inputTokenDetails?.cacheReadTokens ?? 0,
 			costUsd: cost,
 			durationMs: call.durationMs
+		});
+		analytics.capture({
+			distinctId: `organization:${scope.organizationId}`,
+			event: '$ai_generation',
+			organizationId: scope.organizationId,
+			properties: {
+				$ai_trace_id: scope.traceId,
+				$ai_span_name: call.role,
+				$ai_provider: call.provider,
+				$ai_model: call.modelId,
+				$ai_input_tokens: call.usage.inputTokens ?? 0,
+				$ai_output_tokens: call.usage.outputTokens ?? 0,
+				$ai_cache_read_input_tokens: call.usage.inputTokenDetails?.cacheReadTokens ?? 0,
+				$ai_latency: call.durationMs / 1000,
+				...(cost == null ? {} : { $ai_total_cost_usd: cost })
+			}
 		});
 	};
 	return { record, totals };
