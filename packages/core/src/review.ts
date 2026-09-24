@@ -341,12 +341,16 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 				(truncated ? 'Part of the diff was too large to review, so Hansi did not approve.' : null));
 	if (approvalWithheld) verdict = 'comment';
 	const open = [...posted, ...stillOpen].sort(compareSeverity);
-	// Without a grade from the model, the open findings decide (S when nothing is open).
-	const tier = finalTier(submitted.tier, tierCap(open.map((f) => f.severity)));
-	const limitedBy = tier !== submitted.tier ? open[0] : undefined;
+	// The model grades before its findings are verified and placed, so its grade may rest on
+	// findings that were dropped. With nothing open, the PR is mergeable: S. Otherwise the model's
+	// grade stands, but never better than the open findings allow.
+	const tier = open.length ? finalTier(submitted.tier, tierCap(open.map((f) => f.severity))) : 'S';
+	const limitedBy = open.length && tier !== submitted.tier ? open[0] : undefined;
 	const tierReason = limitedBy
 		? `Limited by an open ${limitedBy.severity} finding: ${limitedBy.title}`
-		: (submitted.tier_reason ?? '');
+		: tier === submitted.tier
+			? (submitted.tier_reason ?? '')
+			: '';
 
 	emit({
 		type: 'review.completed',

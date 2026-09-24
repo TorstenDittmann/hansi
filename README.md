@@ -117,7 +117,8 @@ The tier grades merge confidence:
 | F    | Do not merge                |
 
 The model grades the pull request, but open findings cap the tier: a minor finding means at most
-**A**, a major one at most **B**, a critical one at most **D**. Informational notes don't lower it.
+**A**, a major one at most **B**, a critical one at most **D**. Informational notes don't lower it,
+and with no open findings the tier is **S**.
 The `Hansi` check run follows the verdict (success, failure, or neutral), so you can make it a
 required check.
 
