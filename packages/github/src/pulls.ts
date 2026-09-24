@@ -328,6 +328,22 @@ export async function acknowledgeComment(
 	}
 }
 
+/** The bot's marked comment on an issue, if one exists. */
+export async function getMarkedComment(
+	octokit: Octokit,
+	ref: RepoRef,
+	issueNumber: number,
+	marker: string
+): Promise<{ id: number; url: string; body: string } | null> {
+	const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+		...ref,
+		issue_number: issueNumber,
+		per_page: 100
+	});
+	const existing = comments.find((c) => c.user?.type === 'Bot' && c.body?.includes(marker));
+	return existing?.body ? { id: existing.id, url: existing.html_url, body: existing.body } : null;
+}
+
 /**
  * Creates the comment on first use and edits it afterwards, found by a hidden marker in its body,
  * so a pull request always has exactly one summary from the bot.
@@ -339,12 +355,7 @@ export async function upsertMarkedComment(
 	marker: string,
 	body: string
 ): Promise<{ id: number; url: string }> {
-	const comments = await octokit.paginate(octokit.rest.issues.listComments, {
-		...ref,
-		issue_number: issueNumber,
-		per_page: 100
-	});
-	const existing = comments.find((c) => c.user?.type === 'Bot' && c.body?.includes(marker));
+	const existing = await getMarkedComment(octokit, ref, issueNumber, marker);
 	if (existing) {
 		const { data } = await octokit.rest.issues.updateComment({
 			...ref,

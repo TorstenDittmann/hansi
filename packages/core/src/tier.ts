@@ -25,3 +25,21 @@ export function finalTier(modelTier: Tier | undefined, cap: Tier): Tier {
 	if (!modelTier) return cap;
 	return tiers.indexOf(modelTier) > tiers.indexOf(cap) ? modelTier : cap;
 }
+
+/**
+ * Tier and reason after findings change outside a full review (e.g. a thread dismissal).
+ * With nothing open the PR is mergeable; otherwise the worst remaining finding caps the grade.
+ */
+export function standingFromOpenFindings(open: { severity: Severity; title: string }[]): {
+	tier: Tier;
+	tierReason: string;
+} {
+	if (open.length === 0) return { tier: 'S', tierReason: '' };
+	const worst = open.reduce((a, b) =>
+		severities.indexOf(b.severity) > severities.indexOf(a.severity) ? b : a
+	);
+	return {
+		tier: tierCap(open.map((f) => f.severity)),
+		tierReason: `Limited by an open ${worst.severity} finding: ${worst.title}`
+	};
+}
