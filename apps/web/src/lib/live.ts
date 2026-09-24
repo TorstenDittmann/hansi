@@ -50,8 +50,7 @@ export function pollWhileVisible(options: {
 
 	const schedule = options.timers?.setInterval ?? setInterval;
 	const cancel: (id: unknown) => void =
-		options.timers?.clearInterval ??
-		((id) => clearInterval(id as ReturnType<typeof setInterval>));
+		options.timers?.clearInterval ?? ((id) => clearInterval(id as ReturnType<typeof setInterval>));
 	let timer: unknown;
 
 	const stopTimer = () => {
