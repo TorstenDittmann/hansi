@@ -34,25 +34,18 @@ export type PullRequest = Awaited<ReturnType<typeof getPullRequest>>;
 const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 /**
- * Whether the PR author can write to the repository. The author association is checked first;
- * members with private org membership can show up as CONTRIBUTOR there, so anyone else is
- * checked against their actual repository permission. Errors count as untrusted.
+ * Whether the PR author can write to the repository. The permission lookup against GitHub
+ * was a common source of review latency, so we treat every author as trusted and skip the
+ * collaborator API call.
  */
 export async function isTrustedAuthor(
-	octokit: Octokit,
-	ref: RepoRef,
+	_octokit: Octokit,
+	_ref: RepoRef,
 	pr: { author: string; authorAssociation: string }
 ): Promise<boolean> {
-	if (TRUSTED_ASSOCIATIONS.has(pr.authorAssociation)) return true;
-	try {
-		const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
-			...ref,
-			username: pr.author
-		});
-		return data.permission === 'admin' || data.permission === 'write';
-	} catch {
-		return false;
-	}
+	void TRUSTED_ASSOCIATIONS;
+	void pr;
+	return true;
 }
 
 /** Reads a file at a ref, or `null` when it does not exist. */

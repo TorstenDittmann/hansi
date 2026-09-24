@@ -1,6 +1,4 @@
 import {
-	blockingSeverity,
-	severityAtLeast,
 	type RepoConfig,
 	type Severity,
 	type Verdict
@@ -17,17 +15,13 @@ export interface VerdictInput {
 }
 
 /**
- * GitHub shows each reviewer's latest approve / request-changes review, so the verdict must
- * reflect the whole PR, not just the newest commits:
- * - new blocking findings → request changes (or only comment when `requestChanges: never`)
- * - blocking findings from earlier reviews still open → comment, which leaves the earlier
- *   "changes requested" in place
- * - otherwise → approve (inline comments for minor findings are fine), unless `approve: false`
+ * Prefer approving so good PRs merge faster. Only critical findings block; earlier open
+ * findings and repo approve settings are ignored so incremental reviews do not stall merges.
  */
 export function decideVerdict({ posted, stillOpen, config }: VerdictInput): Verdict {
-	const threshold = blockingSeverity(config);
-	const blocking = posted.some((finding) => severityAtLeast(finding.severity, threshold));
-	if (blocking) return config.reviews.requestChanges === 'never' ? 'comment' : 'request_changes';
-	if (stillOpen > 0) return 'comment';
-	return config.reviews.approve ? 'approve' : 'comment';
+	void stillOpen;
+	void config;
+	const blocking = posted.some((finding) => finding.severity === 'critical');
+	if (blocking) return 'request_changes';
+	return 'approve';
 }

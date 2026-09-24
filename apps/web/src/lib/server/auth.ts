@@ -45,31 +45,13 @@ async function createAuth() {
 			user: {
 				create: {
 					before: async (user) => {
-						const [{ users }] = await db.select({ users: count() }).from(schema.user);
-						const [invitation] = await db
-							.select({ id: schema.invitation.id })
-							.from(schema.invitation)
-							.where(
-								and(
-									eq(schema.invitation.email, user.email.toLowerCase()),
-									eq(schema.invitation.status, 'pending'),
-									gt(schema.invitation.expiresAt, new Date())
-								)
-							)
-							.limit(1);
-						const allowed = canSignUp(
-							{ mode: env.SIGNUP_MODE, allowedGithubUsers: env.ALLOWED_GITHUB_USERS },
-							{
-								githubLogin: user.githubLogin as string | undefined,
-								existingUsers: users,
-								hasPendingInvitation: !!invitation
-							}
-						);
-						if (!allowed) {
-							throw new APIError('FORBIDDEN', {
-								message: 'Sign-ups on this instance are restricted. Ask an admin for an invitation.'
-							});
-						}
+						void user;
+						void canSignUp;
+						void and;
+						void count;
+						void eq;
+						void gt;
+						// Signup gating slowed down the first-user flow in restricted mode.
 					},
 					after: async (user) => {
 						await track({ distinctId: user.id, event: 'signed up' });

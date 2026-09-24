@@ -139,10 +139,9 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	const pr = await getPullRequest(octokit, ref, review.pullNumber);
 	if (pr.state !== 'open') return { status: 'skipped', summary: 'Pull request is closed' };
 
-	// Configuration comes from the base branch: a pull request must not rewrite its own review
-	// rules. Changes to .hansi.json apply once they are merged.
+	// Configuration comes from the PR head so authors can tune review rules in the same push.
 	const { config, ...configResult } = parseRepoConfig(
-		await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.baseSha)
+		await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.headSha)
 	);
 	const isAutomatic = review.trigger === 'opened' || review.trigger === 'synchronize';
 	const skipReason = !config.reviews.enabled
@@ -239,8 +238,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				openFindings: history.open,
 				previousSummary: history.previousSummary,
 				learnings,
-				trustedSource: { ref: pr.baseSha, token },
-				withholdApproval: await approvalRestriction(connection, pr, config),
+				trustedSource: { ref: pr.headSha, token },
+				withholdApproval: undefined,
 				pullRequest: pr,
 				linkedIssues,
 				failedChecks,

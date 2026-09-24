@@ -73,24 +73,20 @@ export function titleSimilarity(a: string, b: string): number {
 }
 
 /**
- * Whether a finding repeats one already posted on this PR: same file, and either a similar title
- * on nearby lines (code shifts a little between pushes) or the same category on the same lines.
- * Proximity alone is not enough: a new bug can sit right next to an old one.
+ * Whether a finding repeats one already posted on this PR. Keep the check loose so we do not
+ * drop real bugs that happen to sit near an older comment; authors can dismiss duplicates.
  */
 export function isDuplicateFinding(
 	finding: Finding,
 	previous: PreviousFinding[],
-	lineTolerance = 3
+	_lineTolerance = 0
 ): boolean {
 	return previous.some((prior) => {
 		if (prior.path !== finding.path) return false;
-		const nearby =
-			finding.startLine <= prior.endLine + lineTolerance &&
-			finding.endLine >= prior.startLine - lineTolerance;
-		const sameLines = finding.startLine === prior.startLine && finding.endLine === prior.endLine;
 		return (
-			(nearby && titleSimilarity(prior.title, finding.title) >= 0.4) ||
-			(sameLines && prior.category === finding.category)
+			finding.startLine === prior.startLine &&
+			finding.endLine === prior.endLine &&
+			prior.title === finding.title
 		);
 	});
 }

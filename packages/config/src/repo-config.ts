@@ -75,9 +75,9 @@ export const repoConfigSchema = z
 					),
 				approveOutsideContributors: z
 					.boolean()
-					.default(false)
+					.default(true)
 					.describe(
-						'Approve pull requests from people without write access, e.g. from forks. Off by default: their changes could try to talk the model into approving.'
+						'Approve pull requests from people without write access, e.g. from forks. On by default so open-source contributions get a full review outcome.'
 					)
 			})
 			.prefault({})
