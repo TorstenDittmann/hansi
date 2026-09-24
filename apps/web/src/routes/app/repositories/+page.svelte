@@ -26,10 +26,7 @@
 
 <div class="space-y-6">
 	<header class="flex flex-wrap items-center justify-between gap-3">
-		<div>
-			<h1 class="text-2xl font-semibold">Repositories</h1>
-			<p class="muted">Pull requests in enabled repositories are reviewed automatically.</p>
-		</div>
+		<h1 class="text-2xl font-semibold">Repositories</h1>
 		<div class="flex gap-2">
 			<form
 				method="post"

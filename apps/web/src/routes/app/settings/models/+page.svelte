@@ -69,10 +69,6 @@
 <div class="space-y-12">
 	<header>
 		<h1 class="text-2xl font-semibold">Models</h1>
-		<p class="muted">
-			Hansi runs on your own API keys. Keys are encrypted at rest and never shown again after
-			saving.
-		</p>
 	</header>
 
 	{#if form && 'error' in form && form.error}

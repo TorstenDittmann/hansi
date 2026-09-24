@@ -23,7 +23,6 @@
 
 <div class="card mx-auto mt-16 max-w-sm p-6">
 	<h1 class="text-xl font-semibold">Sign in</h1>
-	<p class="muted mt-1">Use your GitHub account to continue.</p>
 	<button type="button" class="btn btn-primary mt-6 w-full" disabled={pending} onclick={signIn}>
 		{pending ? 'Redirecting…' : 'Continue with GitHub'}
 	</button>

@@ -149,7 +149,6 @@
 	{#if dropped.length}
 		<section>
 			<h2 class="text-lg font-semibold">Filtered out ({dropped.length})</h2>
-			<p class="muted">Findings Hansi did not post, and why.</p>
 			{@render findingList(dropped)}
 		</section>
 	{/if}
@@ -192,7 +191,6 @@
 
 	<section>
 		<h2 class="text-lg font-semibold">Trace</h2>
-		<p class="muted">What the agent looked at, in order.</p>
 		{#if review.events.length}
 			<ol class="card mt-3 divide-y divide-stone-200 font-mono text-xs dark:divide-stone-800">
 				{#each review.events as event (event.id)}

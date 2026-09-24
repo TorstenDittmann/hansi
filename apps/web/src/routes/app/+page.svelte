@@ -25,7 +25,6 @@
 <div class="space-y-10">
 	<header>
 		<h1 class="text-2xl font-semibold">Overview</h1>
-		<p class="muted">What Hansi has spent on your model keys, and its latest reviews.</p>
 	</header>
 
 	<section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="This month">
