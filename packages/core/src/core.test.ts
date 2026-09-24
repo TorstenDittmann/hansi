@@ -397,6 +397,44 @@ describe('runReview', () => {
 		expect(blocked.tierReason).toBe('Limited by an open major finding: NaN leaks into totals');
 	});
 
+	test('grades S when the findings behind a lower grade were all dropped', async () => {
+		// The only finding is not on a changed line, so it is dropped before posting.
+		const submission = toolCall('submit_review', {
+			summary: 'Fine.',
+			findings: [
+				{
+					path: 'src/math.ts',
+					startLine: 999,
+					endLine: 999,
+					severity: 'major',
+					category: 'bug',
+					title: 'Off the diff',
+					body: 'Explained.'
+				}
+			],
+			tier: 'B',
+			tier_reason: 'Off the diff.'
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Fix', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: {
+				review: {
+					model: new MockLanguageModelV4({ doGenerate: [submission] }),
+					provider: 'mock',
+					modelId: 'mock-1'
+				}
+			}
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted).toEqual([]);
+		expect(result.verdict).toBe('approve');
+		expect(result.tier).toBe('S');
+		expect(result.tierReason).toBe('');
+	});
+
 	test('withholds approval for outside contributors and incomplete reviews', async () => {
 		const clean = toolCall('submit_review', { summary: 'Fine.', findings: [], tier: 'S' });
 		const review = (extra: Partial<Parameters<typeof runReview>[0]>) =>

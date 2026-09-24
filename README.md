@@ -35,8 +35,8 @@ Tell it "we don't flag this in tests" and it remembers for future reviews.
 
 ## Why Hansi
 
-- **Few comments, all worth reading.** By default Hansi only flags obvious mistakes, the kind you'd
-  agree with at a glance. Most good pull requests get an approval and no comments at all.
+- **Few comments, all worth reading.** By default Hansi only flags bugs it can confirm in the code: no
+  style notes, opinions, or "consider handling X". Most good pull requests get an approval and no comments at all.
 - **A reviewer, not a bot.** It approves and requests changes like a teammate, and its check run
   can gate merges.
 - **Your model, your bill.** You pay your provider directly, and the dashboard shows the tokens and
@@ -86,7 +86,7 @@ branch, so changes take effect once they are merged. Every field is optional:
 | `reviews.drafts`                     | `false` | Also review draft pull requests.                                                    |
 | `reviews.baseBranches`               | `[]`    | Only review pull requests into these branches. Empty means all.                     |
 | `reviews.pathFilters`                | `[]`    | Globs for the files to review; prefix with `!` to exclude.                          |
-| `reviews.profile`                    | `chill` | `chill` flags obvious mistakes only; `balanced` and `strict` dig deeper.            |
+| `reviews.profile`                    | `chill` | `chill` flags confirmed bugs only; `balanced` and `strict` dig deeper.              |
 | `reviews.minSeverity`                | `minor` | Findings below this severity (`info`, `minor`, `major`, `critical`) are not posted. |
 | `reviews.maxComments`                | `15`    | The most inline comments in one review.                                             |
 | `reviews.approve`                    | `true`  | Approve pull requests without blocking findings.                                    |
@@ -117,7 +117,8 @@ The tier grades merge confidence:
 | F    | Do not merge                |
 
 The model grades the pull request, but open findings cap the tier: a minor finding means at most
-**A**, a major one at most **B**, a critical one at most **D**. Informational notes don't lower it.
+**A**, a major one at most **B**, a critical one at most **D**. Informational notes don't lower it,
+and with no open findings the tier is **S**.
 The `Hansi` check run follows the verdict (success, failure, or neutral), so you can make it a
 required check.
 
