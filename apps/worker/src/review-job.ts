@@ -280,6 +280,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 
 			// One summary comment per PR, edited in place on every review.
 			const threshold = blockingSeverity(config);
+			const stillOpen = history.open.filter((f) => !result.resolved.includes(f.id));
 			const summary = await upsertMarkedComment(
 				octokit,
 				ref,
@@ -294,9 +295,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					verdict: result.verdict,
 					posted: result.posted,
 					resolved: history.open.filter((f) => result.resolved.includes(f.id)),
-					stillOpen: history.open.filter(
-						(f) => !result.resolved.includes(f.id) && severityAtLeast(f.severity, threshold)
-					),
+					// Every open finding, including minors: the grade may rest on them.
+					stillOpen,
 					dropped: result.dropped,
 					walkthrough: result.walkthrough,
 					latestChanges: result.latestChanges,
@@ -307,32 +307,34 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				})
 			);
 
-			// A GitHub review is only submitted when it adds something: inline comments, or a change
-			// of Hansi's approve / request-changes state. Otherwise the summary update is enough.
+			// Submit a GitHub review when there are inline comments, the approve/request-changes
+			// state changes, or someone explicitly asked for a re-review (so the ask is answered
+			// visibly, not only by editing the summary).
 			const stateChanged =
 				result.verdict !== 'comment' && result.verdict !== history.lastDecisiveVerdict;
-			const commentIds =
-				result.posted.length || stateChanged
-					? await postReview(
-							connection,
-							pr,
-							{
-								body: formatReviewBody({
-									tier: result.tier,
-									verdict: result.verdict,
-									blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
-										.length,
-									summaryUrl: summary.url
-								}),
-								event: reviewEvents[result.verdict]
-							},
-							result.posted,
-							log
-						)
-					: [];
+			const shouldPostReview =
+				result.posted.length > 0 || stateChanged || review.trigger === 'mention';
+			const commentIds = shouldPostReview
+				? await postReview(
+						connection,
+						pr,
+						{
+							body: formatReviewBody({
+								tier: result.tier,
+								verdict: result.verdict,
+								blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
+									.length,
+								summaryUrl: summary.url
+							}),
+							event: reviewEvents[result.verdict]
+						},
+						result.posted,
+						log
+					)
+				: [];
 			record({
 				type: 'review.posted',
-				data: { summaryUrl: summary.url, submittedReview: result.posted.length > 0 || stateChanged }
+				data: { summaryUrl: summary.url, submittedReview: shouldPostReview }
 			});
 
 			const findingRows = [

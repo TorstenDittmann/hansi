@@ -63,7 +63,7 @@ export interface SummaryInput {
 	posted: Finding[];
 	/** Earlier findings the new commits fixed. */
 	resolved: { path: string; startLine: number; title: string }[];
-	/** Earlier blocking findings that are still open. */
+	/** Earlier findings that are still open. */
 	stillOpen: { path: string; startLine: number; title: string; severity: Severity }[];
 	dropped: DroppedFinding[];
 	walkthrough: { path: string; change: string }[];
