@@ -22,6 +22,7 @@ import {
 	withWorkdir,
 	type WorkerContext
 } from './shared';
+import { refreshSummaryAfterSettlement } from './summary';
 
 export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>) {
 	const { db, env, logger } = ctx;
@@ -151,6 +152,15 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 			await resolveReviewThreads(octokit, ref, payload.pullNumber, [payload.rootCommentId]).catch(
 				(error) => log.warn({ err: error }, 'could not resolve thread')
 			);
+			// Keep the PR summary's open-finding list and tier in sync with the dismissal.
+			await refreshSummaryAfterSettlement({
+				db,
+				env,
+				connection,
+				organizationId: payload.organizationId,
+				repositoryId: payload.repositoryId,
+				pullNumber: payload.pullNumber
+			}).catch((error) => log.warn({ err: error }, 'could not refresh summary after settlement'));
 		}
 		log.info('chat reply posted');
 	} catch (error) {
