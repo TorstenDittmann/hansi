@@ -439,6 +439,46 @@ describe('runReview', () => {
 		);
 	});
 
+	test('approval clamp still respects the open-finding cap when majors do not block', async () => {
+		// requestChanges: critical → majors do not block, so verdict can be approve while tierCap
+		// is still B. Softening the model grade must not raise that above the cap.
+		const submission = toolCall('submit_review', {
+			summary: 'Still open major elsewhere.',
+			findings: [],
+			resolved: [],
+			tier: 'C',
+			tier_reason: 'Needs more work.'
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			openFindings: [
+				{
+					id: 'f-major',
+					path: 'src/math.ts',
+					startLine: 2,
+					endLine: 2,
+					severity: 'major',
+					title: 'Division by zero',
+					body: 'Explained.'
+				}
+			],
+			pullRequest: { title: 'Fix', body: '', author: 'octocat' },
+			config: parseRepoConfig('{ "reviews": { "requestChanges": "critical" } }').config,
+			models: {
+				review: {
+					model: new MockLanguageModelV4({ doGenerate: [submission] }),
+					provider: 'mock',
+					modelId: 'mock-1'
+				}
+			}
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.verdict).toBe('approve');
+		expect(result.tier).toBe('B');
+		expect(result.tierReason).toBe('Limited by an open major finding: Division by zero');
+	});
+
 	test('grades S when the findings behind a lower grade were all dropped', async () => {
 		// The only finding is not on a changed line, so it is dropped before posting.
 		const submission = toolCall('submit_review', {
