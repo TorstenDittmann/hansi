@@ -62,7 +62,7 @@
 		},
 		{
 			q: 'Will it flood my pull requests with comments?',
-			a: 'No. Hansi only comments on obvious mistakes, and a second pass drops anything it cannot confirm. Most good pull requests get no comments at all, just an approval.'
+			a: 'No. Hansi only comments on bugs, and a second pass drops anything it cannot confirm in the code. Most good pull requests get no comments at all, just an approval.'
 		},
 		{
 			q: 'Can it approve pull requests?',
