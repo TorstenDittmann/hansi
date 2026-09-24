@@ -348,11 +348,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	// apply the cap so an open major (e.g. with requestChanges: critical) keeps the grade at B.
 	const cap = open.length ? tierCap(open.map((f) => f.severity)) : 'S';
 	let modelTier = submitted.tier;
-	if (
-		verdict === 'approve' &&
-		modelTier &&
-		tiers.indexOf(modelTier) > tiers.indexOf('A')
-	) {
+	if (verdict === 'approve' && modelTier && tiers.indexOf(modelTier) > tiers.indexOf('A')) {
 		modelTier = 'A';
 	}
 	const tier = open.length ? finalTier(modelTier, cap) : 'S';
