@@ -24,8 +24,10 @@ import { schema, type Database } from '@hans/db';
 import {
 	completeCheckRun,
 	createReview,
+	getFailedChecks,
 	getFileContent,
 	getInstallationToken,
+	getLinkedIssues,
 	getPullRequest,
 	isTrustedAuthor,
 	listReviewComments,
@@ -214,6 +216,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				}
 			}
 			const learnings = await loadLearnings(db, review.organizationId, review.repositoryId);
+			const { linkedIssues, failedChecks } = await loadPullRequestContext(connection, pr, log);
 			record({
 				type: 'review.mode',
 				data: {
@@ -221,7 +224,9 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					from: incrementalFrom ?? pr.baseSha,
 					previousFindings: history.findings.length,
 					openFindings: history.open.length,
-					learnings: learnings.length
+					learnings: learnings.length,
+					linkedIssues: linkedIssues.map((i) => i.number),
+					failedChecks: failedChecks.map((c) => c.name)
 				}
 			});
 
@@ -237,6 +242,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				trustedSource: { ref: pr.baseSha, token },
 				withholdApproval: await approvalRestriction(connection, pr, config),
 				pullRequest: pr,
+				linkedIssues,
+				failedChecks,
 				config,
 				models,
 				onEvent: record,
@@ -366,6 +373,28 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 		}).catch((e) => log.warn({ err: e }, 'failed to complete check run'));
 		throw error;
 	}
+}
+
+/**
+ * What the pull request is meant to do and what CI already knows about it. Both are extras: if
+ * GitHub fails to return them, the review goes ahead without.
+ */
+async function loadPullRequestContext(
+	{ octokit, ref, appId }: RepositoryConnection,
+	pr: { number: number; headSha: string },
+	log: Logger
+) {
+	const [linkedIssues, failedChecks] = await Promise.all([
+		getLinkedIssues(octokit, ref, pr.number).catch((error) => {
+			log.warn({ err: error }, 'could not load linked issues');
+			return [];
+		}),
+		getFailedChecks(octokit, ref, pr.headSha, appId).catch((error) => {
+			log.warn({ err: error }, 'could not load failed checks');
+			return [];
+		})
+	]);
+	return { linkedIssues, failedChecks };
 }
 
 /**

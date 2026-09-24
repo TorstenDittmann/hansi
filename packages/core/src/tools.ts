@@ -11,6 +11,8 @@ export type EmitEvent = (event: ReviewEvent) => void;
 const MAX_READ_LINES = 400;
 const MAX_GREP_LINES = 100;
 const MAX_LIST_ENTRIES = 300;
+const MAX_HISTORY_COMMITS = 20;
+const MAX_HISTORY_CHARS = 20_000;
 
 /** Resolves a model-supplied path inside the checkout; rejects escapes and `.git`. */
 export function resolveRepoPath(repoDir: string, path: string): string {
@@ -22,8 +24,15 @@ export function resolveRepoPath(repoDir: string, path: string): string {
 	return absolute;
 }
 
-/** Read-only tools over the checked-out repository. No code is ever executed. */
-export function createRepoTools(repoDir: string, emit: EmitEvent) {
+/**
+ * Read-only tools over the checked-out repository. No code is ever executed. The token lets git
+ * download blobs a partial clone does not have yet, e.g. for patches in `file_history`.
+ */
+export function createRepoTools(
+	repoDir: string,
+	emit: EmitEvent,
+	options: { token?: string } = {}
+) {
 	return {
 		read_file: tool({
 			description: `Read a file from the repository at the PR head, with line numbers. Returns at most ${MAX_READ_LINES} lines; use startLine/endLine for large files.`,
@@ -105,6 +114,31 @@ export function createRepoTools(repoDir: string, emit: EmitEvent) {
 					});
 					if (matches.length === 0) return 'No matches.';
 					return matches.map((m) => `${m.path}:${m.line}: ${m.text.split('\n')[0]}`).join('\n');
+				} catch (error) {
+					return `Error: ${(error as Error).message}`;
+				}
+			}
+		}),
+
+		file_history: tool({
+			description: `Recent commits that touched a file (at the PR head), newest first: sha, date, author, and subject. Use it to see why code is the way it is, e.g. a recent revert or bug fix that the change might undo. Set patches to also see what each commit changed.`,
+			inputSchema: z.object({
+				path: z.string(),
+				limit: z.number().int().positive().max(MAX_HISTORY_COMMITS).default(10),
+				patches: z.boolean().optional().describe('Include the diff of each commit for this file')
+			}),
+			execute: async ({ path, limit, patches }) => {
+				emit({ type: 'tool.file_history', data: { path, limit, patches: !!patches } });
+				try {
+					resolveRepoPath(repoDir, path);
+					const args = ['log', '--no-color', `--max-count=${limit}`];
+					args.push('--format=%h %as %an: %s', '--follow');
+					if (patches) args.push('--patch', '--no-ext-diff');
+					const log = await git([...args, '--', path], { cwd: repoDir, token: options.token });
+					if (!log.trim()) return 'No commits touch this file.';
+					return log.length > MAX_HISTORY_CHARS
+						? `${log.slice(0, MAX_HISTORY_CHARS)}\n… truncated; ask for fewer commits`
+						: log.trimEnd();
 				} catch (error) {
 					return `Error: ${(error as Error).message}`;
 				}

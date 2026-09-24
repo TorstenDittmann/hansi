@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkoutPullRequest, diffSince, git } from './git';
-import { loadRepoGuidelines } from './tools';
+import { createRepoTools, loadRepoGuidelines } from './tools';
 
 // A local "GitHub": a repository with a base branch and a pull request ref (refs/pull/1/head).
 let root: string;
@@ -85,6 +85,38 @@ describe('diffSince', () => {
 		});
 		expect(await diffSince({ dir, fromSha: sha.rewritten!, headSha: sha.second! })).toBeNull();
 		expect(await diffSince({ dir, fromSha: 'f'.repeat(40), headSha: sha.second! })).toBeNull();
+	});
+});
+
+describe('file_history', () => {
+	test('lists the commits that touched a file, with patches on request', async () => {
+		const dir = join(root, 'checkout-history');
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 1,
+			baseSha: sha.base!,
+			headSha: sha.second!
+		});
+		const tools = createRepoTools(dir, () => {});
+		const run = (input: { path: string; limit: number; patches?: boolean }) =>
+			tools.file_history.execute!(input, { toolCallId: 't', messages: [] } as never);
+
+		const log = await run({ path: 'a.ts', limit: 10 });
+		expect(log).toContain(`${sha.first!.slice(0, 7)} `);
+		expect(log).toContain('Test: first push');
+		expect(log).toContain('Test: base');
+		expect(log).not.toContain('second push');
+
+		// Blobs for older commits are not in the partial clone yet; git downloads them.
+		const patched = await run({ path: 'a.ts', limit: 1, patches: true });
+		expect(patched).toContain('-export const a = 1;');
+		expect(patched).toContain('+export const a = 2;');
+
+		expect(await run({ path: 'missing.ts', limit: 10 })).toBe('No commits touch this file.');
+		expect(await run({ path: '../outside', limit: 10 })).toStartWith(
+			'Error: Path is outside the repository'
+		);
 	});
 });
 
