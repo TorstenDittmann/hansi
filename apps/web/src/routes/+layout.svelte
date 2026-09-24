@@ -222,6 +222,7 @@
 								</div>
 							</div>
 							<div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
+							<a href={resolve('/app/account')} class={menuItem}>Account settings</a>
 							{#if appSlug}
 								<a
 									href="https://github.com/apps/{appSlug}/installations/new"

@@ -5,6 +5,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
 import { organization } from 'better-auth/plugins';
 import { and, count, eq, gt } from 'drizzle-orm';
+import { prepareAccountDeletion } from './account';
 import { track } from './analytics';
 import { getContext, getGitHubCredentials } from './context';
 
@@ -39,7 +40,13 @@ async function createAuth() {
 				}
 			: {},
 		user: {
-			additionalFields: { githubLogin: { type: 'string', required: false, input: false } }
+			additionalFields: { githubLogin: { type: 'string', required: false, input: false } },
+			deleteUser: {
+				enabled: true,
+				beforeDelete: async (user) => {
+					await prepareAccountDeletion(db, user.id);
+				}
+			}
 		},
 		databaseHooks: {
 			user: {
