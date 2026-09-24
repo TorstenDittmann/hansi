@@ -119,4 +119,15 @@ describe('summaryExtrasFromBody', () => {
 			approvalWithheld: null
 		});
 	});
+
+	test('keeps every line of a multiline latest-changes value', () => {
+		const body = formatSummaryComment(
+			summaryAfterSettlement({
+				...base,
+				findings: [],
+				latestChanges: 'Adds pageCount.\nMentions the helper.'
+			})
+		);
+		expect(summaryExtrasFromBody(body).latestChanges).toBe('Adds pageCount.\nMentions the helper.');
+	});
 });

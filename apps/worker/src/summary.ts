@@ -36,7 +36,9 @@ export type SummaryExtras = {
  * drop them. These are not stored on the review row.
  */
 export function summaryExtrasFromBody(body: string): SummaryExtras {
-	const latestChanges = body.match(/\*\*Latest changes:\*\* (.+)/)?.[1] ?? null;
+	// latestChanges can span lines; it always sits before the verdict table.
+	const latestChanges =
+		body.match(/\*\*Latest changes:\*\* ([\s\S]*?)\n\n\| Verdict \|/)?.[1] ?? null;
 	const approvalWithheld = body.match(/> \[!NOTE\]\n> (.+)/)?.[1] ?? null;
 	const incrementalFrom = body.match(/Reviewed the commits since <code>([0-9a-f]+)<\/code>/i)?.[1];
 	return {
