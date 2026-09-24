@@ -312,14 +312,17 @@ describe('runReview', () => {
 					summary: 'Refactors divide.',
 					findings: [
 						{ ...finding(2, 'Returns NaN'), suggestion: '  const result = b ? a / b : 0;' },
-						finding(3, 'Division by zero')
+						finding(3, 'Division by zero'),
+						finding(4, 'Missing guard')
 					]
 				}),
 				toolCall('submit_verdicts', {
 					verdicts: [
 						{ id: 'F1', keep: true, reason: 'real', start_line: 3, end_line: 3 },
 						// Not a changed line: the original position stays.
-						{ id: 'F2', keep: true, reason: 'real', start_line: 40, end_line: 40 }
+						{ id: 'F2', keep: true, reason: 'real', start_line: 40, end_line: 40 },
+						// Already reported there: the original position stays.
+						{ id: 'F3', keep: true, reason: 'real', start_line: 21, end_line: 21 }
 					]
 				})
 			]
@@ -328,6 +331,9 @@ describe('runReview', () => {
 		const result = await runReview({
 			repoDir,
 			diff,
+			previousFindings: [
+				{ path: 'src/math.ts', startLine: 21, endLine: 21, category: 'bug', title: 'Old issue' }
+			],
 			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
 			config: parseRepoConfig('').config,
 			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
@@ -336,7 +342,8 @@ describe('runReview', () => {
 		if (result.status !== 'completed') throw new Error('expected a completed review');
 		expect(result.posted.map((f) => [f.title, f.startLine, f.endLine, f.suggestion])).toEqual([
 			['Returns NaN', 3, 3, undefined],
-			['Division by zero', 3, 3, undefined]
+			['Division by zero', 3, 3, undefined],
+			['Missing guard', 4, 4, undefined]
 		]);
 		expect(events.filter((e) => e === 'finding.relocated')).toHaveLength(1);
 	});

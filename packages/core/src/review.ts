@@ -280,7 +280,11 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// 4. Verify: a second, skeptical pass removes false positives.
 	const verified = relevant.length
-		? await verifyFindings(relevant, input, tools, limits.maxVerifySteps, dropped, place)
+		? await verifyFindings(relevant, input, tools, limits.maxVerifySteps, dropped, (finding) => {
+				// A relocation must not land on something already reported.
+				const placed = place(finding);
+				return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
+			})
 		: [];
 
 	// 5. Cap the number of comments, most severe first.
@@ -380,7 +384,8 @@ function withoutSuggestion(finding: Finding): Finding {
 
 /**
  * Moves a kept finding to the lines the verifier says it is really about. The original position
- * already passed validation, so it stays when the corrected one is not commentable.
+ * already passed validation, so it stays when the corrected one is not commentable or would
+ * repeat an earlier finding.
  */
 function relocate(
 	finding: Finding,
