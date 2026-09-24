@@ -7,6 +7,12 @@ declare global {
 			user: User | null;
 			session: Session | null;
 		}
+		interface PageData {
+			/** Document and Open Graph title. Pages return this from `load` to override the default. */
+			title?: string;
+			/** Meta and Open Graph description. Pages return this from `load` to override the default. */
+			description?: string;
+		}
 	}
 }
 

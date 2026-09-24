@@ -9,6 +9,16 @@
 	import Menu from '$lib/components/Menu.svelte';
 	import { startAnalytics } from '$lib/analytics';
 	import { authClient } from '$lib/auth-client';
+	import {
+		DEFAULT_DESCRIPTION,
+		OG_IMAGE_HEIGHT,
+		OG_IMAGE_PATH,
+		OG_IMAGE_WIDTH,
+		SITE_NAME,
+		SITE_ORIGIN,
+		absoluteUrl,
+		isIndexablePath
+	} from '$lib/seo';
 	import { onMount } from 'svelte';
 	import type { PostHog } from 'posthog-js';
 
@@ -23,6 +33,12 @@
 		page.data.organization as { id: string; name: string } | undefined
 	);
 	const appSlug = $derived(page.data.appSlug as string | null | undefined);
+	// Pages override title/description by returning them from `load` (see $lib/seo).
+	const title = $derived(page.data.title ?? SITE_NAME);
+	const description = $derived(page.data.description ?? DEFAULT_DESCRIPTION);
+	const canonical = $derived(absoluteUrl(page.url.pathname));
+	const ogImage = $derived(`${SITE_ORIGIN}${OG_IMAGE_PATH}`);
+	const indexable = $derived(isIndexablePath(page.url.pathname));
 
 	const tabs = [
 		{
@@ -90,7 +106,24 @@
 </script>
 
 <svelte:head>
-	<title>Hansi</title>
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<link rel="canonical" href={canonical} />
+	{#if !indexable}
+		<meta name="robots" content="noindex, nofollow" />
+	{/if}
+	<meta property="og:title" content={title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:url" content={canonical} />
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content={SITE_NAME} />
+	<meta property="og:image" content={ogImage} />
+	<meta property="og:image:width" content={String(OG_IMAGE_WIDTH)} />
+	<meta property="og:image:height" content={String(OG_IMAGE_HEIGHT)} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
+	<meta name="twitter:image" content={ogImage} />
 	<link rel="icon" href={favicon} type="image/svg+xml" />
 </svelte:head>
 

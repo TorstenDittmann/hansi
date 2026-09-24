@@ -78,14 +78,6 @@
 		'font-display text-2xl font-bold tracking-[-0.04em] text-balance sm:text-[2rem] sm:leading-[1.15]';
 </script>
 
-<svelte:head>
-	<title>Hansi: AI code review that catches real bugs</title>
-	<meta
-		name="description"
-		content="AI code review for GitHub that runs on your own model key: OpenAI, Anthropic, Amazon Bedrock, OpenRouter, and more. It catches real bugs, approves the rest, and grades each pull request from S to F."
-	/>
-</svelte:head>
-
 {#snippet avatar(size: 'sm' | 'md')}
 	<span
 		class="grid shrink-0 place-items-center rounded-full bg-stone-900 font-bold text-white dark:bg-stone-100 dark:text-stone-900 {size ===
