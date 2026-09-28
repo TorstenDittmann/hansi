@@ -19,7 +19,7 @@ export const OG_IMAGE_WIDTH = 1200;
 export const OG_IMAGE_HEIGHT = 630;
 
 /** Public HTML pages that search engines may index. Login, invites, dashboard, setup, and API stay out. */
-export const PUBLIC_PATHS = ['/', '/docs'] as const;
+export const PUBLIC_PATHS = ['/'] as const;
 
 const PRIVATE_PREFIXES = ['/app', '/login', '/invite', '/setup', '/api'];
 
