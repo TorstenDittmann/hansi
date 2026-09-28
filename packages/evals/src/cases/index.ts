@@ -163,6 +163,44 @@ export function slug(title: string): string {
 }
 `;
 
+const retryBefore = `/** Calls fn until it succeeds. */
+export async function retry<T>(fn: () => Promise<T>): Promise<T> {
+	for (;;) {
+		try {
+			return await fn();
+		} catch {
+			// try again
+		}
+	}
+}
+`;
+
+const retryAfter = `/** Calls fn until it succeeds, at most \`attempts\` times; then rethrows the last error. */
+export async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await fn();
+		} catch (error) {
+			if (attempt >= attempts) throw error;
+		}
+	}
+}
+`;
+
+const retryTest = `import { expect, test } from 'bun:test';
+import { retry } from './retry';
+
+test('gives up after three attempts', async () => {
+	let calls = 0;
+	const result = await retry(async () => {
+		calls++;
+		return 'ok';
+	});
+	expect(result).toBe('ok');
+	expect(calls).toBe(1);
+});
+`;
+
 export const cases: EvalCase[] = [
 	{
 		name: 'ts-pagination-off-by-one',
@@ -398,7 +436,7 @@ test('an empty cart costs nothing', () => {
 		expected: []
 	},
 	{
-		name: 'strict-guideline-regex',
+		name: 'ts-guideline-regex',
 		description:
 			'AGENTS.md bans regular expressions; the change adds one where a string check works.',
 		base: {
@@ -425,7 +463,6 @@ test('allows other slugs, including longer ones', () => {
 `
 		},
 		pullRequest: { title: 'Reject reserved slugs' },
-		config: { reviews: { profile: 'strict' } },
 		expected: [
 			{
 				path: 'src/slug.ts',
@@ -455,5 +492,24 @@ test('an empty cart costs nothing', () => {
 		pullRequest: { title: 'Add tests for total()' },
 		config: { reviews: { profile: 'strict' } },
 		expected: []
+	},
+	{
+		name: 'ts-test-cannot-fail',
+		description:
+			'Retries now give up after three attempts, but the new test never fails, so it cannot catch a broken limit.',
+		base: { 'src/retry.ts': retryBefore },
+		head: { 'src/retry.ts': retryAfter, 'src/retry.test.ts': retryTest },
+		pullRequest: { title: 'Give up after three attempts' },
+		expected: [
+			{
+				path: 'src/retry.test.ts',
+				lines: [
+					lineOf(retryTest, "test('gives up after three attempts'")[0],
+					lineOf(retryTest, 'expect(calls).toBe(1)')[0]
+				],
+				description:
+					'The fake succeeds on the first call, so the test never reaches the retry limit it names.'
+			}
+		]
 	}
 ];
