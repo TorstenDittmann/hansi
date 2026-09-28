@@ -33,6 +33,10 @@ export async function buildCaseRepository(evalCase: EvalCase): Promise<CaseRepos
 	await run('init', '--quiet', '--initial-branch=main');
 	await run('config', 'user.email', 'eval@hans.local');
 	await run('config', 'user.name', 'hans eval');
+	// Throwaway repos. Signing and the filesystem monitor come from the machine's git config
+	// and make these commits stall once several cases run.
+	await run('config', 'commit.gpgsign', 'false');
+	await run('config', 'core.fsmonitor', 'false');
 	await writeFiles(dir, evalCase.base);
 	await run('add', '-A');
 	await run('commit', '--quiet', '--allow-empty', '-m', 'base');
