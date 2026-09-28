@@ -4,11 +4,25 @@ export function formatCost(usd: number | null | undefined) {
 	return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
 }
 
+const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Fixed English, UTC, so the server HTML and the browser render the same string. */
 export function formatDate(value: Date | string | number | null | undefined) {
 	if (!value) return '–';
-	return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-		new Date(value)
-	);
+	const date = new Date(value);
+	const hours = date.getUTCHours();
+	const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+	const hour12 = hours % 12 || 12;
+	const suffix = hours < 12 ? 'AM' : 'PM';
+	const month = months[date.getUTCMonth()];
+	const day = date.getUTCDate();
+	const year = date.getUTCFullYear();
+	return `${month} ${day}, ${year}, ${hour12}:${minutes} ${suffix}`;
+}
+
+/** `YYYY-MM-DD` as `Sep 28`, read from the string so it does not depend on timezone or locale. */
+export function formatDay(day: string) {
+	return `${months[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8, 10))}`;
 }
 
 /**

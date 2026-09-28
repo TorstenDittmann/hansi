@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { getAuth } from '$lib/server/auth';
-import { track } from '$lib/server/analytics';
+import { analyticsPerson, track } from '$lib/server/analytics';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = () => ({
@@ -53,7 +53,11 @@ export const actions: Actions = {
 			})
 		);
 		if (failed) return failed;
-		await track({ distinctId: locals.user.id, event: 'deleted account' });
+		await track({
+			distinctId: locals.user.id,
+			event: 'deleted account',
+			person: analyticsPerson(locals.user)
+		});
 		redirect(303, '/');
 	}
 };

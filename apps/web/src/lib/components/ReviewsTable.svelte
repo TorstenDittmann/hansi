@@ -65,7 +65,9 @@
 					</td>
 					<td class="px-4 py-2">{review.posted}</td>
 					<td class="px-4 py-2 text-right tabular-nums">{formatCost(review.costUsd)}</td>
-					<td class="muted px-4 py-2">{formatDate(review.createdAt)}</td>
+					<td class="muted px-4 py-2 whitespace-nowrap tabular-nums">
+						{formatDate(review.createdAt)}
+					</td>
 				</tr>
 			{/each}
 		</tbody>
