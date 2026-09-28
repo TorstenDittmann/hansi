@@ -252,6 +252,47 @@ describe('runReview', () => {
 		});
 	});
 
+	test('accepts null for optional fields instead of failing the review', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [{ ...finding(2, 'Division by zero'), suggestion: null }],
+					resolved: null,
+					tier: null,
+					walkthrough: null,
+					latest_changes: null,
+					tier_reason: null
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{
+							id: 'F1',
+							keep: true,
+							reason: 'real',
+							suggestion_ok: null,
+							start_line: null,
+							end_line: null
+						}
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.startLine, f.suggestion])).toEqual([
+			['Division by zero', 2, undefined]
+		]);
+		expect(result.walkthrough).toEqual([]);
+		expect(result.resolved).toEqual([]);
+	});
+
 	test('asks Anthropic to cache the prompt of both passes', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [

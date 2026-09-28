@@ -16,6 +16,7 @@ import {
 	compareSeverity,
 	findingSchema,
 	isDuplicateFinding,
+	omittable,
 	type DroppedFinding,
 	type Finding,
 	type PreviousFinding
@@ -142,18 +143,19 @@ const submissionSchema = z.object({
 	findings: z.array(findingSchema),
 	resolved: z
 		.array(z.string())
-		.default([])
+		.nullish()
+		.transform((ids) => ids ?? [])
 		.describe('Ids of <open_findings> that the current code fixes'),
-	tier: z.enum(tiers).optional().describe('Merge confidence for the whole pull request'),
+	tier: omittable(z.enum(tiers)).describe('Merge confidence for the whole pull request'),
 	walkthrough: z
 		.array(z.object({ path: z.string(), change: z.string() }))
-		.default([])
+		.nullish()
+		.transform((entries) => entries ?? [])
 		.describe('One short line per changed file (or group of files) describing what changed'),
-	latest_changes: z
-		.string()
-		.optional()
-		.describe('Incremental reviews only: one sentence on what the newest commits changed'),
-	tier_reason: z.string().optional().describe('One sentence explaining the tier')
+	latest_changes: omittable(z.string()).describe(
+		'Incremental reviews only: one sentence on what the newest commits changed'
+	),
+	tier_reason: omittable(z.string()).describe('One sentence explaining the tier')
 });
 const verdictsSchema = z.object({
 	verdicts: z.array(
@@ -161,20 +163,15 @@ const verdictsSchema = z.object({
 			id: z.string(),
 			keep: z.boolean(),
 			reason: z.string(),
-			suggestion_ok: z
-				.boolean()
-				.optional()
-				.describe('For findings with a suggestion: is applying it correct?'),
-			start_line: z
-				.number()
-				.int()
-				.optional()
-				.describe('Only when the finding points at the wrong lines: the correct first line'),
-			end_line: z
-				.number()
-				.int()
-				.optional()
-				.describe('Only when the finding points at the wrong lines: the correct last line')
+			suggestion_ok: omittable(z.boolean()).describe(
+				'For findings with a suggestion: is applying it correct?'
+			),
+			start_line: omittable(z.number().int()).describe(
+				'Only when the finding points at the wrong lines: the correct first line'
+			),
+			end_line: omittable(z.number().int()).describe(
+				'Only when the finding points at the wrong lines: the correct last line'
+			)
 		})
 	)
 });

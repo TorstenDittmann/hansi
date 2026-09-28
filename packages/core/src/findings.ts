@@ -12,6 +12,17 @@ export const categories = [
 	'documentation'
 ] as const;
 
+/**
+ * An optional field that also accepts null. Models often send null for "no value", and a strict
+ * schema would throw away the whole submission over it.
+ */
+export function omittable<T extends z.ZodType>(schema: T) {
+	return schema
+		.nullable()
+		.transform((value) => value ?? undefined)
+		.optional();
+}
+
 export const findingSchema = z.object({
 	path: z.string().describe('File path exactly as shown in the diff header'),
 	startLine: z.number().int().positive().describe('First new-file line the finding refers to'),
@@ -26,12 +37,9 @@ export const findingSchema = z.object({
 	body: z
 		.string()
 		.describe('Why this is a problem and what happens at runtime. Markdown, no headings.'),
-	suggestion: z
-		.string()
-		.optional()
-		.describe(
-			'Code only, never prose. GitHub replaces lines startLine..endLine verbatim with this text when the author clicks "Apply", so it must be the complete, correctly indented replacement for exactly those lines and keep the code compiling (every block it opens must close). No code fences, no comments explaining the fix. Omit unless the fix is small, local, and certain; explain larger fixes in the body instead.'
-		)
+	suggestion: omittable(z.string()).describe(
+		'Code only, never prose. GitHub replaces lines startLine..endLine verbatim with this text when the author clicks "Apply", so it must be the complete, correctly indented replacement for exactly those lines and keep the code compiling (every block it opens must close). No code fences, no comments explaining the fix. Omit unless the fix is small, local, and certain; explain larger fixes in the body instead.'
+	)
 });
 
 export type Finding = z.infer<typeof findingSchema>;
