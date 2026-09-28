@@ -252,6 +252,34 @@ describe('runReview', () => {
 		});
 	});
 
+	test("gives the verifier the team's rules", async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] }),
+				toolCall('submit_verdicts', {
+					verdicts: [{ id: 'F1', keep: false, reason: 'team does not want this' }]
+				})
+			]
+		});
+		await runReview({
+			repoDir,
+			diff,
+			learnings: ['Do not flag division by zero in src/math.ts.'],
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig(
+				JSON.stringify({
+					instructions: 'We validate inputs at the API boundary.',
+					pathInstructions: [{ path: 'src/**', instructions: 'Numbers are never zero here.' }]
+				})
+			).config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		const verifyPrompt = JSON.stringify(model.doGenerateCalls[1]?.prompt);
+		expect(verifyPrompt).toContain('Do not flag division by zero in src/math.ts.');
+		expect(verifyPrompt).toContain('We validate inputs at the API boundary.');
+		expect(verifyPrompt).toContain('For files matching src/**: Numbers are never zero here.');
+	});
+
 	test('posts one comment per problem, keeping the most severe copy', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [

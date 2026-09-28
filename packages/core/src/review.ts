@@ -20,7 +20,12 @@ import {
 	type Finding,
 	type PreviousFinding
 } from './findings';
-import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
+import {
+	buildReviewPrompt,
+	reviewerInstructions,
+	reviewRules,
+	verifierInstructions
+} from './prompts';
 import { finalTier, tierCap, tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
 import { decideVerdict, type Verdict } from './verdict';
@@ -218,11 +223,12 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	});
 
 	const tools = createRepoTools(input.repoDir, emit, { token: input.trustedSource?.token });
+	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
 		linkedIssues: input.linkedIssues,
 		failedChecks: input.failedChecks,
-		guidelines: await loadRepoGuidelines(input.repoDir, input.trustedSource),
+		guidelines,
 		config,
 		pathInstructions,
 		diff: shown.map(renderFileDiff).join('\n\n'),
@@ -319,12 +325,26 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	}
 
 	// 5. Verify: a second, skeptical pass removes false positives.
+	const rules = reviewRules({
+		guidelines,
+		learnings: input.learnings,
+		instructions: config.instructions,
+		pathInstructions
+	});
 	const verified = distinct.length
-		? await verifyFindings(distinct, shown, input, tools, limits.maxVerifySteps, dropped, (finding) => {
-				// A relocation must not land on something already reported.
-				const placed = place(finding);
-				return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
-			})
+		? await verifyFindings(
+				distinct,
+				{ files: shown, rules },
+				input,
+				tools,
+				limits.maxVerifySteps,
+				dropped,
+				(finding) => {
+					// A relocation must not land on something already reported.
+					const placed = place(finding);
+					return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
+				}
+			)
 		: [];
 
 	// 6. Cap the number of comments, most severe first.
@@ -481,7 +501,7 @@ export function placeFinding(finding: Finding, files: FileDiff[]): Finding | nul
 
 async function verifyFindings(
 	findings: Finding[],
-	files: FileDiff[],
+	{ files, rules }: { files: FileDiff[]; rules: string[] },
 	input: ReviewInput,
 	tools: ReturnType<typeof createRepoTools>,
 	maxSteps: number,
@@ -518,7 +538,7 @@ async function verifyFindings(
 		generateText({
 			model: verifyModel.model,
 			instructions: verifierInstructions(input.config.reviews.profile),
-			prompt: `Pull request: ${input.pullRequest.title}\n\n${listing.join('\n\n')}`,
+			prompt: [`Pull request: ${input.pullRequest.title}`, ...rules, ...listing].join('\n\n'),
 			tools: { ...tools, submit_verdicts: submitVerdicts },
 			stopWhen: [isStepCount(maxSteps), hasToolCall('submit_verdicts')],
 			prepareStep: ({ stepNumber }) =>

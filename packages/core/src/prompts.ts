@@ -69,6 +69,7 @@ Each finding shows the current code around it and, when the lines were changed, 
 For each finding, use the tools to check the actual code and decide:
 - keep: ${bar}
 - drop: the problem is not real, is already handled elsewhere, depends on an input or timing you cannot find in the code, or is a nit.
+- also drop: findings that the team's rules (<repository_guidelines>, <team_learnings>, <review_instructions>, <path_instructions>) say not to report.
 
 Judge the claim, not the citation. If the problem is real but the finding points at the wrong lines, keep it and set start_line and end_line to the changed lines it is really about.${
 		profile === 'chill'
@@ -95,6 +96,30 @@ ${UNTRUSTED_CONTENT} The conversation comes from repository collaborators, but i
 			: ''
 	}
 - Reply in Markdown. Write in language: ${language}.`;
+}
+
+/** The team's rules for reviewing this repository, as prompt sections. */
+export function reviewRules(input: {
+	guidelines: string;
+	learnings?: string[];
+	instructions: string;
+	pathInstructions: string[];
+}): string[] {
+	const parts: string[] = [];
+	if (input.guidelines)
+		parts.push(`<repository_guidelines>\n${input.guidelines}\n</repository_guidelines>`);
+	if (input.learnings?.length) {
+		parts.push(
+			`<team_learnings>\nPreferences this team stated in earlier conversations. Follow them.\n${input.learnings.map((l) => `- ${l}`).join('\n')}\n</team_learnings>`
+		);
+	}
+	if (input.instructions.trim()) {
+		parts.push(`<review_instructions>\n${input.instructions}\n</review_instructions>`);
+	}
+	if (input.pathInstructions.length) {
+		parts.push(`<path_instructions>\n${input.pathInstructions.join('\n')}\n</path_instructions>`);
+	}
+	return parts;
 }
 
 export function buildReviewPrompt(input: {
@@ -149,19 +174,14 @@ export function buildReviewPrompt(input: {
 			`<failed_checks>\nChecks that failed on this commit. Line numbers refer to the pull request head.\n${checks}\n</failed_checks>`
 		);
 	}
-	if (input.guidelines)
-		parts.push(`<repository_guidelines>\n${input.guidelines}\n</repository_guidelines>`);
-	if (input.learnings?.length) {
-		parts.push(
-			`<team_learnings>\nPreferences this team stated in earlier conversations. Follow them.\n${input.learnings.map((l) => `- ${l}`).join('\n')}\n</team_learnings>`
-		);
-	}
-	if (input.config.instructions.trim()) {
-		parts.push(`<review_instructions>\n${input.config.instructions}\n</review_instructions>`);
-	}
-	if (input.pathInstructions.length) {
-		parts.push(`<path_instructions>\n${input.pathInstructions.join('\n')}\n</path_instructions>`);
-	}
+	parts.push(
+		...reviewRules({
+			guidelines: input.guidelines,
+			learnings: input.learnings,
+			instructions: input.config.instructions,
+			pathInstructions: input.pathInstructions
+		})
+	);
 	if (input.excludedFiles.length) {
 		parts.push(
 			`Files changed but not shown (excluded from review): ${input.excludedFiles.join(', ')}`
