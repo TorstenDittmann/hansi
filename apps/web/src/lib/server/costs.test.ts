@@ -8,14 +8,14 @@ test('reviews this month include skipped reviews', async () => {
 	const db = await seed();
 	const summary = await costSummary(db, 'org-1', now);
 
-	// September rows for this org, including both skipped reviews and the docs repo.
-	// August and the other organization do not count.
-	expect(summary.month.reviews).toBe(6);
+	// Completed and skipped reviews created in September. Failed, superseded, queued, August,
+	// and the other organization do not count.
+	expect(summary.month.reviews).toBe(4);
 
 	const api = summary.byRepository.find((row) => row.repository === 'acme/api');
 	const docs = summary.byRepository.find((row) => row.repository === 'acme/docs');
-	// Completed plus a skipped review that did call a model, plus skipped reviews that never did.
-	expect(api).toEqual({ repository: 'acme/api', cost: 1.75, reviews: 4 });
+	// Completed and skipped in the last 30 days. The failed review's spend is included; it is not a counted review.
+	expect(api).toEqual({ repository: 'acme/api', cost: 3.75, reviews: 4 });
 	expect(docs).toEqual({ repository: 'acme/docs', cost: 0, reviews: 1 });
 });
 
@@ -43,8 +43,9 @@ async function seed() {
 		costUsd: 1.5
 	});
 	await review(db, { id: 'skipped', status: 'skipped', createdAt: utc(2026, 9, 3) });
-	await review(db, { id: 'failed', status: 'failed', createdAt: utc(2026, 9, 4) });
+	await review(db, { id: 'failed', status: 'failed', createdAt: utc(2026, 9, 4), costUsd: 2 });
 	await review(db, { id: 'superseded', status: 'superseded', createdAt: utc(2026, 9, 5) });
+	await review(db, { id: 'queued', status: 'queued', createdAt: utc(2026, 9, 7) });
 	await review(db, {
 		id: 'skipped-with-call',
 		status: 'skipped',
@@ -78,7 +79,7 @@ async function review(
 		id: string;
 		organizationId?: string;
 		repositoryId?: number;
-		status: 'completed' | 'skipped' | 'failed' | 'superseded';
+		status: 'completed' | 'skipped' | 'failed' | 'superseded' | 'queued';
 		createdAt: Date;
 		costUsd?: number;
 	}

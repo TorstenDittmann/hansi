@@ -1,5 +1,11 @@
-import { schema, type Database } from '@hans/db';
-import { and, desc, eq, gte, notExists, sql } from 'drizzle-orm';
+import { schema, type Database, type ReviewStatus } from '@hans/db';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+
+/**
+ * Reviews that count on the overview: a finished review, or one Hansi skipped (draft, nothing
+ * to review, reviews disabled). Queued, running, failed, and superseded rows do not.
+ */
+const countedReviewStatuses = ['completed', 'skipped'] as const satisfies readonly ReviewStatus[];
 
 /**
  * What the organization's model calls cost: this and last calendar month (UTC), daily spend for
@@ -15,6 +21,7 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 	const cost = sql<number>`coalesce(sum(${llmCalls.costUsd}), 0)`;
 	const day = sql<string>`date(${llmCalls.createdAt} / 1000, 'unixepoch')`;
 
+	const countedReviews = inArray(reviews.status, [...countedReviewStatuses]);
 	const [
 		[month],
 		[lastMonth],
@@ -22,7 +29,7 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 		daily,
 		byModel,
 		spendByRepository,
-		skippedByRepository
+		reviewsByRepository
 	] = await Promise.all([
 		db
 			.select({
@@ -43,11 +50,16 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 					sql`${llmCalls.createdAt} < ${monthStart.getTime()}`
 				)
 			),
-		// Every review created this month, including skipped (drafts, nothing to review, disabled).
 		db
 			.select({ count: sql<number>`count(*)` })
 			.from(reviews)
-			.where(and(eq(reviews.organizationId, organizationId), gte(reviews.createdAt, monthStart))),
+			.where(
+				and(
+					eq(reviews.organizationId, organizationId),
+					gte(reviews.createdAt, monthStart),
+					countedReviews
+				)
+			),
 		db
 			.select({ day, cost })
 			.from(llmCalls)
@@ -68,15 +80,13 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 		db
 			.select({
 				repository: repositories.fullName,
-				cost,
-				reviews: sql<number>`count(distinct ${llmCalls.reviewId})`
+				cost
 			})
 			.from(llmCalls)
 			.innerJoin(reviews, eq(reviews.id, llmCalls.reviewId))
 			.innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
 			.where(and(inOrganization, gte(llmCalls.createdAt, since)))
 			.groupBy(repositories.fullName),
-		// Skipped reviews often never call a model, so the spend query above misses them.
 		db
 			.select({
 				repository: repositories.fullName,
@@ -87,11 +97,8 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 			.where(
 				and(
 					eq(reviews.organizationId, organizationId),
-					eq(reviews.status, 'skipped'),
 					gte(reviews.createdAt, since),
-					notExists(
-						db.select({ id: llmCalls.id }).from(llmCalls).where(eq(llmCalls.reviewId, reviews.id))
-					)
+					countedReviews
 				)
 			)
 			.groupBy(repositories.fullName)
@@ -109,27 +116,23 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 		lastMonthCost: lastMonth!.cost,
 		days,
 		byModel,
-		byRepository: repositoryBreakdown(spendByRepository, skippedByRepository)
+		byRepository: repositoryBreakdown(spendByRepository, reviewsByRepository)
 	};
 }
 
-/** Spend by repository, with skipped reviews that never called a model added to the review count. */
+/** Spend from model calls, with completed and skipped reviews counted on their own. */
 function repositoryBreakdown(
-	spend: { repository: string; cost: number; reviews: number }[],
-	skipped: { repository: string; reviews: number }[]
+	spend: { repository: string; cost: number }[],
+	reviewCounts: { repository: string; reviews: number }[]
 ) {
 	const rows = new Map<string, { repository: string; cost: number; reviews: number }>();
 	for (const row of spend) {
-		rows.set(row.repository, {
-			repository: row.repository,
-			cost: Number(row.cost),
-			reviews: Number(row.reviews)
-		});
+		rows.set(row.repository, { repository: row.repository, cost: Number(row.cost), reviews: 0 });
 	}
-	for (const row of skipped) {
+	for (const row of reviewCounts) {
 		const reviews = Number(row.reviews);
 		const existing = rows.get(row.repository);
-		if (existing) existing.reviews += reviews;
+		if (existing) existing.reviews = reviews;
 		else rows.set(row.repository, { repository: row.repository, cost: 0, reviews });
 	}
 	return [...rows.values()].sort((a, b) => b.cost - a.cost || b.reviews - a.reviews).slice(0, 8);
