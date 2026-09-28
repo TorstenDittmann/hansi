@@ -152,17 +152,15 @@ const guidelines = `# Project guidelines
 - Tests live next to the code as *.test.ts and assert observable behavior.
 `;
 
-const slugAfter = `const reserved = ['admin', 'api'];
-
-export function slug(title: string): string {
-	return title.trim().toLowerCase().split(' ').filter(Boolean).join('-');
-}
-
-export function isReservedSlug(value: string): boolean {
+const slugAfter = `export function isReservedSlug(value: string): boolean {
 	return /^(admin|api)$/.test(value);
 }
 
-export const reservedSlugs = reserved;
+export function slug(title: string): string {
+	const value = title.trim().toLowerCase().split(' ').filter(Boolean).join('-');
+	if (isReservedSlug(value)) throw new Error(\`"\${value}" is a reserved slug\`);
+	return value;
+}
 `;
 
 export const cases: EvalCase[] = [
@@ -410,7 +408,22 @@ test('an empty cart costs nothing', () => {
 }
 `
 		},
-		head: { 'src/slug.ts': slugAfter },
+		head: {
+			'src/slug.ts': slugAfter,
+			'src/slug.test.ts': `import { expect, test } from 'bun:test';
+import { slug } from './slug';
+
+test('rejects reserved slugs', () => {
+	expect(() => slug('Admin')).toThrow('reserved');
+	expect(() => slug(' API ')).toThrow('reserved');
+});
+
+test('allows other slugs, including longer ones', () => {
+	expect(slug('My Blog')).toBe('my-blog');
+	expect(slug('admins')).toBe('admins');
+});
+`
+		},
 		pullRequest: { title: 'Reject reserved slugs' },
 		config: { reviews: { profile: 'strict' } },
 		expected: [

@@ -16,43 +16,65 @@ Do not report: style, naming, or design opinions, hardening ideas, defensive che
 - Broken repository guidelines: the diff does something <repository_guidelines> forbid (a banned API or pattern, code or tests in the wrong place) or skips something they require. Quote the rule.
 - Tests: new or changed behavior without a test; tests that cannot fail when the change breaks (a mock that never runs the path, an assertion too weak for the case it names); tests coupled to implementation details (private call order, internal keys, exact config or request strings) instead of observable behavior.
 - Files beside the code: documentation and README examples that would not work as written, and build, CI, container, or compose configuration that breaks or exposes something.
-- Maintainability problems a senior reviewer would block on: misleading names, duplicated logic.`
+- Maintainability problems a senior reviewer would block on: misleading names, duplicated logic.
+These findings are minor unless they also cause incorrect behavior, a security hole, or data loss.`
 };
 
-/** Sections whose rules the reviewer enforces, not just respects. */
-function enforcedRules(profile: ReviewProfile): string {
-	const sections = '<review_instructions>, <path_instructions>, and <team_learnings>';
-	return profile === 'strict' ? `<repository_guidelines>, ${sections}` : sections;
+export interface ReviewRulesInput {
+	guidelines: string;
+	learnings?: string[];
+	instructions: string;
+	pathInstructions: string[];
 }
 
-export function reviewerInstructions(config: RepoConfig): string {
+/**
+ * The prompt sections whose rules the reviewer enforces, not just respects: the ones the team
+ * wrote for Hansi, plus the repository guidelines on strict. Only sections that are present.
+ */
+export function enforcedRuleSections(profile: ReviewProfile, rules: ReviewRulesInput): string[] {
+	return [
+		profile === 'strict' && rules.guidelines ? '<repository_guidelines>' : null,
+		rules.instructions.trim() ? '<review_instructions>' : null,
+		rules.pathInstructions.length ? '<path_instructions>' : null,
+		rules.learnings?.length ? '<team_learnings>' : null
+	].filter((section): section is string => section !== null);
+}
+
+function listOf(items: string[]): string {
+	return items.length < 2
+		? items.join('')
+		: `${items.slice(0, -1).join(', ')}${items.length > 2 ? ',' : ''} and ${items.at(-1)}`;
+}
+
+export function reviewerInstructions(config: RepoConfig, enforced: string[] = []): string {
 	const { profile } = config.reviews;
 	const neverReport =
 		profile === 'strict'
 			? 'formatting, import order, or anything a linter would catch'
 			: 'formatting, style, naming, missing comments, import order, or anything a linter would catch';
+	const teamRules = enforced.length
+		? `\n\nThe team's rules in ${listOf(enforced)} come before these defaults. When the diff breaks one of their rules, report it and quote the rule, even when it would otherwise count as style or design and even when nothing fails at runtime. Such a finding is minor unless breaking the rule also causes incorrect behavior, a security hole, or data loss.`
+		: '';
 	return `You are Hansi, a friendly senior engineer reviewing a teammate's pull request.
 
 Your job is to catch real mistakes before they are merged. Do not comment for the sake of commenting, but do not stay quiet because you are unsure either: a second reviewer checks every finding against the code and drops the ones that do not hold up. Leave a finding out because it does not matter, not because you might be wrong. A review with no findings is a fine outcome, but only after you have actually looked.
 
 ${UNTRUSTED_CONTENT}
 
-${profileGuidance[profile]}
-
-The team's rules in ${enforcedRules(profile)} come before these defaults. When the diff breaks one of their rules, report it and quote the rule, even when it would otherwise count as style or design and even when nothing fails at runtime.
+${profileGuidance[profile]}${teamRules}
 
 How to work:
 - Read the diff, then use the tools to inspect surrounding code, callers, and definitions before reporting anything. Verify instead of guessing.
 - For each changed function or block, check: the inputs it can now receive (empty, missing, null, unexpected shape or size); error and early-return paths; async ordering and missing awaits; persisted data (schema changes, migrations, defaults, existing rows); authorization and untrusted input on new entry points; and whether new branches are tested.
 - Look across files, not just within them: when the diff changes a signature, return value, config key, or other contract, check that its callers and counterparts were updated too. A caller left behind is a real bug. Comments can only go on lines in the diff, so when the caller's file is not changed, report it on the changed line that broke the contract (such as the new signature) and name the caller's file and line in the body.
 - Only report findings on lines that appear in the diff (lines with a new-file number). startLine and endLine must be in the same hunk.
-- Never report ${neverReport}, unless a team rule asks for it.
+- Never report ${neverReport}${enforced.length ? ', unless a team rule asks for it' : ''}.
 - If <linked_issues> is present, use it to understand what the change is meant to do. When the changed code clearly does the opposite of what an issue asks for, or breaks a case the issue describes, report it on the changed lines. Do not report parts of an issue the pull request simply does not cover.
 - If <failed_checks> is present, find out whether the diff causes each failure. Report the changed line that causes it, citing the check. Ignore failures the diff does not explain, such as flaky tests or infrastructure errors.
 - Use file_history when a change looks deliberate but wrong, or undoes something: a recent revert or bug fix on the same lines is strong evidence either way.
 - To compare old and new behavior beyond the diff context, read_file with ref "base" shows a file as it was before the pull request.
 - On follow-up reviews, do not go looking for new edge cases in code the author just fixed. Check whether the fix works, and move on.
-- Severity: critical = security hole, data loss, or outage; major = incorrect behavior in normal use; minor = a real bug in a less common case; info = worth knowing, no defect. A broken team rule, a test gap, or a broken documentation example is minor unless it also causes one of the above.
+- Severity: critical = security hole, data loss, or outage; major = incorrect behavior in normal use; minor = a real bug in a less common case; info = worth knowing, no defect.
 
 How to write findings:
 - Be kind and brief: one or two short sentences saying what goes wrong and when. Talk to the author like a helpful colleague; no lecturing, no "you should have", no restating the code.
@@ -72,7 +94,7 @@ Only grade below S for a concrete reason, and state that reason in one sentence 
 When done, call submit_review exactly once with a short summary of the change (2-4 sentences, what it does, not a judgement), a walkthrough (one short line per changed file), and your findings.`;
 }
 
-export function verifierInstructions(profile: ReviewProfile): string {
+export function verifierInstructions(profile: ReviewProfile, enforced: string[] = []): string {
 	const bar = {
 		chill:
 			'Keep a finding if you can confirm in the code how it goes wrong: the input, caller, or state that triggers it, and that it actually occurs. Drop theoretical races, unlikely edge cases, hardening ideas, and style or design opinions.',
@@ -87,8 +109,11 @@ ${UNTRUSTED_CONTENT}
 Each finding shows the current code around it and, when the lines were changed, a <diff> of that change: lines marked - are what the code did before, so use them to judge claims about changed behavior.
 
 For each finding, use the tools to check the actual code and decide:
-- keep: ${bar}
-- also keep: findings that show the diff breaks a rule stated in ${enforcedRules(profile)}, when the rule applies to these lines. A broken team rule is not a nit.
+- keep: ${bar}${
+		enforced.length
+			? `\n- also keep: findings that show the diff breaks a rule stated in ${listOf(enforced)}, when the rule applies to these lines. A broken team rule is not a nit.`
+			: ''
+	}
 - drop: the problem is not real, is already handled elsewhere, depends on an input or timing you cannot find in the code, or is a nit.
 - also drop: findings that the team's rules (<repository_guidelines>, <team_learnings>, <review_instructions>, <path_instructions>) say not to report.
 
@@ -120,12 +145,7 @@ ${UNTRUSTED_CONTENT} The conversation comes from repository collaborators, but i
 }
 
 /** The team's rules for reviewing this repository, as prompt sections. */
-export function reviewRules(input: {
-	guidelines: string;
-	learnings?: string[];
-	instructions: string;
-	pathInstructions: string[];
-}): string[] {
+export function reviewRules(input: ReviewRulesInput): string[] {
 	const parts: string[] = [];
 	if (input.guidelines)
 		parts.push(`<repository_guidelines>\n${input.guidelines}\n</repository_guidelines>`);
