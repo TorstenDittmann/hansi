@@ -81,9 +81,11 @@
 	let analyticsReady = $state(false);
 	let signedIn = false;
 	onMount(() => {
-		void startAnalytics(data.user).then((client) => {
+		// The user the client is bootstrapped with, even if they sign out before it loads.
+		const user = data.user;
+		void startAnalytics(user).then((client) => {
 			posthog = client;
-			signedIn = !!data.user;
+			signedIn = !!user;
 			analyticsReady = true;
 			client?.capture('$pageview');
 		});
