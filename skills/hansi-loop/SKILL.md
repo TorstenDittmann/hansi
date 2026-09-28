@@ -27,11 +27,17 @@ Each review spends the repository owner's model credits. Do not request a new re
 
 ### 1. Identify the pull request
 
+Set `PR_NUMBER` when the user gave one. Leave it empty to use the current branch.
+
 ```bash
-gh pr view --json number,headRefName,headRefOid,url -q '{number: .number, branch: .headRefName, sha: .headRefOid, url: .url}'
+if [ -n "$PR_NUMBER" ]; then
+  gh pr view "$PR_NUMBER" --json number,headRefName,headRefOid,url -q '{number: .number, branch: .headRefName, sha: .headRefOid, url: .url}'
+else
+  gh pr view --json number,headRefName,headRefOid,url -q '{number: .number, branch: .headRefName, sha: .headRefOid, url: .url}'
+fi
 ```
 
-Check out that branch if you are not already on it. Stop if there is no open pull request.
+Use the `number` from that JSON as `<PR_NUMBER>` in every later command. Check out `branch` if you are not already on it. Stop if there is no open pull request.
 
 ### 2. Learn Hansi's mention handle
 
@@ -97,16 +103,16 @@ while true; do
     echo "Timed out waiting for the Hansi check." >&2
     exit 1
   fi
-  CHECK=$(gh api "repos/{owner}/{repo}/commits/$HEAD_SHA/check-runs?check_name=Hansi" \
-    --jq '[.check_runs[] | select(.name == "Hansi")] | sort_by(.started_at) | last')
-  STATUS=$(echo "$CHECK" | jq -r '.status // empty')
-  if [ -z "$STATUS" ]; then
+  STATUS=$(gh api "repos/{owner}/{repo}/commits/$HEAD_SHA/check-runs?check_name=Hansi" \
+    --jq '[.check_runs[] | select(.name == "Hansi")] | sort_by(.started_at) | last | .status // empty')
+  if [ -z "$STATUS" ] || [ "$STATUS" = "null" ]; then
     echo "Waiting for the Hansi check to appear..."
     sleep 10
     continue
   fi
   if [ "$STATUS" = "completed" ]; then
-    echo "$CHECK" | jq -r '"Hansi check completed: \(.conclusion) — \(.title)"'
+    gh api "repos/{owner}/{repo}/commits/$HEAD_SHA/check-runs?check_name=Hansi" \
+      --jq '[.check_runs[] | select(.name == "Hansi")] | sort_by(.started_at) | last | "Hansi check completed: \(.conclusion) — \(.output.title)"'
     break
   fi
   echo "Waiting for Hansi... ($STATUS)"
