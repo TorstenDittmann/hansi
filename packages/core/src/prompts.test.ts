@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
-import { buildReviewPrompt } from './prompts';
+import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
 
 const base = {
 	title: 'Fix rounding',
@@ -58,4 +58,21 @@ test('says why files are not shown, and asks for callers of deleted files', () =
 	});
 	expect(deleted).toContain('- src/legacy.ts (deleted)\n- src/big.ts (too large to show)');
 	expect(deleted).toContain('Deleted files may still be imported');
+});
+
+test('treats repository guidelines as rules the review has to apply', () => {
+	const prompt = buildReviewPrompt({
+		...base,
+		guidelines:
+			'<file path="AGENTS.md">\nDo not run Swoole coroutine work in the shared unit process.\n</file>'
+	});
+	expect(prompt).toContain('Do not run Swoole coroutine work in the shared unit process.');
+	expect(prompt).toContain('Project rules from every instruction file.');
+
+	const instructions = reviewerInstructions(base.config);
+	expect(instructions).toContain('A concrete project rule is not a style opinion.');
+	expect(instructions).toContain('not from this pull request');
+	expect(verifierInstructions('balanced')).toContain(
+		'the changed code breaks a concrete rule in <repository_guidelines>'
+	);
 });

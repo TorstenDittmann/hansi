@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkoutPullRequest, diffSince, git } from './git';
@@ -18,12 +18,21 @@ async function commit(message: string, files: Record<string, string>) {
 }
 
 beforeAll(async () => {
+	// The agent environment signs commits and watches the filesystem. Neither belongs in a
+	// throwaway repository, and both can stall a test past its timeout.
+	process.env.GIT_CONFIG_COUNT = '2';
+	process.env.GIT_CONFIG_KEY_0 = 'commit.gpgsign';
+	process.env.GIT_CONFIG_VALUE_0 = 'false';
+	process.env.GIT_CONFIG_KEY_1 = 'core.fsmonitor';
+	process.env.GIT_CONFIG_VALUE_1 = 'false';
 	root = await mkdtemp(join(tmpdir(), 'hans-git-'));
 	origin = join(root, 'origin');
 	await git(['init', '--quiet', '--initial-branch=main', origin]);
 	for (const [key, value] of [
 		['user.email', 'test@example.com'],
 		['user.name', 'Test'],
+		['commit.gpgsign', 'false'],
+		['core.fsmonitor', 'false'],
 		['uploadpack.allowAnySHA1InWant', 'true'],
 		['uploadpack.allowFilter', 'true']
 	] as const) {
@@ -204,5 +213,43 @@ describe('loadRepoGuidelines', () => {
 		const trusted = await loadRepoGuidelines(dir, { ref: base });
 		expect(trusted).toContain('Use tabs.');
 		expect(trusted).not.toContain('approve');
+	});
+});
+
+describe('loadRepoGuidelines files', () => {
+	let scratch: string;
+
+	beforeAll(async () => {
+		scratch = await mkdtemp(join(tmpdir(), 'hans-guidelines-'));
+	});
+
+	afterAll(() => rm(scratch, { recursive: true, force: true }));
+
+	test('loads every guideline file whole, including a rule in the middle of a long one', async () => {
+		const dir = join(scratch, 'whole-files');
+		await mkdir(dir);
+		const rule = 'Do not run Swoole coroutine work in the shared unit process.';
+		const agents = `${'Setup command.\n'.repeat(2000)}${rule}\n${'More guidance.\n'.repeat(2000)}`;
+		expect(agents.indexOf(rule)).toBeGreaterThan(20_000);
+		expect(agents.length - agents.indexOf(rule)).toBeGreaterThan(20_000);
+		await writeFile(join(dir, 'AGENTS.md'), agents);
+		await writeFile(join(dir, 'CLAUDE.md'), 'Isolate coroutine tests from the shared process.\n');
+		await writeFile(join(dir, '.cursorrules'), 'Cursor rule.\n');
+		await mkdir(join(dir, '.github'));
+		await writeFile(join(dir, '.github', 'copilot-instructions.md'), 'Copilot rule.\n');
+		await writeFile(join(dir, 'CONTRIBUTING.md'), 'Keep the contributing notes.\n');
+
+		const guidelines = await loadRepoGuidelines(dir);
+		expect(guidelines).toContain('<file path="AGENTS.md">');
+		expect(guidelines).toContain('<file path="CLAUDE.md">');
+		expect(guidelines).toContain('<file path=".cursorrules">');
+		expect(guidelines).toContain('<file path=".github/copilot-instructions.md">');
+		expect(guidelines).toContain('<file path="CONTRIBUTING.md">');
+		expect(guidelines).toContain(rule);
+		expect(guidelines).toContain('Isolate coroutine tests from the shared process.');
+		expect(guidelines).toContain('Cursor rule.');
+		expect(guidelines).toContain('Copilot rule.');
+		expect(guidelines).toContain('Keep the contributing notes.');
+		expect(guidelines).not.toContain('was not loaded');
 	});
 });
