@@ -1,9 +1,10 @@
-import { sequence } from '@sveltejs/kit/hooks';
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type RequestEvent } from '@sveltejs/kit';
 import { getAuth } from '$lib/server/auth';
-import { posthogProxy } from '$lib/server/posthog-proxy';
 
-const authenticate: Handle = async ({ event, resolve }) => {
+export const handle: Handle = async ({ event, resolve }) => {
+	// Forward browser analytics to PostHog EU, so ad blockers that filter PostHog's domain miss them.
+	if (event.url.pathname.startsWith('/ink/')) return proxyPostHog(event);
+
 	event.locals.user = null;
 	event.locals.session = null;
 
@@ -24,4 +25,30 @@ const authenticate: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle = sequence(posthogProxy, authenticate);
+function proxyPostHog(event: RequestEvent) {
+	const pathname = event.url.pathname.slice('/ink'.length);
+	const url = new URL(event.url);
+	url.protocol = 'https:';
+	url.hostname = /^\/(static|array)\//.test(pathname)
+		? 'eu-assets.i.posthog.com'
+		: 'eu.i.posthog.com';
+	url.port = '';
+	url.pathname = pathname;
+
+	const headers = new Headers(event.request.headers);
+	headers.set('host', url.hostname);
+	headers.delete('cookie');
+	headers.delete('authorization');
+	headers.set('accept-encoding', '');
+	headers.set(
+		'x-forwarded-for',
+		event.request.headers.get('x-forwarded-for') || event.getClientAddress()
+	);
+
+	return fetch(url, {
+		method: event.request.method,
+		headers,
+		body: event.request.body,
+		duplex: 'half'
+	} as RequestInit);
+}
