@@ -2,6 +2,37 @@ import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
 import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
 
+const withProfile = (profile: string) =>
+	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
+
+test('balanced and strict review tests and docs; only strict adds naming, style, and maintainability', () => {
+	for (const profile of ['balanced', 'strict'] as const) {
+		const instructions = reviewerInstructions(withProfile(profile));
+		expect(instructions).toContain('tests coupled to implementation details (private call order');
+		expect(instructions).toContain('README examples that would not work as written');
+		expect(verifierInstructions(profile)).toContain('missing or ineffective tests');
+	}
+	expect(reviewerInstructions(withProfile('chill'))).not.toContain('tests coupled');
+	expect(verifierInstructions('chill')).not.toContain('missing or ineffective tests');
+
+	const strict = reviewerInstructions(withProfile('strict'));
+	expect(strict).toContain('Naming and style rules count too');
+	expect(strict).toContain('Maintainability problems');
+	expect(strict).toContain(
+		'Never report formatting, import order, or anything a linter would catch.'
+	);
+	expect(verifierInstructions('strict')).toContain(
+		'you can see the violation in the code. Formatting rules do not count.'
+	);
+
+	const balanced = reviewerInstructions(withProfile('balanced'));
+	expect(balanced).toContain('Do not report formatting, naming, or style rules.');
+	expect(balanced).not.toContain('Maintainability problems');
+	expect(verifierInstructions('balanced')).toContain(
+		'Formatting, naming, and style rules do not count.'
+	);
+});
+
 const base = {
 	title: 'Fix rounding',
 	body: '',
