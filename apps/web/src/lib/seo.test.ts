@@ -12,6 +12,7 @@ test('absolute URLs drop a trailing slash except on the origin itself', () => {
 
 test('login, dashboard, setup, and API routes are not indexable', () => {
 	expect(isIndexablePath('/')).toBe(true);
+	expect(isIndexablePath('/docs')).toBe(true);
 	expect(isIndexablePath('/login')).toBe(false);
 	expect(isIndexablePath('/login/')).toBe(false);
 	expect(isIndexablePath('/invite/token')).toBe(false);
@@ -23,9 +24,10 @@ test('login, dashboard, setup, and API routes are not indexable', () => {
 });
 
 test('the sitemap lists only public pages at hansi.codes', () => {
-	expect([...PUBLIC_PATHS]).toEqual(['/']);
+	expect([...PUBLIC_PATHS]).toEqual(['/', '/docs']);
 	const xml = sitemapXml();
 	expect(xml).toContain('<loc>https://hansi.codes</loc>');
+	expect(xml).toContain('<loc>https://hansi.codes/docs</loc>');
 	expect(xml).not.toContain('/login');
 	expect(xml).not.toContain('/app');
 	expect(xml).not.toContain('/api');
