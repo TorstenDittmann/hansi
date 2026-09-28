@@ -6,11 +6,10 @@ description: >
   and repeats. Use when the user wants to clear Hansi's review, reach Tier S, loop on Hansi
   comments, or run hansi-loop.
 license: MIT
-compatibility: Requires git and the GitHub CLI (gh), authenticated, and the Hansi GitHub App installed on the repository.
+compatibility: The Hansi GitHub App must be installed on the repository. Examples use git and the GitHub CLI.
 metadata:
   author: hansi
-  version: '1.0'
-allowed-tools: Bash(gh:*) Bash(git:*)
+  version: '1.1'
 ---
 
 # hansi-loop
@@ -18,6 +17,8 @@ allowed-tools: Bash(gh:*) Bash(git:*)
 Iteratively fix a pull request until Hansi grades it **Tier S** (ready to merge) and leaves no unresolved comments.
 
 Each review spends the repository owner's model credits. Do not request a new review when the current head already has a finished Hansi review and you have not pushed anything since.
+
+The command blocks are examples, written for git and the GitHub CLI. Run whatever this environment actually provides to do the same job, including commands the examples do not list. If `gh` or `git` is missing, or a command fails because of how this machine authenticates, try another client before stopping.
 
 ## Inputs
 

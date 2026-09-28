@@ -6,11 +6,10 @@ description: >
   the user wants to configure Hansi, add review instructions, exclude paths, or run
   hansi-setup.
 license: MIT
-compatibility: Requires git and the GitHub CLI (gh), authenticated, and the Hansi GitHub App installed on the repository.
+compatibility: The Hansi GitHub App must be installed on the repository. Examples use git and the GitHub CLI.
 metadata:
   author: hansi
-  version: '1.1'
-allowed-tools: Bash(gh:*) Bash(git:*)
+  version: '1.2'
 ---
 
 # hansi-setup
@@ -18,6 +17,8 @@ allowed-tools: Bash(gh:*) Bash(git:*)
 Write `.hansi.json` at the repository root and get it onto the pull request's base branch. Hansi reads that file, and the guideline files, from the base branch only. A copy that exists solely on a feature branch does nothing until it is merged.
 
 Do not request a Hansi review. Do not push to the default branch. Do not enable `reviews.approveOutsideContributors` unless the user explicitly asks.
+
+The command blocks are examples, written for git and the GitHub CLI. Run whatever this environment actually provides to do the same job, including commands the examples do not list. If `gh` or `git` is missing, or a command fails because of how this machine authenticates, try another client before stopping. Prefer a Git remote this environment can already authenticate to.
 
 ## Inputs
 
@@ -29,9 +30,11 @@ Do not request a Hansi review. Do not push to the default branch. Do not enable 
 
 `origin` may be a fork. The branch Hansi reads is on the pull request's base repository, which can be a different repo.
 
+`parent` does not include `nameWithOwner` or a default branch. Build the parent repository from its owner and name.
+
 ```bash
 gh repo view --json nameWithOwner,isFork,parent,defaultBranchRef \
-  --jq '{repo: .nameWithOwner, fork: .isFork, parent: .parent.nameWithOwner, defaultBranch: .defaultBranchRef.name}'
+  --jq '{repo: .nameWithOwner, fork: .isFork, parent: (if .parent then (.parent.owner.login + "/" + .parent.name) else null end), defaultBranch: .defaultBranchRef.name}'
 ```
 
 If this checkout is a fork, look up the pull request on `parent`. Otherwise look it up on `repo`. That repository is `<PR_REPO>`.
@@ -51,7 +54,13 @@ gh api "repos/<PR_REPO>/pulls/<PR_NUMBER>" \
 
 `<BASE>` is `base`. `<BASE_REPO>` is `baseRepo`. `<HEAD_REPO>` is `headRepo`. `<HEAD_OWNER>` is `headOwner`.
 
-If there is no pull request, `<BASE_REPO>` is `parent` when this checkout is a fork, otherwise `repo`. `<BASE>` is that repository's default branch. `<HEAD_REPO>` is `repo`. `<HEAD_OWNER>` is the owner of `<HEAD_REPO>`.
+If there is no pull request and this checkout is a fork, `<BASE_REPO>` is `parent`. `<BASE>` is that parent's default branch, not the fork's `defaultBranch`. Those names can differ. Read it from the parent repository:
+
+```bash
+gh repo view <PARENT> --json defaultBranchRef -q .defaultBranchRef.name
+```
+
+If there is no pull request and this checkout is not a fork, `<BASE_REPO>` is `repo` and `<BASE>` is `defaultBranch`. `<HEAD_REPO>` is `repo`. `<HEAD_OWNER>` is the owner of `<HEAD_REPO>`.
 
 Read `.hansi.json` from `<BASE_REPO>`:
 
@@ -107,16 +116,18 @@ Show the diff of the file and wait for a yes when the user did not already speci
 
 If `git status --short` shows changes you did not make for this config, stop and ask. Do not stash or discard them.
 
-Check out a new branch from `<BASE>` on `<BASE_REPO>` unless the user asked to add the file to the branch they are already on. Fetch that repository by URL. `origin/<BASE>` can be a stale copy on a fork.
+Check out a new branch from `<BASE>` on `<BASE_REPO>` unless the user asked to add the file to the branch they are already on. `origin/<BASE>` on a fork can be a stale copy of a different repository.
+
+Fetch through a remote this environment can already authenticate to. Use an existing remote whose URL is `<BASE_REPO>`. If none exists, add one with the same protocol as the user's other GitHub remotes (SSH or HTTPS), then fetch that remote. Do not fetch a raw `https://github.com/<BASE_REPO>.git` URL when credentials are configured only for another remote. That URL skips SSH keys and credential helpers, so the fetch can fail even when `git fetch` on the existing remote works.
 
 ```bash
-git fetch "https://github.com/<BASE_REPO>.git" "+refs/heads/<BASE>:refs/remotes/hansi-base/<BASE>"
-git checkout -b hansi-config "hansi-base/<BASE>"
+git fetch <REMOTE> "<BASE>"
+git checkout -b hansi-config "<REMOTE>/<BASE>"
 ```
 
 If `hansi-config` already exists, pick another branch name. Use the branch you created as `<BRANCH>`.
 
-Write `.hansi.json` at the repository root. Commit only that file. Push to `<HEAD_REPO>`. When `origin` is that repository, this push is enough. When it is not, push to `https://github.com/<HEAD_REPO>.git` instead.
+Write `.hansi.json` at the repository root. Commit only that file. Push `<BRANCH>` to `<HEAD_REPO>` through a remote that already authenticates to that repository. When `origin` is `<HEAD_REPO>`, that remote is `origin`. When it is not, use or add a remote for `<HEAD_REPO>` the same way as the fetch above. Do not push to a raw HTTPS URL that this environment has no credentials for.
 
 ```bash
 git add .hansi.json

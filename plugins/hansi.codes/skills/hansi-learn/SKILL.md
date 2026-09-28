@@ -6,11 +6,10 @@ description: >
   Hansi to remember a preference, wants a disagreement saved as a team rule, or runs
   hansi-learn.
 license: MIT
-compatibility: Requires the GitHub CLI (gh), authenticated, and the Hansi GitHub App installed on the repository.
+compatibility: The Hansi GitHub App must be installed on the repository. Examples use the GitHub CLI.
 metadata:
   author: hansi
-  version: '1.0'
-allowed-tools: Bash(gh:*)
+  version: '1.1'
 ---
 
 # hansi-learn
@@ -18,6 +17,8 @@ allowed-tools: Bash(gh:*)
 Save a lasting review rule by replying on the Hansi finding it applies to. Hansi stores the rule when a reply states a durable preference, then follows it on later reviews.
 
 Do not request a review. Do not push. Do not call `resolveReviewThread`. Resolving a thread in GitHub leaves the finding open in Hansi's summary, so the tier stays capped. Hansi resolves the thread when it dismisses the finding.
+
+The command blocks are examples, written for the GitHub CLI. Run whatever this environment actually provides to do the same job, including commands the examples do not list. If `gh` is missing, or a command fails because of how this machine authenticates, try another client before stopping.
 
 ## Inputs
 

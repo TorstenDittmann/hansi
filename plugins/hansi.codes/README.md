@@ -26,8 +26,7 @@ Replace `hansi-loop` with `hansi-status`, `hansi-learn`, or `hansi-setup`.
 ## Requirements
 
 - The [Hansi GitHub App](https://hansi.codes) installed on the repository
-- [GitHub CLI](https://cli.github.com), authenticated with `gh auth login`
-- `git`
+- A way to talk to GitHub and git. The examples use the [GitHub CLI](https://cli.github.com) and git. Another client is fine when that is what the environment has.
 
 Pass a pull request number to review that one. Otherwise the skill uses the pull request for the current branch.
 

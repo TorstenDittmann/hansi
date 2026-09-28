@@ -154,8 +154,7 @@ npx skills add TorstenDittmann/hansi --skill hansi-loop
 | [`hansi-setup`](plugins/hansi.codes/skills/hansi-setup/SKILL.md)   | Write `.hansi.json` and open a pull request onto the base branch.               |
 | [`hansi-loop`](plugins/hansi.codes/skills/hansi-loop/SKILL.md)     | Fix the pull request until Hansi grades it **S** and no comments are left open. |
 
-They need the [GitHub CLI](https://cli.github.com) (`gh auth login`) and the Hansi GitHub App
-installed on the repository. Pass a pull request number to review that one; otherwise the skill uses
+The examples use [git](https://git-scm.com) and the [GitHub CLI](https://cli.github.com). Another client is fine when that is what the environment has. The Hansi GitHub App must be installed on the repository. Pass a pull request number to review that one; otherwise the skill uses
 the pull request for the current branch. A rule in the plugin tells the agent not to resolve Hansi
 threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses
 the finding.
