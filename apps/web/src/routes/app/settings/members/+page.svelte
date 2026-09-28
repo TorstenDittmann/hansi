@@ -3,6 +3,14 @@
 	import { formatDate } from '$lib/format';
 
 	let { data, form } = $props();
+	let copiedUrl = $state<string | null>(null);
+
+	async function copyLink() {
+		const url = data.inviteLink?.url;
+		if (!url) return;
+		await navigator.clipboard.writeText(url);
+		copiedUrl = url;
+	}
 </script>
 
 <div class="space-y-10">
@@ -59,6 +67,35 @@
 					</li>
 				{/each}
 			</ul>
+		</section>
+	{/if}
+
+	{#if data.canInvite}
+		<section class="card space-y-4 p-4">
+			<div>
+				<p class="font-medium">Invite link</p>
+				<p class="muted">Anyone with this link can join as a member.</p>
+			</div>
+			{#if data.inviteLink}
+				<div class="flex flex-col gap-2 sm:flex-row">
+					<input
+						class="input min-w-0 flex-1 font-mono text-sm"
+						readonly
+						value={data.inviteLink.url}
+						aria-label="Invite link"
+					/>
+					<button type="button" class="btn" onclick={copyLink}>
+						{copiedUrl === data.inviteLink.url ? 'Copied' : 'Copy'}
+					</button>
+					<form method="post" action="?/revokeLink" use:enhance>
+						<button class="btn">Revoke</button>
+					</form>
+				</div>
+			{:else}
+				<form method="post" action="?/createLink" use:enhance>
+					<button class="btn btn-primary">Create invite link</button>
+				</form>
+			{/if}
 		</section>
 	{/if}
 

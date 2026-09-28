@@ -2,7 +2,7 @@
 // Field names must match better-auth's expectations; run `bunx @better-auth/cli generate`
 // against apps/web/src/lib/server/auth.ts to diff after upgrading better-auth.
 import { sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 const timestamps = {
 	createdAt: integer('created_at', { mode: 'timestamp_ms' })
@@ -99,7 +99,8 @@ export const member = sqliteTable(
 	},
 	(t) => [
 		index('member_organization_id_idx').on(t.organizationId),
-		index('member_user_id_idx').on(t.userId)
+		index('member_user_id_idx').on(t.userId),
+		uniqueIndex('member_organization_user_idx').on(t.organizationId, t.userId)
 	]
 );
 
@@ -122,5 +123,28 @@ export const invitation = sqliteTable(
 	(t) => [
 		index('invitation_organization_id_idx').on(t.organizationId),
 		index('invitation_email_idx').on(t.email)
+	]
+);
+
+/** Reusable join link for an organization. At most one row per org has `revoked_at` null. */
+export const organizationInviteLink = sqliteTable(
+	'organization_invite_link',
+	{
+		id: text('id').primaryKey(),
+		organizationId: text('organization_id')
+			.notNull()
+			.references(() => organization.id, { onDelete: 'cascade' }),
+		token: text('token').notNull().unique(),
+		createdBy: text('created_by')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+		createdAt: timestamps.createdAt
+	},
+	(t) => [
+		index('organization_invite_link_organization_id_idx').on(t.organizationId),
+		uniqueIndex('organization_invite_link_active_org_idx')
+			.on(t.organizationId)
+			.where(sql`${t.revokedAt} is null`)
 	]
 );

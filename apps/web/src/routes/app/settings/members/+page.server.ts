@@ -1,19 +1,34 @@
 import { fail } from '@sveltejs/kit';
 import { getAuth } from '$lib/server/auth';
+import { getContext } from '$lib/server/context';
+import {
+	canManageInviteLinks,
+	createInviteLink,
+	findActiveInviteLinkForOrganization,
+	inviteLinkUrl,
+	revokeInviteLink
+} from '$lib/server/invite-link';
 import { requireOrganization } from '$lib/server/organization';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ parent, request }) => {
 	const { organization } = await parent();
 	const auth = await getAuth();
-	const [{ members }, invitations] = await Promise.all([
+	const { db, env } = await getContext();
+	const [{ members }, invitations, activeMember, inviteLink] = await Promise.all([
 		auth.api.listMembers({ headers: request.headers, query: { organizationId: organization.id } }),
 		auth.api.listInvitations({
 			headers: request.headers,
 			query: { organizationId: organization.id }
-		})
+		}),
+		auth.api.getActiveMember({ headers: request.headers }),
+		findActiveInviteLinkForOrganization(db, organization.id)
 	]);
+	const canInvite = canManageInviteLinks(activeMember?.role);
 	return {
+		canInvite,
+		inviteLink:
+			canInvite && inviteLink ? { url: inviteLinkUrl(env.APP_URL, inviteLink.token) } : null,
 		members: members.map((member) => ({
 			id: member.id,
 			role: member.role,
@@ -80,5 +95,27 @@ export const actions: Actions = {
 				body: { memberIdOrEmail: String(form.get('memberId')), organizationId: organization.id }
 			})
 		);
+	},
+
+	createLink: async ({ locals, request }) => {
+		const access = await requireInviteManager(locals, request.headers);
+		if (!access) return fail(403, { error: 'Only owners and admins can manage invite links' });
+		const { db } = await getContext();
+		await createInviteLink(db, access.organizationId, access.userId);
+	},
+
+	revokeLink: async ({ locals, request }) => {
+		const access = await requireInviteManager(locals, request.headers);
+		if (!access) return fail(403, { error: 'Only owners and admins can manage invite links' });
+		const { db } = await getContext();
+		await revokeInviteLink(db, access.organizationId);
 	}
 };
+
+async function requireInviteManager(locals: App.Locals, headers: Headers) {
+	const organization = await requireOrganization(locals, headers);
+	const auth = await getAuth();
+	const member = await auth.api.getActiveMember({ headers });
+	if (!locals.user || !canManageInviteLinks(member?.role)) return null;
+	return { organizationId: organization.id, userId: locals.user.id };
+}
