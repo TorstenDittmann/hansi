@@ -2,7 +2,6 @@ import { redirect, type Handle, type RequestEvent } from '@sveltejs/kit';
 import { getAuth } from '$lib/server/auth';
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// Forward browser analytics to PostHog EU, so ad blockers that filter PostHog's domain miss them.
 	if (event.url.pathname.startsWith('/ink/')) return proxyPostHog(event);
 
 	event.locals.user = null;
