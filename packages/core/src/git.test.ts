@@ -225,37 +225,31 @@ describe('loadRepoGuidelines files', () => {
 
 	afterAll(() => rm(scratch, { recursive: true, force: true }));
 
-	test('includes every guideline file, including a rule past the old 20k cut', async () => {
-		const dir = join(scratch, 'under-budget');
+	test('loads every guideline file whole, including a rule in the middle of a long one', async () => {
+		const dir = join(scratch, 'whole-files');
 		await mkdir(dir);
 		const rule = 'Do not run Swoole coroutine work in the shared unit process.';
-		const agents = `${'Setup command.\n'.repeat(1600)}\n## Tests\n\n${rule}\n`;
+		const agents = `${'Setup command.\n'.repeat(2000)}${rule}\n${'More guidance.\n'.repeat(2000)}`;
 		expect(agents.indexOf(rule)).toBeGreaterThan(20_000);
-		expect(agents.length).toBeLessThan(40_000);
+		expect(agents.length - agents.indexOf(rule)).toBeGreaterThan(20_000);
 		await writeFile(join(dir, 'AGENTS.md'), agents);
 		await writeFile(join(dir, 'CLAUDE.md'), 'Isolate coroutine tests from the shared process.\n');
-
-		const guidelines = await loadRepoGuidelines(dir);
-		expect(guidelines).toContain('<file path="AGENTS.md">');
-		expect(guidelines).toContain('<file path="CLAUDE.md">');
-		expect(guidelines).toContain(rule);
-		expect(guidelines).toContain('Isolate coroutine tests from the shared process.');
-		expect(guidelines).not.toContain('omitted');
-	});
-
-	test('keeps later files when the first one is longer than the budget', async () => {
-		const dir = join(scratch, 'over-budget');
-		await mkdir(dir);
-		await writeFile(join(dir, 'AGENTS.md'), `${'A'.repeat(50_000)}\nTAIL_RULE\n`);
-		await writeFile(join(dir, 'CLAUDE.md'), 'Isolate coroutine tests from the shared process.\n');
+		await writeFile(join(dir, '.cursorrules'), 'Cursor rule.\n');
+		await mkdir(join(dir, '.github'));
+		await writeFile(join(dir, '.github', 'copilot-instructions.md'), 'Copilot rule.\n');
 		await writeFile(join(dir, 'CONTRIBUTING.md'), 'Keep the contributing notes.\n');
 
 		const guidelines = await loadRepoGuidelines(dir);
 		expect(guidelines).toContain('<file path="AGENTS.md">');
 		expect(guidelines).toContain('<file path="CLAUDE.md">');
+		expect(guidelines).toContain('<file path=".cursorrules">');
+		expect(guidelines).toContain('<file path=".github/copilot-instructions.md">');
 		expect(guidelines).toContain('<file path="CONTRIBUTING.md">');
-		expect(guidelines).toContain('TAIL_RULE');
+		expect(guidelines).toContain(rule);
 		expect(guidelines).toContain('Isolate coroutine tests from the shared process.');
+		expect(guidelines).toContain('Cursor rule.');
+		expect(guidelines).toContain('Copilot rule.');
 		expect(guidelines).toContain('Keep the contributing notes.');
+		expect(guidelines).not.toContain('was not loaded');
 	});
 });

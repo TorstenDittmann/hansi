@@ -228,9 +228,11 @@ const GUIDELINE_FILES = [
 	'.github/copilot-instructions.md',
 	'CONTRIBUTING.md'
 ];
-/** Shared across every guideline file. A long AGENTS.md must not crowd out CLAUDE.md. */
-const MAX_GUIDELINE_CHARS = 40_000;
-const GUIDELINE_OMISSION = '\n… omitted; read this file for the rest …\n';
+/**
+ * Per file, and every file is loaded. Authors do not place their rules to survive a cut,
+ * so a long AGENTS.md must not drop its own middle or crowd out CLAUDE.md.
+ */
+const MAX_GUIDELINE_FILE_CHARS = 200_000;
 
 export interface TrustedSource {
 	/** Commit to read from, typically the PR's base: a PR must not rewrite its own review rules. */
@@ -244,68 +246,22 @@ interface GuidelineSection {
 	content: string;
 }
 
-/**
- * A file that does not fit keeps its start and its end. Review rules are often the last
- * sections of a long AGENTS.md, so cutting only the tail drops them.
- */
-function excerptGuideline(content: string, limit: number): string {
-	if (content.length <= limit) return content;
-	const tail = Math.min(Math.floor(limit * 0.45), limit - GUIDELINE_OMISSION.length - 1);
-	const head = limit - tail - GUIDELINE_OMISSION.length;
-	if (head < 1 || tail < 1) return content.slice(0, limit);
-	return content.slice(0, head) + GUIDELINE_OMISSION + content.slice(-tail);
-}
-
-/** Every file gets a share. Small files stay whole; the rest of the budget goes to the long ones. */
-function guidelineLimits(sections: GuidelineSection[], budget: number): number[] {
-	const sizes = sections.map((section) => section.content.length);
-	const total = sizes.reduce((sum, size) => sum + size, 0);
-	if (total <= budget) return sizes;
-
-	const limits = [...sizes];
-	const large: number[] = [];
-	let remaining = budget;
-	const even = Math.floor(budget / Math.max(sections.length, 1));
-	for (let i = 0; i < sizes.length; i++) {
-		if (sizes[i]! <= even) remaining -= sizes[i]!;
-		else {
-			large.push(i);
-			limits[i] = 0;
-		}
-	}
-	if (large.length === 0 || remaining <= 0) return sizes.map((size) => Math.min(size, even));
-
-	const largeTotal = large.reduce((sum, i) => sum + sizes[i]!, 0);
-	let used = 0;
-	for (const i of large) {
-		limits[i] = Math.max(1, Math.floor((sizes[i]! / largeTotal) * remaining));
-		used += limits[i]!;
-	}
-	let leftover = remaining - used;
-	for (const i of large) {
-		if (leftover <= 0) break;
-		const room = sizes[i]! - limits[i]!;
-		const add = Math.min(room, leftover);
-		limits[i] = limits[i]! + add;
-		leftover -= add;
-	}
-	return limits;
-}
-
 function renderGuidelines(sections: GuidelineSection[]): string {
-	const limits = guidelineLimits(sections, MAX_GUIDELINE_CHARS);
 	return sections
-		.map(
-			(section, i) =>
-				`<file path="${section.path}">\n${excerptGuideline(section.content, limits[i]!)}\n</file>`
-		)
+		.map((section) => {
+			const content =
+				section.content.length <= MAX_GUIDELINE_FILE_CHARS
+					? section.content
+					: `${section.content.slice(0, MAX_GUIDELINE_FILE_CHARS)}\n… rest of this file was not loaded\n`;
+			return `<file path="${section.path}">\n${content}\n</file>`;
+		})
 		.join('\n\n');
 }
 
 /**
  * Project conventions the review should respect, from the files agents already use. Every file
- * that exists is included. With a `trusted` source they come from that commit instead of the
- * (untrusted) PR checkout.
+ * that exists is included, in full. With a `trusted` source they come from that commit instead
+ * of the (untrusted) PR checkout.
  */
 export async function loadRepoGuidelines(
 	repoDir: string,
