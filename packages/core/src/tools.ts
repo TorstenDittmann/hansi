@@ -24,6 +24,22 @@ export function resolveRepoPath(repoDir: string, path: string): string {
 	return absolute;
 }
 
+/** Head path → base path for the renames in `git diff --name-status -z` output. */
+function parseRenames(output: string): Map<string, string> {
+	const renames = new Map<string, string>();
+	const fields = output.split('\0');
+	for (let i = 0; i < fields.length;) {
+		const status = fields[i] ?? '';
+		if (status.startsWith('R')) {
+			renames.set(fields[i + 2]!, fields[i + 1]!);
+			i += 3;
+		} else {
+			i += 2;
+		}
+	}
+	return renames;
+}
+
 /**
  * Read-only tools over the checked-out repository. No code is ever executed. The token lets git
  * download blobs a partial clone does not have yet, e.g. for patches in `file_history`. With a
@@ -36,21 +52,35 @@ export function createRepoTools(
 ) {
 	// Where the pull request branched off: the base branch may have moved on since.
 	let forkPoint: Promise<string> | undefined;
+	// Files the pull request renamed: head path → base path.
+	let renames: Promise<Map<string, string>> | undefined;
 	const readSource = async (path: string, ref?: 'base') => {
 		const absolute = resolveRepoPath(repoDir, path);
-		if (!ref) return readFile(absolute, 'utf8');
+		if (!ref) return { content: await readFile(absolute, 'utf8'), label: path };
 		const { baseRef, token } = options;
 		if (!baseRef) throw new Error('The base version is not available here');
 		forkPoint ??= git(['merge-base', baseRef, 'HEAD'], { cwd: repoDir, token })
 			.then((sha) => sha.trim())
 			.catch(() => baseRef);
+		const commit = await forkPoint;
+		renames ??= git(['diff', '--name-status', '--find-renames', '-z', commit, 'HEAD'], {
+			cwd: repoDir,
+			token
+		})
+			.then(parseRenames)
+			.catch(() => new Map());
 		const file = relative(repoDir, absolute);
-		return git(['show', `${await forkPoint}:${file}`], { cwd: repoDir, token }).catch((error) => {
-			if (error instanceof GitError && /does not exist|but not in/.test(error.stderr)) {
-				throw new Error(`${path} does not exist at the base; it is new in this pull request`);
+		const basePath = (await renames).get(file) ?? file;
+		const content = await git(['show', `${commit}:${basePath}`], { cwd: repoDir, token }).catch(
+			(error) => {
+				if (error instanceof GitError && /does not exist|but not in/.test(error.stderr)) {
+					throw new Error(`${path} does not exist at the base; it is new in this pull request`);
+				}
+				throw error;
 			}
-			throw error;
-		});
+		);
+		const was = basePath === file ? '' : `, renamed from ${basePath}`;
+		return { content, label: `${path} at base${was}` };
 	};
 
 	return {
@@ -68,7 +98,8 @@ export function createRepoTools(
 			execute: async ({ path, startLine = 1, endLine, ref }) => {
 				emit({ type: 'tool.read_file', data: { path, startLine, endLine, ref } });
 				try {
-					const lines = (await readSource(path, ref)).split('\n');
+					const { content, label } = await readSource(path, ref);
+					const lines = content.split('\n');
 					const end = Math.min(
 						endLine ?? lines.length,
 						startLine + MAX_READ_LINES - 1,
@@ -79,8 +110,7 @@ export function createRepoTools(
 						.map((line, i) => `${String(startLine + i).padStart(5)}  ${line}`)
 						.join('\n');
 					const more = end < lines.length ? `\n… ${lines.length - end} more lines` : '';
-					const at = ref ? ' at base' : '';
-					return `${path}${at} (lines ${startLine}-${end} of ${lines.length})\n${body}${more}`;
+					return `${label} (lines ${startLine}-${end} of ${lines.length})\n${body}${more}`;
 				} catch (error) {
 					return `Error: ${(error as Error).message}`;
 				}
