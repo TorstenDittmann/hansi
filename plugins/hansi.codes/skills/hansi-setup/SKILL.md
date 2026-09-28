@@ -9,7 +9,7 @@ license: MIT
 compatibility: Requires git and the GitHub CLI (gh), authenticated, and the Hansi GitHub App installed on the repository.
 metadata:
   author: hansi
-  version: '1.0'
+  version: '1.1'
 allowed-tools: Bash(gh:*) Bash(git:*)
 ---
 
@@ -27,20 +27,39 @@ Do not request a Hansi review. Do not push to the default branch. Do not enable 
 
 ### 1. Read the config Hansi uses today
 
-The base branch is the pull request's base when one is open, otherwise the repository default branch.
+`origin` may be a fork. The branch Hansi reads is on the pull request's base repository, which can be a different repo.
 
 ```bash
-gh pr view --json baseRefName,url -q '{base: .baseRefName, url: .url}' \
-  || gh repo view --json defaultBranchRef -q '{base: .defaultBranchRef.name, url: .url}'
+gh repo view --json nameWithOwner,isFork,parent,defaultBranchRef \
+  --jq '{repo: .nameWithOwner, fork: .isFork, parent: .parent.nameWithOwner, defaultBranch: .defaultBranchRef.name}'
 ```
 
-Use that name as `<BASE>`.
+If this checkout is a fork, look up the pull request on `parent`. Otherwise look it up on `repo`. That repository is `<PR_REPO>`.
 
 ```bash
-gh api "repos/{owner}/{repo}/contents/.hansi.json?ref=<BASE>" --jq .content | base64 -d
+gh pr view <PR_NUMBER> --repo <PR_REPO> --json number,url -q '{number: .number, url: .url}'
 ```
 
-A 404 means there is no file yet. Also list which guideline files exist on `<BASE>`. Hansi includes each of these in full when it is present: `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`. Do not copy them into `instructions`.
+Leave `<PR_NUMBER>` empty to use the current branch. If that lookup fails, try the other of `repo` and `parent`.
+
+Read the base from that pull request. Do not take it from `origin`.
+
+```bash
+gh api "repos/<PR_REPO>/pulls/<PR_NUMBER>" \
+  --jq '{base: .base.ref, baseRepo: .base.repo.full_name, headRepo: .head.repo.full_name, headOwner: .head.repo.owner.login}'
+```
+
+`<BASE>` is `base`. `<BASE_REPO>` is `baseRepo`. `<HEAD_REPO>` is `headRepo`. `<HEAD_OWNER>` is `headOwner`.
+
+If there is no pull request, `<BASE_REPO>` is `parent` when this checkout is a fork, otherwise `repo`. `<BASE>` is that repository's default branch. `<HEAD_REPO>` is `repo`. `<HEAD_OWNER>` is the owner of `<HEAD_REPO>`.
+
+Read `.hansi.json` from `<BASE_REPO>`:
+
+```bash
+gh api "repos/<BASE_REPO>/contents/.hansi.json?ref=<BASE>" --jq .content | base64 -d
+```
+
+A 404 means there is no file yet. Also list which guideline files exist on that same ref. Hansi includes each of these in full when it is present: `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`. Do not copy them into `instructions`.
 
 ### 2. Decide the edits
 
@@ -88,31 +107,49 @@ Show the diff of the file and wait for a yes when the user did not already speci
 
 If `git status --short` shows changes you did not make for this config, stop and ask. Do not stash or discard them.
 
-Check out a new branch from `<BASE>` unless the user asked to add the file to the branch they are already on.
+Check out a new branch from `<BASE>` on `<BASE_REPO>` unless the user asked to add the file to the branch they are already on. Fetch that repository by URL. `origin/<BASE>` can be a stale copy on a fork.
 
 ```bash
-git fetch origin <BASE>
-git checkout -b hansi-config origin/<BASE>
+git fetch "https://github.com/<BASE_REPO>.git" "+refs/heads/<BASE>:refs/remotes/hansi-base/<BASE>"
+git checkout -b hansi-config "hansi-base/<BASE>"
 ```
 
-Write `.hansi.json` at the repository root. Commit only that file.
+If `hansi-config` already exists, pick another branch name. Use the branch you created as `<BRANCH>`.
+
+Write `.hansi.json` at the repository root. Commit only that file. Push to `<HEAD_REPO>`. When `origin` is that repository, this push is enough. When it is not, push to `https://github.com/<HEAD_REPO>.git` instead.
 
 ```bash
 git add .hansi.json
 git commit -m "Configure Hansi reviews."
 git push -u origin HEAD
-gh pr create --base <BASE> --title "Configure Hansi reviews" --body "Adds .hansi.json. Hansi reads it from the base branch after merge."
 ```
 
-If the user asked to include it in the current pull request, commit it there instead and say it takes effect once that pull request merges into `<BASE>`.
+Open the pull request on `<BASE_REPO>`. When `<HEAD_REPO>` and `<BASE_REPO>` are the same repository:
+
+```bash
+gh pr create --repo "<BASE_REPO>" --base "<BASE>" --head "<BRANCH>" \
+  --title "Configure Hansi reviews" \
+  --body "Adds .hansi.json. Hansi reads it from the base branch after merge."
+```
+
+When they differ, the head is the fork branch `<HEAD_OWNER>:<BRANCH>`:
+
+```bash
+gh pr create --repo "<BASE_REPO>" --base "<BASE>" --head "<HEAD_OWNER>:<BRANCH>" \
+  --title "Configure Hansi reviews" \
+  --body "Adds .hansi.json. Hansi reads it from the base branch after merge."
+```
+
+If the user asked to include it in the current pull request, commit it on that branch instead and say it takes effect once that pull request merges into `<BASE>` on `<BASE_REPO>`.
 
 ### 4. Report
 
 ```
 hansi-setup
-  Base branch:   main
-  Pull request:  https://github.com/owner/repo/pull/123
-  Takes effect:  after merge
+  Base repository: owner/repo
+  Base branch:     main
+  Pull request:    https://github.com/owner/repo/pull/123
+  Takes effect:    after merge
 
 Changed:
   - reviews.pathFilters: ["!docs/**"]
