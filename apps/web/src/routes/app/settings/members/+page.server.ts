@@ -123,6 +123,8 @@ export const actions: Actions = {
 		]);
 		const member = members.find((candidate) => candidate.id === memberId);
 		if (!member) return fail(400, { error: 'Member not found' });
+		// Keeping the current role is not a change, including for the last owner.
+		if (member.role === role) return;
 		const ownerCount = members.filter((candidate) =>
 			hasMembershipRole(candidate.role, 'owner')
 		).length;
@@ -133,7 +135,6 @@ export const actions: Actions = {
 			nextRole: role
 		});
 		if (denied) return fail(denied.status, { error: denied.error });
-		if (member.role === role) return;
 		return run(() =>
 			auth.api.updateMemberRole({
 				headers: request.headers,
