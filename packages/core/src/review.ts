@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { blockingSeverity, severityAtLeast, type RepoConfig, type Severity } from '@hans/config';
-import { generateText, isStepCount, tool, type LanguageModel } from 'ai';
+import { generateText, isStepCount, tool, type LanguageModel, type ToolSet } from 'ai';
 import { z } from 'zod';
 import {
 	commentableLines,
@@ -23,6 +23,7 @@ import {
 } from './findings';
 import {
 	buildReviewPrompt,
+	externalContextBlock,
 	reviewerInstructions,
 	reviewRules,
 	verifierInstructions
@@ -76,6 +77,9 @@ export interface ReviewInput {
 	linkedIssues?: LinkedIssue[];
 	/** Checks that already failed on the head commit, such as tests or type checks. */
 	failedChecks?: FailedCheck[];
+	/** MCP tools from servers the organization connected. Results are untrusted context. */
+	extraTools?: ToolSet;
+	externalContext?: { name: string; guidance: string }[];
 	config: RepoConfig;
 	models: { review: ReviewModel; verify?: ReviewModel };
 	onEvent?: EmitEvent;
@@ -227,10 +231,13 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: [];
 	});
 
-	const tools = createRepoTools(input.repoDir, emit, {
-		token: input.trustedSource?.token,
-		baseRef: input.trustedSource?.ref
-	});
+	const tools: ToolSet = {
+		...createRepoTools(input.repoDir, emit, {
+			token: input.trustedSource?.token,
+			baseRef: input.trustedSource?.ref
+		}),
+		...input.extraTools
+	};
 	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
@@ -243,6 +250,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		excludedFiles: notShown,
 		incrementalFrom: input.incrementalFrom,
 		learnings: input.learnings,
+		externalContext: input.externalContext,
 		previousFindings,
 		openFindings: input.openFindings,
 		previousSummary: input.incrementalFrom ? input.previousSummary : undefined,
@@ -334,6 +342,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		instructions: config.instructions,
 		pathInstructions
 	});
+	if (input.externalContext?.length) rules.push(externalContextBlock(input.externalContext));
 	const verified = distinct.length
 		? await verifyFindings(
 				distinct,
@@ -527,7 +536,7 @@ async function verifyFindings(
 	findings: Finding[],
 	{ files, rules }: { files: FileDiff[]; rules: string[] },
 	input: ReviewInput,
-	tools: ReturnType<typeof createRepoTools>,
+	tools: ToolSet,
 	maxSteps: number,
 	dropped: DroppedFinding[],
 	place: (finding: Finding) => Finding | null

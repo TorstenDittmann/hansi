@@ -2,7 +2,7 @@ import { generateText, isStepCount, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
-import { chatInstructions } from './prompts';
+import { chatInstructions, externalContextBlock } from './prompts';
 import { callModel, type ModelCall, type ModelFailure } from './model-call';
 import type { ReviewModel } from './review';
 import { createRepoTools, loadRepoGuidelines, type EmitEvent, type TrustedSource } from './tools';
@@ -24,6 +24,9 @@ export interface ChatInput {
 	/** Set when the conversation is attached to a line of code. */
 	focus?: { path: string; line?: number; diffHunk?: string };
 	learnings: string[];
+	/** MCP tools from servers the organization connected. Results are untrusted context. */
+	extraTools?: ToolSet;
+	externalContext?: { name: string; guidance: string }[];
 	language: string;
 	/** Where to read repository guidelines from; defaults to the (untrusted) PR checkout. */
 	trustedSource?: TrustedSource;
@@ -48,6 +51,7 @@ export async function runChat(input: ChatInput): Promise<string> {
 			token: input.trustedSource?.token,
 			baseRef: input.trustedSource?.ref
 		}),
+		...input.extraTools,
 		remember: tool({
 			description:
 				'Save a lasting team preference for future reviews of this repository, e.g. "Do not flag missing error handling in scripts/". Only use when the user states a durable rule, not for one-off decisions.',
@@ -93,6 +97,7 @@ export async function runChat(input: ChatInput): Promise<string> {
 			`<team_learnings>\n${input.learnings.map((l) => `- ${l}`).join('\n')}\n</team_learnings>`
 		);
 	}
+	if (input.externalContext?.length) parts.push(externalContextBlock(input.externalContext));
 	parts.push(`<diff>\n${diff}\n</diff>`);
 	if (input.focus) {
 		parts.push(

@@ -19,6 +19,7 @@
 		"@hans/db": "workspace:*",
 		"@hans/github": "workspace:*",
 		"@hans/llm": "workspace:*",
+		"@hans/mcp": "workspace:*",
 		"@hans/queue": "workspace:*",
 		"drizzle-orm": "catalog:",
 		"pino": "^10.3.1"

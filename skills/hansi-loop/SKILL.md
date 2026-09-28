@@ -19,6 +19,18 @@ Iteratively fix a pull request until Hansi grades it **Tier S** (ready to merge)
 
 Each review spends the repository owner's model credits. Do not request a new review when the current head already has a finished Hansi review and you have not pushed anything since.
 
+## When the Hansi MCP server is connected
+
+If `get_pull_request`, `list_findings`, and `trigger_review` are available, use them instead of the GitHub API for Hansi's review, tier, and findings.
+
+- `get_pull_request` with `repository` (`owner/name`) and `pullNumber` returns the latest review and the findings that are still open (`status` `posted`). Tier **S** and an empty `openFindings` list is the stop condition in step C.
+- `trigger_review` replaces the `@<slug> review` comment. It spends model credits. Do not call it when that head already has a completed review.
+- `search_comments` searches finding text. `list_learnings` and `create_learning` read and save review rules.
+
+Still use git and `gh` to push commits and to reply on a thread. Do not resolve threads yourself: Hansi resolves a thread when a later review sees the fix, or when it dismisses the finding after your reply.
+
+If those tools are not connected, follow the GitHub steps below.
+
 ## Inputs
 
 - **Pull request number** (optional). If omitted, use the pull request for the current branch.

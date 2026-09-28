@@ -52,6 +52,13 @@ database. Then:
 
 Open a pull request, or comment `@<app-name> review` on one, to see the first review.
 
+### MCP
+
+The dashboard's **MCP** page issues keys for coding agents (`APP_URL/api/mcp`) and stores MCP
+servers Hansi may call during a review. Servers must be https and publicly reachable. To let Hansi
+call an MCP server on your own network, set `MCP_ALLOW_PRIVATE_URLS=true`. Addresses used for cloud
+metadata stay blocked either way.
+
 ### Approvals and required reviews
 
 GitHub only counts approvals from reviewers with write access to the code. By default the app gets

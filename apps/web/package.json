@@ -21,6 +21,7 @@
 		"@hans/db": "workspace:*",
 		"@hans/github": "workspace:*",
 		"@hans/llm": "workspace:*",
+		"@hans/mcp": "workspace:*",
 		"@hans/queue": "workspace:*",
 		"@libsql/client": "catalog:",
 		"better-auth": "^1.7.5",

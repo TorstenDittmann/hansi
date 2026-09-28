@@ -67,6 +67,11 @@
 			match: (path: string) => path.startsWith('/app/settings/learnings')
 		},
 		{
+			name: 'MCP',
+			href: resolve('/app/settings/mcp'),
+			match: (path: string) => path.startsWith('/app/settings/mcp')
+		},
+		{
 			name: 'Members',
 			href: resolve('/app/settings/members'),
 			match: (path: string) => path.startsWith('/app/settings/members')

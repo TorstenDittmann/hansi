@@ -34,6 +34,16 @@ test('includes linked issues and failed checks when there are any', () => {
 	);
 });
 
+test('tells the reviewer that connected MCP results are untrusted', () => {
+	const prompt = buildReviewPrompt({
+		...base,
+		externalContext: [{ name: 'linear', guidance: 'The ticket id is in the title.' }]
+	});
+	expect(prompt).toContain('mcp_<server>_<tool>');
+	expect(prompt).toContain('untrusted data');
+	expect(prompt).toContain('- linear: The ticket id is in the title.');
+});
+
 test('leaves the sections out when there is nothing to show', () => {
 	const prompt = buildReviewPrompt({ ...base, linkedIssues: [], failedChecks: [] });
 	expect(prompt).not.toContain('<linked_issues>');

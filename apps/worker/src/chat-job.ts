@@ -22,6 +22,7 @@ import {
 	withWorkdir,
 	type WorkerContext
 } from './shared';
+import { loadReviewMcp } from './mcp';
 import { refreshSummaryAfterSettlement } from './summary';
 
 export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>) {
@@ -104,6 +105,12 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		const learnings = await loadLearnings(db, payload.organizationId, payload.repositoryId);
 
 		const token = await getInstallationToken(octokit);
+		const mcpPromise = loadReviewMcp(ctx, payload.organizationId, (event) => {
+			log.info(event.data, event.type);
+		}).catch((error: Error) => {
+			log.warn({ err: error }, 'mcp unavailable');
+			return { tools: {}, context: [] as { name: string; guidance: string }[] };
+		});
 		const answer = await withWorkdir(env, async (repoDir) => {
 			const diff = await checkoutPullRequest({
 				dir: repoDir,
@@ -113,6 +120,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				baseSha: pr.baseSha,
 				headSha: pr.headSha
 			});
+			const mcp = await mcpPromise;
 			return runChat({
 				repoDir,
 				pullRequest: pr,
@@ -120,6 +128,8 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				thread,
 				focus,
 				learnings,
+				extraTools: mcp.tools,
+				externalContext: mcp.context,
 				trustedSource: { ref: pr.baseSha, token },
 				language: config.language,
 				model,

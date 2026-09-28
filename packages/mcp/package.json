@@ -1,0 +1,24 @@
+{
+	"name": "@hans/mcp",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"check": "tsc -p .",
+		"test": "bun test --pass-with-no-tests"
+	},
+	"dependencies": {
+		"@hans/config": "workspace:*",
+		"@hans/db": "workspace:*",
+		"@hans/queue": "workspace:*",
+		"ai": "catalog:",
+		"drizzle-orm": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	}
+}

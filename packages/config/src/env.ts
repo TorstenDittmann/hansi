@@ -55,7 +55,17 @@ export const envSchema = z.object({
 
 	WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
 	/** Directory for temporary repository checkouts. */
-	WORKER_WORKDIR: optional
+	WORKER_WORKDIR: optional,
+
+	/**
+	 * Let connected MCP servers use private-network addresses (and http). Off by default so a
+	 * hosted instance cannot be pointed at cloud metadata or other internal services. Self-hosters
+	 * turn it on to reach an MCP server on their own network.
+	 */
+	MCP_ALLOW_PRIVATE_URLS: z
+		.string()
+		.optional()
+		.transform((value) => value === 'true' || value === '1')
 });
 
 export type Env = z.infer<typeof envSchema>;

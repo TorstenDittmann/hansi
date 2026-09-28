@@ -32,6 +32,7 @@
         "@hans/db": "workspace:*",
         "@hans/github": "workspace:*",
         "@hans/llm": "workspace:*",
+        "@hans/mcp": "workspace:*",
         "@hans/queue": "workspace:*",
         "@libsql/client": "catalog:",
         "better-auth": "^1.7.5",
@@ -63,6 +64,7 @@
         "@hans/db": "workspace:*",
         "@hans/github": "workspace:*",
         "@hans/llm": "workspace:*",
+        "@hans/mcp": "workspace:*",
         "@hans/queue": "workspace:*",
         "drizzle-orm": "catalog:",
         "pino": "^10.3.1",
@@ -168,6 +170,21 @@
         "@openrouter/ai-sdk-provider": "^3.1.0",
         "ai": "catalog:",
         "aws4fetch": "^1.0.20",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/mcp": {
+      "name": "@hans/mcp",
+      "dependencies": {
+        "@hans/config": "workspace:*",
+        "@hans/db": "workspace:*",
+        "@hans/queue": "workspace:*",
+        "ai": "catalog:",
+        "drizzle-orm": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
@@ -370,6 +387,8 @@
     "@hans/github": ["@hans/github@workspace:packages/github"],
 
     "@hans/llm": ["@hans/llm@workspace:packages/llm"],
+
+    "@hans/mcp": ["@hans/mcp@workspace:packages/mcp"],
 
     "@hans/queue": ["@hans/queue@workspace:packages/queue"],
 

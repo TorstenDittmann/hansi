@@ -134,7 +134,24 @@ npx skills add TorstenDittmann/hansi --skill hansi-loop
 
 Then run `/hansi-loop` in your agent. It needs the [GitHub CLI](https://cli.github.com)
 (`gh auth login`) and the Hansi GitHub App installed on the repository. Pass a pull request number
-to review that one; otherwise it uses the pull request for the current branch.
+to review that one; otherwise it uses the pull request for the current branch. If the Hansi MCP
+server is connected, the skill reads reviews and requests new ones through it.
+
+## MCP
+
+Hansi speaks MCP in both directions, the same way other review tools fit into a coding agent.
+
+**Agents connect to Hansi.** In the dashboard, open **MCP** and create a key. Point Cursor, Claude
+Code, VS Code, or Codex at `APP_URL/api/mcp` with `Authorization: Bearer hsk_…`. The agent can list
+reviews, read open findings (a finding with status `posted` is still open), search comments, read
+and edit learnings, and queue a review with `trigger_review`. A key is scoped to one organization.
+`write` includes `read`; triggering a review spends model credits, so a read-only key cannot do it.
+
+**Hansi connects to your tools.** On the same page, add an MCP server (Linear, a docs server, an
+internal tool) and tick the tools a review may call. Hansi uses them while reviewing and while
+answering a comment, and treats the results as untrusted data. The URL has to be https and public.
+A self-hosted instance can set `MCP_ALLOW_PRIVATE_URLS=true` to reach a server on its own network.
+Cloud metadata addresses stay blocked.
 
 ## Development
 
@@ -193,6 +210,7 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 | `packages/queue`  | Durable job queue on the same database (leases, retries, singletons)     |
 | `packages/llm`    | Provider registry, key encryption, model listing, models.dev pricing     |
 | `packages/github` | GitHub App auth, manifest flow, pull request and check run helpers       |
+| `packages/mcp`    | MCP server for agents, and the client reviews use for connected servers  |
 | `packages/config` | Environment and `.hansi.json` schemas                                    |
 | `packages/evals`  | Review-quality benchmark: cases with known bugs, scoring, runner         |
 

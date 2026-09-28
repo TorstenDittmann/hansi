@@ -49,6 +49,7 @@ import {
 	type RepositoryConnection,
 	type WorkerContext
 } from './shared';
+import { loadReviewMcp } from './mcp';
 
 type Review = typeof schema.reviews.$inferSelect;
 type Outcome = Pick<
@@ -190,6 +191,10 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	try {
 		return await withWorkdir(env, async (repoDir) => {
 			const token = await getInstallationToken(octokit);
+			const mcpPromise = loadReviewMcp(ctx, review.organizationId, record).catch((error) => {
+				record({ type: 'mcp.unavailable', data: { error: (error as Error).message } });
+				return { tools: {}, context: [] as { name: string; guidance: string }[] };
+			});
 			const diff = await checkoutPullRequest({
 				dir: repoDir,
 				cloneUrl: pr.cloneUrl,
@@ -216,6 +221,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				}
 			}
 			const learnings = await loadLearnings(db, review.organizationId, review.repositoryId);
+			const mcp = await mcpPromise;
 			const { linkedIssues, failedChecks } = await loadPullRequestContext(connection, pr, log);
 			record({
 				type: 'review.mode',
@@ -225,6 +231,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					previousFindings: history.findings.length,
 					openFindings: history.open.length,
 					learnings: learnings.length,
+					mcpServers: mcp.context.map((source) => source.name),
 					linkedIssues: linkedIssues.map((i) => i.number),
 					failedChecks: failedChecks.map((c) => c.name)
 				}
@@ -239,6 +246,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				openFindings: history.open,
 				previousSummary: history.previousSummary,
 				learnings,
+				extraTools: mcp.tools,
+				externalContext: mcp.context,
 				trustedSource: { ref: pr.baseSha, token },
 				withholdApproval: await approvalRestriction(connection, pr, config),
 				pullRequest: pr,

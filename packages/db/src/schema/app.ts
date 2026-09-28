@@ -1,7 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+	index,
+	integer,
+	primaryKey,
+	real,
+	sqliteTable,
+	text,
+	uniqueIndex
+} from 'drizzle-orm/sqlite-core';
 import { tiers, verdicts } from '@hans/config';
-import { organization } from './auth';
+import { organization, user } from './auth';
 
 const createdAt = integer('created_at', { mode: 'timestamp_ms' })
 	.notNull()
@@ -248,4 +256,59 @@ export const learnings = sqliteTable(
 		createdAt
 	},
 	(t) => [index('learnings_org_repo_idx').on(t.organizationId, t.repositoryId)]
+);
+
+export const apiKeyScopes = ['read', 'write'] as const;
+export type ApiKeyScope = (typeof apiKeyScopes)[number];
+
+/**
+ * Bearer tokens for the MCP server. The secret is shown once at creation and stored only as a
+ * SHA-256 hash. A key belongs to one organization.
+ */
+export const apiKeys = sqliteTable(
+	'api_keys',
+	{
+		id: id(),
+		organizationId: organizationId(),
+		name: text('name').notNull(),
+		/** First characters of the secret, safe to show (`hsk_ab12`). */
+		keyPrefix: text('key_prefix').notNull(),
+		/** Last four characters of the secret, safe to show. */
+		keyHint: text('key_hint').notNull(),
+		keyHash: text('key_hash').notNull(),
+		scopes: text('scopes', { mode: 'json' }).$type<ApiKeyScope[]>().notNull(),
+		createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+		lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+		revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+		createdAt
+	},
+	(t) => [
+		uniqueIndex('api_keys_hash_idx').on(t.keyHash),
+		index('api_keys_org_idx').on(t.organizationId)
+	]
+);
+
+/**
+ * MCP servers Hansi calls during reviews and replies (tickets, docs, designs). The bearer token
+ * is encrypted. `allowedTools` is the only set the model may call; an empty list means none.
+ */
+export const mcpServers = sqliteTable(
+	'mcp_servers',
+	{
+		id: id(),
+		organizationId: organizationId(),
+		/** Short name used in tool names, e.g. `linear`. Unique per organization. */
+		name: text('name').notNull(),
+		url: text('url').notNull(),
+		encryptedToken: text('encrypted_token'),
+		guidance: text('guidance').notNull().default(''),
+		enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+		allowedTools: text('allowed_tools', { mode: 'json' }).$type<string[]>().notNull(),
+		createdAt,
+		updatedAt
+	},
+	(t) => [
+		uniqueIndex('mcp_servers_org_name_idx').on(t.organizationId, t.name),
+		index('mcp_servers_org_idx').on(t.organizationId)
+	]
 );
