@@ -50,7 +50,7 @@ export const repoConfigSchema = z
 					.enum(reviewProfiles)
 					.default('balanced')
 					.describe(
-						'How picky to be. chill only flags bugs it can confirm in the code; balanced and strict also flag risky patterns.'
+						'How picky to be. chill only flags bugs it can confirm in the code; balanced also flags risky patterns; strict also counts naming and style rules and flags weak or missing tests, broken documentation examples, and maintainability problems.'
 					),
 				minSeverity: z
 					.enum(severities)
@@ -100,6 +100,8 @@ export const repoConfigSchema = z
 	.meta({ title: 'Hansi configuration', description: 'Configures Hansi for a repository.' });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
+/** The contents of `.hansi.json`, before defaults are applied. */
+export type RepoConfigInput = z.input<typeof repoConfigSchema>;
 
 export const defaultRepoConfig: RepoConfig = repoConfigSchema.parse({});
 

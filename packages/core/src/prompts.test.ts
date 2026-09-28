@@ -2,6 +2,28 @@ import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
 import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
 
+const withProfile = (profile: string) =>
+	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
+
+test('only strict counts naming and style rules, and reviews tests and docs', () => {
+	const strict = reviewerInstructions(withProfile('strict'));
+	expect(strict).toContain('Naming and style rules count too');
+	expect(strict).toContain(
+		'Never report formatting, import order, or anything a linter would catch.'
+	);
+	expect(strict).toContain('tests coupled to implementation details');
+	expect(verifierInstructions('strict')).toContain(
+		'you can see the violation in the code. Formatting rules do not count.'
+	);
+
+	const balanced = reviewerInstructions(withProfile('balanced'));
+	expect(balanced).toContain('Do not report formatting, naming, or style rules.');
+	expect(balanced).not.toContain('tests coupled to implementation details');
+	expect(verifierInstructions('balanced')).toContain(
+		'Formatting, naming, and style rules do not count.'
+	);
+});
+
 const base = {
 	title: 'Fix rounding',
 	body: '',
