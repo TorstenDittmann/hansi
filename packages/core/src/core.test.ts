@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRepoConfig } from '@hans/config';
 import { MockLanguageModelV4 } from 'ai/test';
-import { commentableLines, parseUnifiedDiff, renderFileDiff } from './diff';
+import { commentableLines, parseUnifiedDiff, renderDiffExcerpt, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { isDuplicateFinding, titleSimilarity } from './findings';
 import { formatFindingComment } from './format';
@@ -51,6 +51,16 @@ describe('diff', () => {
 		const rendered = renderFileDiff(math!);
 		expect(rendered).toContain('    2 +   const result = a / b;');
 		expect(rendered).toContain('      -   return a / b;');
+	});
+
+	test('renders the diff around a finding', () => {
+		const excerpt = renderDiffExcerpt(math!, 22, 22, 1);
+		expect(excerpt).toContain('      -   return x;');
+		expect(excerpt).toContain('   22 +   return x + 1;');
+		expect(excerpt).not.toContain('return a / b');
+		expect(excerpt).not.toContain('const x = 1');
+		expect(renderDiffExcerpt(math!, 10, 12)).toBeNull();
+		expect(renderDiffExcerpt({ ...math!, status: 'added' }, 2, 2)).toBeNull();
 	});
 });
 
@@ -200,6 +210,10 @@ describe('runReview', () => {
 			['review', 100],
 			['verify', 100]
 		]);
+		// The verifier sees what the changed lines replaced.
+		const verifyPrompt = JSON.stringify(model.doGenerateCalls[1]?.prompt);
+		expect(verifyPrompt).toContain('<diff>');
+		expect(verifyPrompt).toContain('      -   return a / b;');
 	});
 
 	test('forces a submission on the last allowed step', async () => {

@@ -6,6 +6,7 @@ import {
 	commentableLines,
 	hunkIndexOf,
 	parseUnifiedDiff,
+	renderDiffExcerpt,
 	renderFileDiff,
 	type FileDiff
 } from './diff';
@@ -319,7 +320,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// 5. Verify: a second, skeptical pass removes false positives.
 	const verified = distinct.length
-		? await verifyFindings(distinct, input, tools, limits.maxVerifySteps, dropped, (finding) => {
+		? await verifyFindings(distinct, shown, input, tools, limits.maxVerifySteps, dropped, (finding) => {
 				// A relocation must not land on something already reported.
 				const placed = place(finding);
 				return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
@@ -480,6 +481,7 @@ export function placeFinding(finding: Finding, files: FileDiff[]): Finding | nul
 
 async function verifyFindings(
 	findings: Finding[],
+	files: FileDiff[],
 	input: ReviewInput,
 	tools: ReturnType<typeof createRepoTools>,
 	maxSteps: number,
@@ -495,11 +497,14 @@ async function verifyFindings(
 				finding.startLine,
 				finding.endLine
 			);
+			const file = files.find((f) => f.path === finding.path);
+			const excerpt = file && renderDiffExcerpt(file, finding.startLine, finding.endLine);
+			const change = excerpt ? `\n\n<diff>\n${excerpt}\n</diff>` : '';
 			const suggestion =
 				finding.suggestion === undefined
 					? ''
 					: `\n\n<suggestion replaces_lines="${finding.startLine}-${finding.endLine}">\n${finding.suggestion}\n</suggestion>`;
-			return `<finding id="F${i + 1}" path="${finding.path}" lines="${finding.startLine}-${finding.endLine}" severity="${finding.severity}">\n${finding.title}\n\n${finding.body}\n\n<code>\n${context}\n</code>${suggestion}\n</finding>`;
+			return `<finding id="F${i + 1}" path="${finding.path}" lines="${finding.startLine}-${finding.endLine}" severity="${finding.severity}">\n${finding.title}\n\n${finding.body}\n\n<code>\n${context}\n</code>${change}${suggestion}\n</finding>`;
 		})
 	);
 

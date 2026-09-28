@@ -64,6 +64,8 @@ export function verifierInstructions(profile: ReviewProfile): string {
 
 ${UNTRUSTED_CONTENT}
 
+Each finding shows the current code around it and, when the lines were changed, a <diff> of that change: lines marked - are what the code did before, so use them to judge claims about changed behavior.
+
 For each finding, use the tools to check the actual code and decide:
 - keep: ${bar}
 - drop: the problem is not real, is already handled elsewhere, depends on an input or timing you cannot find in the code, or is a nit.
