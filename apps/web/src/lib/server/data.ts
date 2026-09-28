@@ -1,8 +1,8 @@
 // Organization-scoped data access for the dashboard. Every query takes `organizationId` and
 // filters by it; SQLite has no row-level security, so this module is the tenancy boundary.
-import { schema, type ModelRole, type ProviderId } from '@hans/db';
+import { schema, type Database, type ModelRole, type ProviderId } from '@hans/db';
 import { encryptSecret, keyHint } from '@hans/llm';
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, notExists, sql } from 'drizzle-orm';
 import { getContext } from './context';
 
 export async function listRepositories(organizationId: string) {
@@ -266,9 +266,14 @@ export async function deleteLearning(organizationId: string, learningId: string)
 /**
  * What the organization's model calls cost: this and last calendar month (UTC), daily spend for
  * the last 30 days, and a breakdown by model and by repository over the same 30 days.
+ * Review totals include skipped reviews.
  */
 export async function getCostSummary(organizationId: string, now = new Date()) {
 	const { db } = await getContext();
+	return costSummary(db, organizationId, now);
+}
+
+export async function costSummary(db: Database, organizationId: string, now = new Date()) {
 	const { llmCalls, reviews, repositories } = schema;
 	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 	const lastMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
@@ -277,7 +282,15 @@ export async function getCostSummary(organizationId: string, now = new Date()) {
 	const cost = sql<number>`coalesce(sum(${llmCalls.costUsd}), 0)`;
 	const day = sql<string>`date(${llmCalls.createdAt} / 1000, 'unixepoch')`;
 
-	const [[month], [lastMonth], [reviewCount], daily, byModel, byRepository] = await Promise.all([
+	const [
+		[month],
+		[lastMonth],
+		[reviewCount],
+		daily,
+		byModel,
+		spendByRepository,
+		skippedByRepository
+	] = await Promise.all([
 		db
 			.select({
 				cost,
@@ -297,6 +310,7 @@ export async function getCostSummary(organizationId: string, now = new Date()) {
 					sql`${llmCalls.createdAt} < ${monthStart.getTime()}`
 				)
 			),
+		// Every review created this month, including skipped (drafts, nothing to review, disabled).
 		db
 			.select({ count: sql<number>`count(*)` })
 			.from(reviews)
@@ -328,9 +342,26 @@ export async function getCostSummary(organizationId: string, now = new Date()) {
 			.innerJoin(reviews, eq(reviews.id, llmCalls.reviewId))
 			.innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
 			.where(and(inOrganization, gte(llmCalls.createdAt, since)))
+			.groupBy(repositories.fullName),
+		// Skipped reviews often never call a model, so the spend query above misses them.
+		db
+			.select({
+				repository: repositories.fullName,
+				reviews: sql<number>`count(*)`
+			})
+			.from(reviews)
+			.innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
+			.where(
+				and(
+					eq(reviews.organizationId, organizationId),
+					eq(reviews.status, 'skipped'),
+					gte(reviews.createdAt, since),
+					notExists(
+						db.select({ id: llmCalls.id }).from(llmCalls).where(eq(llmCalls.reviewId, reviews.id))
+					)
+				)
+			)
 			.groupBy(repositories.fullName)
-			.orderBy(desc(cost))
-			.limit(8)
 	]);
 
 	// One entry per day, including days without calls.
@@ -341,10 +372,32 @@ export async function getCostSummary(organizationId: string, now = new Date()) {
 	});
 
 	return {
-		month: { ...month!, reviews: reviewCount!.count, unpriced: month!.unpriced ?? 0 },
+		month: { ...month!, reviews: Number(reviewCount!.count), unpriced: month!.unpriced ?? 0 },
 		lastMonthCost: lastMonth!.cost,
 		days,
 		byModel,
-		byRepository
+		byRepository: repositoryBreakdown(spendByRepository, skippedByRepository)
 	};
+}
+
+/** Spend by repository, with skipped reviews that never called a model added to the review count. */
+function repositoryBreakdown(
+	spend: { repository: string; cost: number; reviews: number }[],
+	skipped: { repository: string; reviews: number }[]
+) {
+	const rows = new Map<string, { repository: string; cost: number; reviews: number }>();
+	for (const row of spend) {
+		rows.set(row.repository, {
+			repository: row.repository,
+			cost: Number(row.cost),
+			reviews: Number(row.reviews)
+		});
+	}
+	for (const row of skipped) {
+		const reviews = Number(row.reviews);
+		const existing = rows.get(row.repository);
+		if (existing) existing.reviews += reviews;
+		else rows.set(row.repository, { repository: row.repository, cost: 0, reviews });
+	}
+	return [...rows.values()].sort((a, b) => b.cost - a.cost || b.reviews - a.reviews).slice(0, 8);
 }
