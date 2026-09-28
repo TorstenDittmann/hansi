@@ -50,7 +50,7 @@ export const repoConfigSchema = z
 					.enum(reviewProfiles)
 					.default('balanced')
 					.describe(
-						'How picky to be. chill only flags bugs it can confirm in the code; balanced also flags risky patterns; strict also counts naming and style rules and flags weak or missing tests, broken documentation examples, and maintainability problems.'
+						'How picky to be. chill only flags bugs it can confirm in the code; balanced also flags risky patterns, weak or missing tests, and broken documentation examples; strict also counts naming and style rules and flags maintainability problems.'
 					),
 				minSeverity: z
 					.enum(severities)

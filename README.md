@@ -100,10 +100,11 @@ branch, so changes take effect once they are merged. Every field is optional:
 
 - `chill` flags only bugs it can confirm in the code.
 - `balanced` also flags risky patterns: unintended behavior changes, realistic races, missing
-  error handling, and clear performance problems.
-- `strict` holds the pull request to a demanding senior reviewer's bar. It also flags missing or
-  ineffective tests, tests coupled to implementation details, documentation examples that would
-  not work, broken build or CI configuration, and maintainability problems.
+  error handling, and clear performance problems. It also flags missing or ineffective tests,
+  tests coupled to implementation details, documentation examples that would not work, and
+  broken build or CI configuration.
+- `strict` holds the pull request to a demanding senior reviewer's bar. On top of `balanced`, it
+  flags maintainability problems such as misleading names and duplicated logic.
 
 Every profile reports changed code that breaks a concrete rule from the guideline files,
 `instructions`, `pathInstructions`, or a remembered team preference. `strict` also counts naming
