@@ -1,6 +1,30 @@
 import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
-import { buildReviewPrompt } from './prompts';
+import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
+
+const withProfile = (profile: string) =>
+	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
+
+test('every profile enforces the rules the team configured', () => {
+	for (const profile of ['chill', 'balanced', 'strict'] as const) {
+		const rules = '<review_instructions>, <path_instructions>, and <team_learnings>';
+		expect(reviewerInstructions(withProfile(profile))).toContain(`The team's rules in`);
+		expect(reviewerInstructions(withProfile(profile))).toContain(rules);
+		expect(verifierInstructions(profile)).toContain(`breaks a rule stated in`);
+	}
+});
+
+test('only strict enforces repository guidelines and allows naming findings', () => {
+	const strict = reviewerInstructions(withProfile('strict'));
+	expect(strict).toContain(`The team's rules in <repository_guidelines>, <review_instructions>`);
+	expect(strict).toContain('Never report formatting, import order,');
+	expect(verifierInstructions('strict')).toContain('stated in <repository_guidelines>');
+
+	const balanced = reviewerInstructions(withProfile('balanced'));
+	expect(balanced).not.toContain(`The team's rules in <repository_guidelines>`);
+	expect(balanced).toContain('Never report formatting, style, naming,');
+	expect(verifierInstructions('balanced')).not.toContain('stated in <repository_guidelines>');
+});
 
 const base = {
 	title: 'Fix rounding',

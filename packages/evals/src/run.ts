@@ -9,7 +9,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { parseRepoConfig } from '@hans/config';
+import { repoConfigSchema } from '@hans/config';
 import { runReview, type ReviewModel } from '@hans/core';
 import {
 	createLanguageModel,
@@ -78,7 +78,6 @@ const selected = cases.filter((c) => !args.case || c.name.includes(args.case));
 if (selected.length === 0) fail(`No case matches "${args.case}"`);
 const repeat = Math.max(1, Number(args.repeat) || 1);
 const catalog = await loadPriceCatalog();
-const config = parseRepoConfig('').config;
 
 interface Run {
 	case: string;
@@ -112,7 +111,7 @@ for (const evalCase of selected) {
 					body: evalCase.pullRequest.body ?? '',
 					author: 'eval'
 				},
-				config,
+				config: repoConfigSchema.parse(evalCase.config ?? {}),
 				models,
 				onModelCall: (call) => {
 					const cost = estimateCost(findPrice(catalog, provider, call.modelId), call.usage);

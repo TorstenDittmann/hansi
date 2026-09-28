@@ -140,6 +140,31 @@ export async function fetchJson(url: string, options: FetchOptions = {}): Promis
 }
 `;
 
+const guidelines = `# Project guidelines
+
+## Conventions
+
+- TypeScript with tabs. Keep functions small.
+- Do not add regular expressions. Use string functions (startsWith, endsWith, includes, split) instead; regex is hard to review and easy to get subtly wrong.
+
+## Tests
+
+- Tests live next to the code as *.test.ts and assert observable behavior.
+`;
+
+const slugAfter = `const reserved = ['admin', 'api'];
+
+export function slug(title: string): string {
+	return title.trim().toLowerCase().split(' ').filter(Boolean).join('-');
+}
+
+export function isReservedSlug(value: string): boolean {
+	return /^(admin|api)$/.test(value);
+}
+
+export const reservedSlugs = reserved;
+`;
+
 export const cases: EvalCase[] = [
 	{
 		name: 'ts-pagination-off-by-one',
@@ -372,6 +397,50 @@ test('an empty cart costs nothing', () => {
 `
 		},
 		pullRequest: { title: 'Add tests for total()' },
+		expected: []
+	},
+	{
+		name: 'strict-guideline-regex',
+		description:
+			'AGENTS.md bans regular expressions; the change adds one where a string check works.',
+		base: {
+			'AGENTS.md': guidelines,
+			'src/slug.ts': `export function slug(title: string): string {
+	return title.trim().toLowerCase().split(' ').filter(Boolean).join('-');
+}
+`
+		},
+		head: { 'src/slug.ts': slugAfter },
+		pullRequest: { title: 'Reject reserved slugs' },
+		config: { reviews: { profile: 'strict' } },
+		expected: [
+			{
+				path: 'src/slug.ts',
+				lines: lineOf(slugAfter, '/^(admin|api)'),
+				description:
+					'AGENTS.md forbids regular expressions; a startsWith or equality check does the same.'
+			}
+		]
+	},
+	{
+		name: 'strict-clean-tests',
+		description: 'Adds straightforward tests under the strict profile. Any comment is noise.',
+		base: { 'AGENTS.md': guidelines, 'src/price.ts': priceAfter },
+		head: {
+			'src/price.test.ts': `import { expect, test } from 'bun:test';
+import { total } from './price';
+
+test('sums prices and applies tax', () => {
+	expect(total([10, 20], 0.1)).toBeCloseTo(33);
+});
+
+test('an empty cart costs nothing', () => {
+	expect(total([], 0.2)).toBe(0);
+});
+`
+		},
+		pullRequest: { title: 'Add tests for total()' },
+		config: { reviews: { profile: 'strict' } },
 		expected: []
 	}
 ];
