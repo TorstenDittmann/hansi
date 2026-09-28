@@ -122,6 +122,20 @@ and with no open findings the tier is **S**.
 The `Hansi` check run follows the verdict (success, failure, or neutral), so you can make it a
 required check.
 
+## hansi-loop
+
+[`hansi-loop`](skills/hansi-loop/SKILL.md) is an agent skill that keeps fixing the current pull
+request until Hansi grades it **S** and has no comments left open. Install it with the
+[skills CLI](https://github.com/vercel-labs/skills):
+
+```sh
+npx skills add TorstenDittmann/hansi --skill hansi-loop
+```
+
+Then run `/hansi-loop` in your agent. It needs the [GitHub CLI](https://cli.github.com)
+(`gh auth login`) and the Hansi GitHub App installed on the repository. Pass a pull request number
+to review that one; otherwise it uses the pull request for the current branch.
+
 ## Development
 
 Requires [Bun](https://bun.sh) 1.4 or later, `git`, and
