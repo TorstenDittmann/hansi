@@ -560,6 +560,35 @@ ${upstream}`;
 		);
 	});
 
+	test('drops a finding the verifier moves onto another one', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [finding(2, 'Division by zero'), finding(4, 'Divides when b is 0', 'minor')]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real', start_line: 2, end_line: 2 }
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.startLine])).toEqual([['Division by zero', 2]]);
+		expect(result.dropped.map((f) => [f.title, f.startLine, f.dropReason])).toEqual([
+			['Divides when b is 0', 2, 'Duplicate of another finding in this review']
+		]);
+	});
+
 	test('moves kept findings to the lines the verifier corrects them to', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [
@@ -567,7 +596,7 @@ ${upstream}`;
 					summary: 'Refactors divide.',
 					findings: [
 						{ ...finding(2, 'Returns NaN'), suggestion: '  const result = b ? a / b : 0;' },
-						finding(3, 'Division by zero'),
+						{ ...finding(3, 'Division by zero'), category: 'error-handling' },
 						finding(4, 'Missing guard')
 					]
 				}),

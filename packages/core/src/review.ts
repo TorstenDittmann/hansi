@@ -323,18 +323,11 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		return keep;
 	});
 
-	// 4. One comment per problem: the model sometimes reports the same bug twice. The most
-	//    severe copy is kept.
-	const distinct: Finding[] = [];
-	for (const finding of [...relevant].sort(compareSeverity)) {
-		if (isDuplicateFinding(finding, distinct)) {
-			dropped.push({ ...finding, dropReason: 'Duplicate of another finding in this review' });
-		} else {
-			distinct.push(finding);
-		}
-	}
+	// 4. One comment per problem: the model sometimes reports the same bug twice.
+	const distinct = dropDuplicates(relevant, dropped);
 
-	// 5. Verify: a second, skeptical pass removes false positives.
+	// 5. Verify: a second, skeptical pass removes false positives. It can move findings, so
+	//    two of them may now sit on the same lines: check for duplicates again.
 	const rules = reviewRules({
 		guidelines,
 		learnings: input.learnings,
@@ -354,11 +347,10 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 					const placed = place(finding);
 					return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
 				}
-			)
+			).then((kept) => dropDuplicates(kept, dropped))
 		: [];
 
 	// 6. Cap the number of comments, most severe first.
-	verified.sort(compareSeverity);
 	const capped = verified.slice(0, config.reviews.maxComments);
 
 	// 7. A suggestion is applied verbatim with one click: never post one that breaks the code.
@@ -455,6 +447,19 @@ export function mergeWalkthrough(
 			!covered.has(entry.path) && (!pullRequestPaths || pullRequestPaths.includes(entry.path))
 	);
 	return [...current, ...carried];
+}
+
+/** One finding per problem, most severe first; the other copies are dropped. */
+function dropDuplicates(findings: Finding[], dropped: DroppedFinding[]): Finding[] {
+	const distinct: Finding[] = [];
+	for (const finding of [...findings].sort(compareSeverity)) {
+		if (isDuplicateFinding(finding, distinct)) {
+			dropped.push({ ...finding, dropReason: 'Duplicate of another finding in this review' });
+		} else {
+			distinct.push(finding);
+		}
+	}
+	return distinct;
 }
 
 /**
