@@ -11,7 +11,7 @@ import {
 	type FileDiff
 } from './diff';
 import { filterFiles } from './filters';
-import { callModel, type ModelCall, type ModelFailure } from './model-call';
+import { cachedPrompt, callModel, type ModelCall, type ModelFailure } from './model-call';
 import {
 	compareSeverity,
 	findingSchema,
@@ -264,7 +264,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		generateText({
 			model: input.models.review.model,
 			instructions: reviewerInstructions(config),
-			prompt,
+			prompt: cachedPrompt(input.models.review, prompt),
 			tools: { ...tools, submit_review: submitReview },
 			stopWhen: [isStepCount(limits.maxReviewSteps), hasToolCall('submit_review')],
 			// Out of steps: submit what was found so far instead of failing the whole review.
@@ -549,7 +549,10 @@ async function verifyFindings(
 		generateText({
 			model: verifyModel.model,
 			instructions: verifierInstructions(input.config.reviews.profile),
-			prompt: [`Pull request: ${input.pullRequest.title}`, ...rules, ...listing].join('\n\n'),
+			prompt: cachedPrompt(
+				verifyModel,
+				[`Pull request: ${input.pullRequest.title}`, ...rules, ...listing].join('\n\n')
+			),
 			tools: { ...tools, submit_verdicts: submitVerdicts },
 			stopWhen: [isStepCount(maxSteps), hasToolCall('submit_verdicts')],
 			prepareStep: ({ stepNumber }) =>

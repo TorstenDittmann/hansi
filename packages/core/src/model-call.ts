@@ -1,4 +1,10 @@
-import { APICallError, RetryError, type LanguageModelUsage } from 'ai';
+import {
+	APICallError,
+	RetryError,
+	type LanguageModelUsage,
+	type ModelMessage,
+	type UserModelMessage
+} from 'ai';
 
 /** A model call that finished: what it used, for cost tracking. */
 export interface ModelCall {
@@ -64,6 +70,26 @@ export async function callModel<T extends { usage: LanguageModelUsage }>(
 		durationMs: durationMs()
 	});
 	return result;
+}
+
+/** Bedrock models that support prompt caching; others may reject a cache point. */
+const BEDROCK_CACHING = /anthropic\.claude-(3-7|3-5-haiku|(sonnet|opus|haiku)-\d)|amazon\.nova/;
+
+/**
+ * The prompt as one user message, marked for caching on providers that only cache when asked.
+ * An agent loop re-sends it, and the instructions and tools before it, on every step.
+ */
+export function cachedPrompt(
+	model: { provider: string; modelId: string },
+	text: string
+): ModelMessage[] {
+	const providerOptions: UserModelMessage['providerOptions'] =
+		model.provider === 'anthropic'
+			? { anthropic: { cacheControl: { type: 'ephemeral' } } }
+			: model.provider === 'amazon-bedrock' && BEDROCK_CACHING.test(model.modelId)
+				? { bedrock: { cachePoint: { type: 'default' } } }
+				: undefined;
+	return [{ role: 'user', content: text, ...(providerOptions && { providerOptions }) }];
 }
 
 /** The message and HTTP status of a model error, looking through the SDK's retry wrapper. */

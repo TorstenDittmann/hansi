@@ -252,6 +252,27 @@ describe('runReview', () => {
 		});
 	});
 
+	test('asks Anthropic to cache the prompt of both passes', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] }),
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: true, reason: 'real' }] })
+			]
+		});
+		await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'anthropic', modelId: 'claude-sonnet-5' } }
+		});
+		const cached = model.doGenerateCalls.map(
+			(call) => call.prompt.find((message) => message.role === 'user')?.providerOptions
+		);
+		const ephemeral = { anthropic: { cacheControl: { type: 'ephemeral' } } };
+		expect(cached).toEqual([ephemeral, ephemeral]);
+	});
+
 	test("gives the verifier the team's rules", async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [

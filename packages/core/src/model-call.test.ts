@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { APICallError, RetryError } from 'ai';
-import { callModel, type ModelCall, type ModelFailure } from './model-call';
+import { cachedPrompt, callModel, type ModelCall, type ModelFailure } from './model-call';
 
 const model = { provider: 'anthropic', modelId: 'claude-sonnet-5' };
 
@@ -45,6 +45,26 @@ test('reports a failure with the provider status, then rethrows', async () => {
 	expect(failures).toMatchObject([
 		{ role: 'verify', provider: 'anthropic', message: 'Rate limit exceeded', status: 429 }
 	]);
+});
+
+test('marks the prompt for caching where the provider needs asking', () => {
+	const options = (provider: string, modelId: string) =>
+		cachedPrompt({ provider, modelId }, 'Review this.')[0]?.providerOptions;
+	expect(cachedPrompt(model, 'Review this.')).toEqual([
+		{
+			role: 'user',
+			content: 'Review this.',
+			providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } }
+		}
+	]);
+	const bedrock = { bedrock: { cachePoint: { type: 'default' } } };
+	expect(options('amazon-bedrock', 'us.anthropic.claude-sonnet-4-20250514-v1:0')).toEqual(bedrock);
+	expect(options('amazon-bedrock', 'anthropic.claude-3-7-sonnet-20250219-v1:0')).toEqual(bedrock);
+	expect(options('amazon-bedrock', 'amazon.nova-pro-v1:0')).toEqual(bedrock);
+	expect(options('amazon-bedrock', 'anthropic.claude-3-sonnet-20240229-v1:0')).toBeUndefined();
+	expect(options('amazon-bedrock', 'meta.llama3-70b-instruct-v1:0')).toBeUndefined();
+	// OpenAI and others cache automatically.
+	expect(options('openai', 'gpt-5')).toBeUndefined();
 });
 
 test('a cancelled call is not a failure', async () => {
