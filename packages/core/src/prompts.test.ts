@@ -67,7 +67,7 @@ test('treats repository guidelines as rules the review has to apply', () => {
 			'<file path="AGENTS.md">\nDo not run Swoole coroutine work in the shared unit process.\n</file>'
 	});
 	expect(prompt).toContain('Do not run Swoole coroutine work in the shared unit process.');
-	expect(prompt).toContain('Report changed code that breaks a concrete rule.');
+	expect(prompt).toContain('Project rules from every instruction file.');
 
 	const instructions = reviewerInstructions(base.config);
 	expect(instructions).toContain('A concrete project rule is not a style opinion.');

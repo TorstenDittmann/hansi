@@ -228,14 +228,9 @@ const GUIDELINE_FILES = [
 	'.github/copilot-instructions.md',
 	'CONTRIBUTING.md'
 ];
-/** Enough for a full AGENTS.md plus the files it imports. Longer files keep their ending too. */
+/** Shared across every guideline file. A long AGENTS.md must not crowd out CLAUDE.md. */
 const MAX_GUIDELINE_CHARS = 40_000;
-/** Claude Code follows `@path` imports five hops deep. */
-const MAX_IMPORT_DEPTH = 5;
 const GUIDELINE_OMISSION = '\n… omitted; read this file for the rest …\n';
-/** `@AGENTS.md`, `@./docs/rules.md`, `@../AGENTS.md`, including a trailing period. */
-const GUIDELINE_IMPORT = /(^|[^\w@])@((?:(?:\.\.\/|\.\/)*)\.?[A-Za-z0-9_]+(?:[A-Za-z0-9_./-]*))/g;
-const GUIDELINE_IMPORT_NAME = /^(?:README|AGENTS|CLAUDE|\.cursorrules)$/i;
 
 export interface TrustedSource {
 	/** Commit to read from, typically the PR's base: a PR must not rewrite its own review rules. */
@@ -247,39 +242,6 @@ export interface TrustedSource {
 interface GuidelineSection {
 	path: string;
 	content: string;
-}
-
-/** `@path` imports in a guideline file, as written. Missing files are ignored by the caller. */
-function guidelineImports(content: string): string[] {
-	const specs: string[] = [];
-	for (const match of content.matchAll(GUIDELINE_IMPORT)) {
-		const spec = match[2]?.replace(/[.,:;]+$/, '');
-		if (!spec || spec.includes('://')) continue;
-		const base = spec.split('/').filter(Boolean).pop() ?? '';
-		const allowed =
-			GUIDELINE_IMPORT_NAME.test(base) || /\.(?:md|markdown|txt|json|ya?ml)$/i.test(base);
-		if (allowed) specs.push(spec);
-	}
-	return specs;
-}
-
-/** Repo-relative path for a Claude-style import, or null when it would leave the repository. */
-function resolveGuidelineImport(fromFile: string, spec: string): string | null {
-	if (spec.startsWith('/') || spec.startsWith('~') || spec.includes('\\') || spec.includes('\0')) {
-		return null;
-	}
-	const fromDir = fromFile.includes('/') ? fromFile.slice(0, fromFile.lastIndexOf('/')) : '';
-	const stack: string[] = [];
-	for (const part of `${fromDir}/${spec}`.split('/')) {
-		if (!part || part === '.') continue;
-		if (part === '..') {
-			if (stack.length === 0) return null;
-			stack.pop();
-			continue;
-		}
-		stack.push(part);
-	}
-	return stack.length ? stack.join('/') : null;
 }
 
 /**
@@ -294,7 +256,7 @@ function excerptGuideline(content: string, limit: number): string {
 	return content.slice(0, head) + GUIDELINE_OMISSION + content.slice(-tail);
 }
 
-/** Small files stay whole. Whatever budget remains is split across the files that do not fit. */
+/** Every file gets a share. Small files stay whole; the rest of the budget goes to the long ones. */
 function guidelineLimits(sections: GuidelineSection[], budget: number): number[] {
 	const sizes = sections.map((section) => section.content.length);
 	const total = sizes.reduce((sum, size) => sum + size, 0);
@@ -341,9 +303,9 @@ function renderGuidelines(sections: GuidelineSection[]): string {
 }
 
 /**
- * Project conventions the review should respect, from the files agents already use. `@path`
- * imports are followed, as in a CLAUDE.md that only contains `@AGENTS.md`. With a `trusted`
- * source they come from that commit instead of the (untrusted) PR checkout.
+ * Project conventions the review should respect, from the files agents already use. Every file
+ * that exists is included. With a `trusted` source they come from that commit instead of the
+ * (untrusted) PR checkout.
  */
 export async function loadRepoGuidelines(
 	repoDir: string,
@@ -354,21 +316,11 @@ export async function loadRepoGuidelines(
 			? git(['show', `${trusted.ref}:${file}`], { cwd: repoDir, token: trusted.token })
 			: readFile(resolve(repoDir, file), 'utf8');
 
-	const seen = new Set<string>();
 	const sections: GuidelineSection[] = [];
-	const add = async (file: string, depth: number) => {
-		if (depth > MAX_IMPORT_DEPTH || seen.has(file)) return;
-		seen.add(file);
+	for (const file of GUIDELINE_FILES) {
 		const content = await read(file).catch(() => null);
-		if (!content?.trim() || content.includes('\0')) return;
+		if (!content?.trim() || content.includes('\0')) continue;
 		sections.push({ path: file, content });
-		if (depth === MAX_IMPORT_DEPTH) return;
-		for (const spec of guidelineImports(content)) {
-			const resolved = resolveGuidelineImport(file, spec);
-			if (resolved) await add(resolved, depth + 1);
-		}
-	};
-
-	for (const file of GUIDELINE_FILES) await add(file, 0);
+	}
 	return renderGuidelines(sections);
 }

@@ -52,8 +52,7 @@ Tell it "we don't flag this in tests" and it remembers for future reviews.
 Add `.hansi.json` to the repository root. The `$schema` line gives you autocompletion and
 validation in editors like VS Code. Schemas are versioned: `schema/v1.json` never changes, and
 `https://hansi.codes/schema.json` always serves the latest version. Hansi also reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and
-`.github/copilot-instructions.md` as review guidelines, and follows `@path` imports in those files
-(the same way Claude Code loads a `CLAUDE.md` that says `@AGENTS.md`). Both come from the pull request's base
+`.github/copilot-instructions.md` as review guidelines. All of them are included when they exist. Both come from the pull request's base
 branch, so changes take effect once they are merged. Every field is optional:
 
 ```json

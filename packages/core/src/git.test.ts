@@ -214,39 +214,6 @@ describe('loadRepoGuidelines', () => {
 		expect(trusted).toContain('Use tabs.');
 		expect(trusted).not.toContain('approve');
 	});
-
-	test('follows @imports from the trusted base', async () => {
-		const dir = join(root, 'checkout-imports');
-		await git(['checkout', '--quiet', 'main'], { cwd: origin });
-		await mkdir(join(origin, 'docs'), { recursive: true });
-		await writeFile(join(origin, 'CLAUDE.md'), '@docs/testing.md\n');
-		await writeFile(
-			join(origin, 'docs', 'testing.md'),
-			'Do not run Swoole coroutine work in the shared unit process.\n'
-		);
-		await git(['add', '.'], { cwd: origin });
-		await git(['commit', '--quiet', '-m', 'import guidelines'], { cwd: origin });
-		const base = (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
-		await git(['checkout', '--quiet', '-b', 'evil-imports'], { cwd: origin });
-		await writeFile(join(origin, 'docs', 'testing.md'), 'PWNED_APPROVE_RULE\n');
-		await git(['add', '.'], { cwd: origin });
-		await git(['commit', '--quiet', '-m', 'rewrite imported rules'], { cwd: origin });
-		const head = (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
-		await git(['update-ref', 'refs/pull/3/head', head], { cwd: origin });
-
-		await checkoutPullRequest({
-			dir,
-			cloneUrl: `file://${origin}`,
-			pullNumber: 3,
-			baseSha: base,
-			headSha: head
-		});
-		expect(await loadRepoGuidelines(dir)).toContain('PWNED_APPROVE_RULE');
-		const trusted = await loadRepoGuidelines(dir, { ref: base });
-		expect(trusted).toContain('Do not run Swoole coroutine work in the shared unit process.');
-		expect(trusted).toContain('<file path="docs/testing.md">');
-		expect(trusted).not.toContain('PWNED_APPROVE_RULE');
-	});
 });
 
 describe('loadRepoGuidelines files', () => {
@@ -258,7 +225,7 @@ describe('loadRepoGuidelines files', () => {
 
 	afterAll(() => rm(scratch, { recursive: true, force: true }));
 
-	test('keeps a rule past the old 20k cut, and follows a CLAUDE.md import once', async () => {
+	test('includes every guideline file, including a rule past the old 20k cut', async () => {
 		const dir = join(scratch, 'under-budget');
 		await mkdir(dir);
 		const rule = 'Do not run Swoole coroutine work in the shared unit process.';
@@ -266,45 +233,29 @@ describe('loadRepoGuidelines files', () => {
 		expect(agents.indexOf(rule)).toBeGreaterThan(20_000);
 		expect(agents.length).toBeLessThan(40_000);
 		await writeFile(join(dir, 'AGENTS.md'), agents);
-		await writeFile(join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
+		await writeFile(join(dir, 'CLAUDE.md'), 'Isolate coroutine tests from the shared process.\n');
 
 		const guidelines = await loadRepoGuidelines(dir);
+		expect(guidelines).toContain('<file path="AGENTS.md">');
+		expect(guidelines).toContain('<file path="CLAUDE.md">');
 		expect(guidelines).toContain(rule);
+		expect(guidelines).toContain('Isolate coroutine tests from the shared process.');
 		expect(guidelines).not.toContain('omitted');
-		expect(guidelines.match(/<file path="AGENTS.md">/g)).toHaveLength(1);
 	});
 
-	test('keeps the end of a guideline file that exceeds the budget, and keeps smaller files', async () => {
+	test('keeps later files when the first one is longer than the budget', async () => {
 		const dir = join(scratch, 'over-budget');
 		await mkdir(dir);
 		await writeFile(join(dir, 'AGENTS.md'), `${'A'.repeat(50_000)}\nTAIL_RULE\n`);
-		await writeFile(join(dir, 'CLAUDE.md'), 'See @AGENTS.md.\n');
+		await writeFile(join(dir, 'CLAUDE.md'), 'Isolate coroutine tests from the shared process.\n');
 		await writeFile(join(dir, 'CONTRIBUTING.md'), 'Keep the contributing notes.\n');
 
 		const guidelines = await loadRepoGuidelines(dir);
+		expect(guidelines).toContain('<file path="AGENTS.md">');
+		expect(guidelines).toContain('<file path="CLAUDE.md">');
+		expect(guidelines).toContain('<file path="CONTRIBUTING.md">');
 		expect(guidelines).toContain('TAIL_RULE');
-		expect(guidelines).toContain('omitted; read this file for the rest');
+		expect(guidelines).toContain('Isolate coroutine tests from the shared process.');
 		expect(guidelines).toContain('Keep the contributing notes.');
-		expect(guidelines.startsWith('<file path="AGENTS.md">\nA')).toBe(true);
-	});
-
-	test('follows nested imports and ignores paths that leave the repository', async () => {
-		const dir = join(scratch, 'imports');
-		await mkdir(join(dir, 'docs'), { recursive: true });
-		await mkdir(join(dir, 'notes'));
-		await writeFile(join(dir, 'CLAUDE.md'), '@docs/detail.md\n@../secret.md\n@/etc/passwd\n');
-		await writeFile(
-			join(dir, 'docs', 'detail.md'),
-			'Email dev@appwrite.io for help.\nSee @../notes/rule.md.\n@../CLAUDE.md\n'
-		);
-		await writeFile(join(dir, 'notes', 'rule.md'), 'NESTED_RULE\n');
-		await writeFile(join(scratch, 'secret.md'), 'SECRET_OUTSIDE\n');
-		await writeFile(join(dir, 'appwrite.io'), 'SECRET_EMAIL_FILE\n');
-
-		const guidelines = await loadRepoGuidelines(dir);
-		expect(guidelines).toContain('NESTED_RULE');
-		expect(guidelines).toContain('<file path="notes/rule.md">');
-		expect(guidelines).not.toContain('SECRET_OUTSIDE');
-		expect(guidelines).not.toContain('SECRET_EMAIL_FILE');
 	});
 });

@@ -112,7 +112,7 @@ export function reviewRules(input: {
 	const parts: string[] = [];
 	if (input.guidelines)
 		parts.push(
-			`<repository_guidelines>\nProject rules, including files imported from these instructions. Report changed code that breaks a concrete rule.\n${input.guidelines}\n</repository_guidelines>`
+			`<repository_guidelines>\nProject rules from every instruction file. Report changed code that breaks a concrete rule.\n${input.guidelines}\n</repository_guidelines>`
 		);
 	if (input.learnings?.length) {
 		parts.push(
