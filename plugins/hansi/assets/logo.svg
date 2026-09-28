@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+	<title>Hansi</title>
+	<rect width="32" height="32" rx="8" fill="#fafaf9"/>
+	<path fill="#1c1917" d="M5 18 C 4.6 13.5, 5.6 10.6, 7 9 L 7.4 3.5 L 12 8 C 14.6 7.4, 17.4 7.4, 20 8 L 24.6 3.5 L 25 9 C 26.4 10.6, 27.4 13.5, 27 18 C 26.5 23.5, 22 27, 16 27 C 10 27, 5.5 23.5, 5 18 Z"/>
+	<ellipse fill="#fafaf9" cx="11.8" cy="16.4" rx="1.5" ry="2"/>
+	<ellipse fill="#fafaf9" cx="20.2" cy="16.4" rx="1.5" ry="2"/>
+	<path fill="#fafaf9" d="M14.8 20.2 L 17.2 20.2 L 16 21.6 Z"/>
+</svg>
