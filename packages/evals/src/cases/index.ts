@@ -2,9 +2,22 @@ import type { EvalCase } from '../types';
 
 /** 1-based line range of the first line containing `needle`, so expectations track the code. */
 function lineOf(content: string, needle: string): [number, number] {
-	const index = content.split('\n').findIndex((line) => line.includes(needle));
-	if (index === -1) throw new Error(`"${needle}" not found`);
-	return [index + 1, index + 1];
+	return lineOfNth(content, needle, 1);
+}
+
+/** 1-based line of the nth occurrence of `needle` (1-based). */
+function lineOfNth(content: string, needle: string, occurrence: number): [number, number] {
+	let from = 0;
+	for (let n = 1; n <= occurrence; n++) {
+		const index = content.indexOf(needle, from);
+		if (index === -1) throw new Error(`"${needle}" occurrence ${occurrence} not found`);
+		if (n === occurrence) {
+			const line = content.slice(0, index).split('\n').length;
+			return [line, line];
+		}
+		from = index + needle.length;
+	}
+	throw new Error(`"${needle}" occurrence ${occurrence} not found`);
 }
 
 const paginate = `/** Pages are 1-based: page 1 is the first page. */
@@ -138,6 +151,239 @@ export async function fetchJson(url: string, options: FetchOptions = {}): Promis
 		}
 	}
 }
+`;
+
+const detector = `export type Adapter = 'static' | 'ssr';
+
+/**
+ * A prerender block narrowed with routes or filter still needs the server adapter.
+ * crawlLinks alone prerenders the whole site, so that stays static.
+ */
+export function adapter(source: string): Adapter {
+	const body = prerenderBody(source);
+	if (body === null) return 'static';
+	if (narrowed(body)) return 'ssr';
+	return 'static';
+}
+
+/** The object literal after prerender:, or null when the app does not prerender. */
+function prerenderBody(source: string): string | null {
+	const block = source.match(/prerender\\s*:\\s*\\{([^}]*)\\}/);
+	return block ? (block[1] ?? null) : null;
+}
+
+function narrowed(body: string): boolean {
+	return /\\broutes\\s*:/.test(body) || /\\bfilter\\s*:/.test(body);
+}
+`;
+
+const storageBase = `/** Content-Type may include parameters, for example application/xml; charset=UTF-8. */
+export function mediaType(header: string): string {
+	const [type] = header.split(';');
+	return (type ?? '').trim().toLowerCase();
+}
+
+export function escapeXml(value: string): string {
+	return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/** Deletes one object. Keys are text, so they are escaped before they enter the XML body. */
+export function deleteObject(key: string): string {
+	const body = \`<Object><Key>\${escapeXml(key)}</Key></Object>\`;
+	return \`<?xml version="1.0"?><Delete>\${body}</Delete>\`;
+}
+`;
+
+const storageHead = `${storageBase}
+function parseXml(raw: string): { Error?: { Key: string; Message: string } } {
+	if (!raw.includes('<Error>')) return {};
+	return { Error: { Key: 'object', Message: 'AccessDenied' } };
+}
+
+/** Deletes every listed key in one request. */
+export function deleteKeys(keys: string[]): string {
+	const objects = keys.map((key) => \`<Object><Key>\${key}</Key></Object>\`).join('');
+	return \`<?xml version="1.0"?><Delete>\${objects}</Delete>\`;
+}
+
+/**
+ * True when a bulk-delete response names a key that was not deleted.
+ * Callers pass the raw response body and the Content-Type header.
+ */
+export function deletionFailed(contentType: string, raw: string): boolean {
+	const body = contentType === 'application/xml' ? parseXml(raw) : raw;
+	if (typeof body !== 'object' || body === null) return false;
+	return 'Error' in body;
+}
+`;
+
+const onboardingBase = `export type StageStatus = 'pending' | 'skipped' | 'completed';
+
+export interface Stage {
+	id: string;
+	status: StageStatus;
+}
+
+export interface Store {
+	write(projectId: string, stages: Stage[]): Promise<void>;
+}
+
+/**
+ * One project's onboarding stages.
+ * skip and complete are separate requests and can run at the same time.
+ */
+export class Onboarding {
+	stages: Stage[] = [];
+
+	constructor(
+		private readonly projectId: string,
+		private readonly store: Store
+	) {}
+
+	async skip(id: string): Promise<void> {
+		const next = this.stages.map((stage) => ({ ...stage }));
+		const stage = next.find((item) => item.id === id);
+		if (stage) stage.status = 'skipped';
+		await this.save(next);
+	}
+
+	async complete(id: string): Promise<void> {
+		const next = this.stages.map((stage) => ({ ...stage }));
+		const stage = next.find((item) => item.id === id);
+		if (stage && stage.status === 'pending') stage.status = 'completed';
+		await this.save(next);
+	}
+
+	private async save(next: Stage[]): Promise<void> {
+		await this.store.write(this.projectId, next);
+		this.stages = next;
+	}
+}
+`;
+
+const onboardingHead = `export type StageStatus = 'pending' | 'skipped' | 'completed';
+
+export interface Stage {
+	id: string;
+	status: StageStatus;
+}
+
+export interface Store {
+	write(projectId: string, stages: Stage[]): Promise<void>;
+}
+
+/**
+ * One project's onboarding stages.
+ * skip and complete are separate requests and can run at the same time.
+ */
+export class Onboarding {
+	stages: Stage[] = [];
+	private gate: Promise<void> = Promise.resolve();
+
+	constructor(
+		private readonly projectId: string,
+		private readonly store: Store
+	) {}
+
+	async skip(id: string): Promise<void> {
+		const next = this.stages.map((stage) => ({ ...stage }));
+		const stage = next.find((item) => item.id === id);
+		if (stage && stage.status !== 'completed') stage.status = 'skipped';
+		await this.save(next);
+	}
+
+	async complete(id: string): Promise<void> {
+		const previous = this.gate;
+		let done = () => undefined;
+		this.gate = new Promise<void>((resolve) => {
+			done = resolve;
+		});
+		await previous;
+		try {
+			const next = this.stages.map((stage) => ({ ...stage }));
+			const stage = next.find((item) => item.id === id);
+			if (stage && stage.status !== 'completed') stage.status = 'completed';
+			await this.save(next);
+		} finally {
+			done();
+		}
+	}
+
+	private async save(next: Stage[]): Promise<void> {
+		await this.store.write(this.projectId, next);
+		this.stages = next;
+	}
+}
+`;
+
+const avatarsBase = `/** Pulls {response.field} out of a JSON body. A missing field becomes an empty id. */
+export function resourceId(template: string, body: unknown): string {
+	return template.replace(/\\{response\\.(\\w+)\\}/g, (_match, key: string) => {
+		if (!body || typeof body !== 'object' || !(key in body)) return '';
+		return String((body as Record<string, unknown>)[key]);
+	});
+}
+
+/** Drops the event when the label does not resolve to a resource id. */
+export function record(template: string, body: unknown, events: string[]): void {
+	const id = resourceId(template, body);
+	if (!id) return;
+	events.push(\`\${id} \${template}\`);
+}
+
+export function createAvatar(userId: string, events: string[]): { status: number } {
+	const body = { userId };
+	record('avatars.create {response.userId}', body, events);
+	return { status: 201 };
+}
+`;
+
+const avatarsHead = `${avatarsBase}
+export function deleteAvatar(userId: string, events: string[]): { status: number } {
+	record('avatars.delete {response.userId}', null, events);
+	return { status: 204 };
+}
+`;
+
+const avatarBytesBase = `export interface StoredAvatar {
+	contentType: string;
+	bytes: Uint8Array;
+}
+
+/** PNG bytes pass through. Anything else cannot be transcoded here and returns null. */
+export function toPng(bytes: Uint8Array): Uint8Array | null {
+	if (bytes.length >= 2 && bytes[0] === 0x89 && bytes[1] === 0x50) return bytes;
+	return null;
+}
+`;
+
+const avatarBytesHead = `${avatarBytesBase}
+export function acceptAvatar(filename: string, bytes: Uint8Array): StoredAvatar {
+	const dot = filename.lastIndexOf('.');
+	const ext = dot === -1 ? '' : filename.slice(dot).toLowerCase();
+	if (ext !== '.png' && ext !== '.jpg' && ext !== '.webp') {
+		throw new Error('Only PNG, JPEG, and WebP avatars are allowed');
+	}
+	const png = toPng(bytes);
+	if (!png) return { contentType: 'image/png', bytes };
+	return { contentType: 'image/png', bytes: png };
+}
+`;
+
+const queueBase = `export const MAX_DELIVER = 5;
+
+export function spareDelivery(maxDeliver: number): number {
+	return maxDeliver + 1;
+}
+`;
+
+const queueTest = `import { expect, test } from 'bun:test';
+import { MAX_DELIVER, spareDelivery } from './queue';
+
+test('spare delivery is one past the configured maximum', () => {
+	expect(spareDelivery(MAX_DELIVER)).toBe(MAX_DELIVER + 1);
+	expect(MAX_DELIVER).toBe(5);
+});
 `;
 
 export const cases: EvalCase[] = [
@@ -372,6 +618,136 @@ test('an empty cart costs nothing', () => {
 `
 		},
 		pullRequest: { title: 'Add tests for total()' },
+		expected: []
+	},
+	{
+		name: 'ts-adjacent-config-match',
+		description:
+			'A new prerender match handles routes: and filter:, and misses a nested object and a shorthand property.',
+		base: {
+			'src/detector.ts': `export type Adapter = 'static' | 'ssr';
+
+/** TanStack Start ships a static adapter unless the app opts into a server. */
+export function adapter(_source: string): Adapter {
+	return 'static';
+}
+`
+		},
+		head: { 'src/detector.ts': detector },
+		pullRequest: {
+			title: 'Treat a narrowed TanStack Start prerender config as SSR',
+			body: 'A prerender block that sets routes or filter only prerenders some paths, so the app still needs the server adapter. crawlLinks on its own stays static.'
+		},
+		expected: [
+			{
+				path: 'src/detector.ts',
+				lines: lineOf(detector, 'prerender\\s*:\\s*\\{([^}]*)\\}'),
+				description:
+					"The capture stops at the first }, so prerender: { ...{ crawlLinks: true }, routes: ['/'] } is classified static."
+			},
+			{
+				path: 'src/detector.ts',
+				lines: lineOf(detector, 'return /\\broutes\\s*:/.test(body)'),
+				description:
+					'A shorthand property such as prerender: { routes, crawlLinks: true } has no routes: and stays static.'
+			}
+		]
+	},
+	{
+		name: 'ts-bulk-delete-encoding',
+		description:
+			'Recursive bulk delete inserts raw keys into XML, and an error document with a charset is treated as success.',
+		base: {
+			'src/storage.ts': storageBase
+		},
+		head: { 'src/storage.ts': storageHead },
+		pullRequest: {
+			title: 'Bulk-delete listed keys and report per-key errors',
+			body: 'Deleting a prefix now deletes every listed object, and a bulk-delete response that names a failed key is reported as a failure.'
+		},
+		expected: [
+			{
+				path: 'src/storage.ts',
+				lines: lineOf(storageHead, '<Object><Key>${key}</Key></Object>'),
+				description:
+					'Listed keys are inserted into the XML body without escapeXml, so a key containing & or < makes the request malformed and the objects remain.'
+			},
+			{
+				path: 'src/storage.ts',
+				lines: lineOf(storageHead, "contentType === 'application/xml'"),
+				description:
+					'A per-key error sent as application/xml; charset=UTF-8 stays a string and is reported as a successful delete.'
+			}
+		]
+	},
+	{
+		name: 'ts-unlocked-stage-write',
+		description:
+			'Completing a skipped stage takes a lock; skip still publishes a stale copy and can revert that completion.',
+		base: { 'src/onboarding.ts': onboardingBase },
+		head: { 'src/onboarding.ts': onboardingHead },
+		pullRequest: {
+			title: 'Complete a skipped onboarding stage when its action succeeds',
+			body: 'A successful action upgrades a skipped stage to completed. A stage that is already completed stays completed.'
+		},
+		expected: [
+			{
+				path: 'src/onboarding.ts',
+				lines: [
+					lineOf(onboardingHead, 'await this.save(next);')[0],
+					lineOfNth(onboardingHead, 'await this.save(next);', 2)[0]
+				],
+				description:
+					'skip copies the stage list and writes it without the gate, so a completion that lands during save can be overwritten with skipped.'
+			}
+		]
+	},
+	{
+		name: 'ts-audit-label-empty-body',
+		description:
+			'A 204 delete audits {response.userId}, which the resolver can only read from a body.',
+		base: {
+			'src/avatars.ts': avatarsBase
+		},
+		head: { 'src/avatars.ts': avatarsHead },
+		pullRequest: {
+			title: 'Audit avatar deletion',
+			body: 'Deleting an avatar records an audit event for that user, using the same label shape as create.'
+		},
+		expected: [
+			{
+				path: 'src/avatars.ts',
+				lines: lineOf(avatarsHead, "record('avatars.delete {response.userId}', null"),
+				description:
+					'The delete returns no body, so {response.userId} resolves to an empty id and record() drops the audit.'
+			}
+		]
+	},
+	{
+		name: 'ts-served-type-mismatch',
+		description:
+			'An avatar named .png is stored and served as image/png when its bytes are not a PNG.',
+		base: { 'src/avatars.ts': avatarBytesBase },
+		head: { 'src/avatars.ts': avatarBytesHead },
+		pullRequest: {
+			title: 'Accept PNG, JPEG, and WebP avatars',
+			body: 'Uploads are limited to those extensions and stored as PNG. If transcoding fails, the original upload is kept.'
+		},
+		expected: [
+			{
+				path: 'src/avatars.ts',
+				lines: lineOf(avatarBytesHead, "return { contentType: 'image/png', bytes }"),
+				description:
+					'A file named photo.png whose bytes are SVG fails toPng and is served as image/png anyway.'
+			}
+		]
+	},
+	{
+		name: 'clean-mirrored-assertion',
+		description: 'A test asserts the configured constant directly. Any comment is noise.',
+		base: { 'src/queue.ts': queueBase },
+		head: { 'src/queue.test.ts': queueTest },
+		pullRequest: { title: 'Cover spare delivery' },
 		expected: []
 	}
 ];
