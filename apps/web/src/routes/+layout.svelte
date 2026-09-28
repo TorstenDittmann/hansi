@@ -7,7 +7,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import Menu from '$lib/components/Menu.svelte';
-	import { startAnalytics } from '$lib/analytics';
+	import { identifyAnalyticsUser, resetAnalyticsIdentity, startAnalytics } from '$lib/analytics';
 	import { authClient } from '$lib/auth-client';
 	import {
 		DEFAULT_DESCRIPTION,
@@ -76,31 +76,34 @@
 		'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-stone-100 dark:hover:bg-stone-800';
 
 	// Analytics on hansi.codes (see $lib/analytics): page views, and who is signed in.
-	let posthog: PostHog | null = $state(null);
+	// The client stays off $state so its methods keep their own `this`.
+	let posthog: PostHog | null = null;
+	let analyticsReady = $state(false);
+	let signedIn = false;
 	onMount(() => {
-		void startAnalytics(data.user?.id).then((client) => {
+		void startAnalytics(data.user).then((client) => {
 			posthog = client;
+			signedIn = !!data.user;
+			analyticsReady = true;
 			client?.capture('$pageview');
 		});
 	});
 	afterNavigate(({ type }) => {
 		if (type !== 'enter') posthog?.capture('$pageview');
 	});
-	// Visitors who never signed in stay anonymous; reset only once an identified user signs out.
-	let identifiedId: string | null = null;
 	$effect(() => {
-		if (!posthog) return;
-		if (data.user) {
-			const { id, name, email, login } = data.user;
-			posthog.identify(id, { name, email, github_login: login });
-			identifiedId = id;
-		} else if (identifiedId) {
-			posthog.reset();
-			identifiedId = null;
+		if (!analyticsReady || !posthog) return;
+		const user = data.user;
+		if (user) {
+			identifyAnalyticsUser(posthog, user);
+			signedIn = true;
+		} else if (signedIn) {
+			resetAnalyticsIdentity(posthog);
+			signedIn = false;
 		}
 	});
 	$effect(() => {
-		if (posthog && activeOrganization) {
+		if (analyticsReady && posthog && activeOrganization) {
 			posthog.group('organization', activeOrganization.id, { name: activeOrganization.name });
 		}
 	});

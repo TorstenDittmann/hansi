@@ -6,7 +6,7 @@ import { APIError } from 'better-auth/api';
 import { organization } from 'better-auth/plugins';
 import { and, count, eq, gt } from 'drizzle-orm';
 import { prepareAccountDeletion } from './account';
-import { track } from './analytics';
+import { analyticsPerson, track } from './analytics';
 import { getContext, getGitHubCredentials } from './context';
 import { findActiveInviteLink, inviteTokenFromCookie } from './invite-link';
 
@@ -85,7 +85,11 @@ async function createAuth() {
 						}
 					},
 					after: async (user) => {
-						await track({ distinctId: user.id, event: 'signed up' });
+						await track({
+							distinctId: user.id,
+							event: 'signed up',
+							person: analyticsPerson(user)
+						});
 					}
 				}
 			}
