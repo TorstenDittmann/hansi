@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ReviewsTable from '$lib/components/ReviewsTable.svelte';
 	import { reviewSearch } from '$lib/reviews';
@@ -10,16 +9,30 @@
 	const showFilters = $derived(data.repositories.length > 0 || filtered);
 	const showRepository = $derived(data.repositories.length > 1 || Boolean(data.repository));
 
-	function applyFilters(event: SubmitEvent) {
-		event.preventDefault();
-		const form = new FormData(event.currentTarget as HTMLFormElement);
-		const repository = form.get('repo');
-		const search = reviewSearch({
-			query: String(form.get('q') ?? ''),
-			repository: typeof repository === 'string' ? repository : '',
-			status: String(form.get('status') ?? '')
+	/**
+	 * Blank controls still have names, so a GET form would put `repo=` and `status=` in the
+	 * URL. Disable them before SvelteKit builds `FormData` from the bubbling `submit` event.
+	 * Capturing runs first; the fields are restored on the next task.
+	 */
+	function omitBlankFields(event: SubmitEvent) {
+		const form = event.currentTarget;
+		if (!(form instanceof HTMLFormElement)) return;
+
+		const blank: Array<HTMLInputElement | HTMLSelectElement> = [];
+		for (const field of form.elements) {
+			if (
+				(field instanceof HTMLInputElement || field instanceof HTMLSelectElement) &&
+				field.name &&
+				!field.disabled &&
+				field.value.trim() === ''
+			) {
+				field.disabled = true;
+				blank.push(field);
+			}
+		}
+		setTimeout(() => {
+			for (const field of blank) field.disabled = false;
 		});
-		void goto(search ? resolve(`/app/reviews?${search.slice(1)}`) : resolve('/app/reviews'));
 	}
 </script>
 
@@ -33,7 +46,7 @@
 			class="flex flex-wrap items-center gap-3"
 			method="GET"
 			action={resolve('/app/reviews')}
-			onsubmit={applyFilters}
+			onsubmitcapture={omitBlankFields}
 		>
 			<input
 				class="input max-w-xs"
@@ -108,11 +121,7 @@
 							status: data.status,
 							page: data.page - 1
 						})}
-						<a
-							class="btn"
-							href={search ? resolve(`/app/reviews?${search.slice(1)}`) : resolve('/app/reviews')}
-							>Previous</a
-						>
+						<a class="btn" href="{resolve('/app/reviews')}{search}">Previous</a>
 					{:else}
 						<span class="btn pointer-events-none opacity-50" aria-disabled="true">Previous</span>
 					{/if}
@@ -123,7 +132,7 @@
 							status: data.status,
 							page: data.page + 1
 						})}
-						<a class="btn" href={resolve(`/app/reviews?${search.slice(1)}`)}>Next</a>
+						<a class="btn" href="{resolve('/app/reviews')}{search}">Next</a>
 					{:else}
 						<span class="btn pointer-events-none opacity-50" aria-disabled="true">Next</span>
 					{/if}
