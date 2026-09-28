@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { blockingSeverity, severityAtLeast, type RepoConfig, type Severity } from '@hans/config';
-import { generateText, hasToolCall, isStepCount, tool, type LanguageModel } from 'ai';
+import { generateText, isStepCount, tool, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
 	commentableLines,
@@ -263,7 +263,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			instructions: reviewerInstructions(config),
 			prompt: cachedPrompt(input.models.review, prompt),
 			tools: { ...tools, submit_review: submitReview },
-			stopWhen: [isStepCount(limits.maxReviewSteps), hasToolCall('submit_review')],
+			stopWhen: [isStepCount(limits.maxReviewSteps), validCall('submit_review')],
 			// Out of steps: submit what was found so far instead of failing the whole review.
 			prepareStep: ({ stepNumber }) =>
 				stepNumber >= limits.maxReviewSteps - 1
@@ -275,10 +275,12 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			abortSignal: input.signal
 		})
 	);
-	const submission = review.toolCalls.findLast((call) => call.toolName === 'submit_review');
+	const submission = review.toolCalls.findLast(
+		(call) => call.toolName === 'submit_review' && !call.invalid
+	);
 	if (!submission) {
 		throw new Error(
-			'The review model did not submit a review. Check that it supports tool calling.'
+			'The review model did not submit a valid review. Check that it supports tool calling.'
 		);
 	}
 	const submitted = submissionSchema.parse(submission.input);
@@ -455,6 +457,15 @@ export function mergeWalkthrough(
 	return [...current, ...carried];
 }
 
+/**
+ * Stops once `toolName` was called with valid input. A call that does not match the schema, such
+ * as an unknown category, gets the validation error back so the model can submit again.
+ */
+function validCall(toolName: string) {
+	return ({ steps }: { steps: { toolCalls: { toolName: string; invalid?: boolean }[] }[] }) =>
+		steps.at(-1)?.toolCalls.some((call) => call.toolName === toolName && !call.invalid) ?? false;
+}
+
 function withoutSuggestion(finding: Finding): Finding {
 	const copy = { ...finding };
 	delete copy.suggestion;
@@ -551,7 +562,7 @@ async function verifyFindings(
 				[`Pull request: ${input.pullRequest.title}`, ...rules, ...listing].join('\n\n')
 			),
 			tools: { ...tools, submit_verdicts: submitVerdicts },
-			stopWhen: [isStepCount(maxSteps), hasToolCall('submit_verdicts')],
+			stopWhen: [isStepCount(maxSteps), validCall('submit_verdicts')],
 			prepareStep: ({ stepNumber }) =>
 				stepNumber >= maxSteps - 1
 					? {
@@ -563,7 +574,7 @@ async function verifyFindings(
 		})
 	);
 
-	const call = result.toolCalls.findLast((c) => c.toolName === 'submit_verdicts');
+	const call = result.toolCalls.findLast((c) => c.toolName === 'submit_verdicts' && !c.invalid);
 	const verdicts = call ? verdictsSchema.parse(call.input).verdicts : [];
 	const byId = new Map(verdicts.map((v) => [v.id, v]));
 	input.onEvent?.({ type: 'verify.completed', data: { verdicts } });

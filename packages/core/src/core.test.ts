@@ -252,6 +252,36 @@ describe('runReview', () => {
 		});
 	});
 
+	test('lets the model fix a submission that does not match the schema', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [{ ...finding(2, 'Division by zero'), category: 'correctness' }]
+				}),
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [finding(2, 'Division by zero')]
+				}),
+				toolCall('submit_verdicts', { verdicts: 'F1 keep' }),
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: false, reason: 'no' }] })
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.dropped.map((f) => f.dropReason)).toEqual(['Verifier: no']);
+		// Each retry sees why its submission was rejected.
+		for (const retry of [model.doGenerateCalls[1], model.doGenerateCalls[3]]) {
+			expect(JSON.stringify(retry?.prompt)).toContain('Invalid input for tool');
+		}
+	});
+
 	test('accepts null for optional fields instead of failing the review', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [
