@@ -120,6 +120,40 @@ describe('file_history', () => {
 	});
 });
 
+describe('read_file', () => {
+	test('reads a file as it was before the pull request', async () => {
+		const dir = join(root, 'checkout-read-base');
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 1,
+			baseSha: sha.base!,
+			headSha: sha.second!
+		});
+		const read = (tools: ReturnType<typeof createRepoTools>, path: string, ref?: 'base') =>
+			tools.read_file.execute!({ path, ref }, { toolCallId: 't', messages: [] } as never);
+		const tools = createRepoTools(dir, () => {}, { baseRef: sha.base! });
+
+		expect(await read(tools, 'a.ts')).toContain('export const a = 2;');
+		const before = await read(tools, 'a.ts', 'base');
+		expect(before).toStartWith('a.ts at base (lines 1-2 of 2)');
+		expect(before).toContain('export const a = 1;');
+		expect(await read(tools, 'b.ts', 'base')).toBe(
+			'Error: b.ts does not exist at the base; it is new in this pull request'
+		);
+		expect(await read(tools, '../outside', 'base')).toStartWith(
+			'Error: Path is outside the repository'
+		);
+		expect(
+			await read(
+				createRepoTools(dir, () => {}),
+				'a.ts',
+				'base'
+			)
+		).toBe('Error: The base version is not available here');
+	});
+});
+
 describe('loadRepoGuidelines', () => {
 	test('reads guidelines from the trusted base, not from the pull request', async () => {
 		const dir = join(root, 'checkout-guidelines');

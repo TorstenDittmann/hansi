@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { git } from './git';
+import { git, GitError } from './git';
 import { astLanguages, astSearch } from './structure';
 
 export type ReviewEvent = { type: string; data?: Record<string, unknown> };
@@ -26,25 +26,49 @@ export function resolveRepoPath(repoDir: string, path: string): string {
 
 /**
  * Read-only tools over the checked-out repository. No code is ever executed. The token lets git
- * download blobs a partial clone does not have yet, e.g. for patches in `file_history`.
+ * download blobs a partial clone does not have yet, e.g. for patches in `file_history`. With a
+ * `baseRef`, `read_file` can also show a file as it was before the pull request.
  */
 export function createRepoTools(
 	repoDir: string,
 	emit: EmitEvent,
-	options: { token?: string } = {}
+	options: { token?: string; baseRef?: string } = {}
 ) {
+	// Where the pull request branched off: the base branch may have moved on since.
+	let forkPoint: Promise<string> | undefined;
+	const readSource = async (path: string, ref?: 'base') => {
+		const absolute = resolveRepoPath(repoDir, path);
+		if (!ref) return readFile(absolute, 'utf8');
+		const { baseRef, token } = options;
+		if (!baseRef) throw new Error('The base version is not available here');
+		forkPoint ??= git(['merge-base', baseRef, 'HEAD'], { cwd: repoDir, token })
+			.then((sha) => sha.trim())
+			.catch(() => baseRef);
+		const file = relative(repoDir, absolute);
+		return git(['show', `${await forkPoint}:${file}`], { cwd: repoDir, token }).catch((error) => {
+			if (error instanceof GitError && /does not exist|but not in/.test(error.stderr)) {
+				throw new Error(`${path} does not exist at the base; it is new in this pull request`);
+			}
+			throw error;
+		});
+	};
+
 	return {
 		read_file: tool({
-			description: `Read a file from the repository at the PR head, with line numbers. Returns at most ${MAX_READ_LINES} lines; use startLine/endLine for large files.`,
+			description: `Read a file from the repository at the PR head, with line numbers. Returns at most ${MAX_READ_LINES} lines; use startLine/endLine for large files. Set ref to "base" to read the file as it was before the pull request, e.g. to compare old and new behavior.`,
 			inputSchema: z.object({
 				path: z.string(),
 				startLine: z.number().int().positive().optional(),
-				endLine: z.number().int().positive().optional()
+				endLine: z.number().int().positive().optional(),
+				ref: z
+					.enum(['base'])
+					.optional()
+					.describe('"base" for the version before the pull request; omit for the PR head')
 			}),
-			execute: async ({ path, startLine = 1, endLine }) => {
-				emit({ type: 'tool.read_file', data: { path, startLine, endLine } });
+			execute: async ({ path, startLine = 1, endLine, ref }) => {
+				emit({ type: 'tool.read_file', data: { path, startLine, endLine, ref } });
 				try {
-					const lines = (await readFile(resolveRepoPath(repoDir, path), 'utf8')).split('\n');
+					const lines = (await readSource(path, ref)).split('\n');
 					const end = Math.min(
 						endLine ?? lines.length,
 						startLine + MAX_READ_LINES - 1,
@@ -55,7 +79,8 @@ export function createRepoTools(
 						.map((line, i) => `${String(startLine + i).padStart(5)}  ${line}`)
 						.join('\n');
 					const more = end < lines.length ? `\n… ${lines.length - end} more lines` : '';
-					return `${path} (lines ${startLine}-${end} of ${lines.length})\n${body}${more}`;
+					const at = ref ? ' at base' : '';
+					return `${path}${at} (lines ${startLine}-${end} of ${lines.length})\n${body}${more}`;
 				} catch (error) {
 					return `Error: ${(error as Error).message}`;
 				}

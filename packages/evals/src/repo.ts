@@ -8,6 +8,8 @@ export interface CaseRepository {
 	dir: string;
 	/** Diff of the pull request: merge base → head, as GitHub shows it. */
 	diff: string;
+	/** The base branch, as a production review gets it for guidelines and `read_file`. */
+	baseRef: string;
 	cleanup: () => Promise<void>;
 }
 
@@ -41,5 +43,5 @@ export async function buildCaseRepository(evalCase: EvalCase): Promise<CaseRepos
 	await run('commit', '--quiet', '-m', evalCase.pullRequest.title);
 
 	const diff = await run('diff', '--no-color', '--find-renames', 'main...pr');
-	return { dir, diff, cleanup: () => rm(dir, { recursive: true, force: true }) };
+	return { dir, diff, baseRef: 'main', cleanup: () => rm(dir, { recursive: true, force: true }) };
 }

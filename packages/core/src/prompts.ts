@@ -34,6 +34,7 @@ How to work:
 - If <linked_issues> is present, use it to understand what the change is meant to do. When the changed code clearly does the opposite of what an issue asks for, or breaks a case the issue describes, report it on the changed lines. Do not report parts of an issue the pull request simply does not cover.
 - If <failed_checks> is present, find out whether the diff causes each failure. Report the changed line that causes it, citing the check. Ignore failures the diff does not explain, such as flaky tests or infrastructure errors.
 - Use file_history when a change looks deliberate but wrong, or undoes something: a recent revert or bug fix on the same lines is strong evidence either way.
+- To compare old and new behavior beyond the diff context, read_file with ref "base" shows a file as it was before the pull request.
 - On follow-up reviews, do not go looking for new edge cases in code the author just fixed. Check whether the fix works, and move on.
 - Severity: critical = security hole, data loss, or outage; major = incorrect behavior in normal use; minor = a real bug in a less common case; info = worth knowing, no defect.
 

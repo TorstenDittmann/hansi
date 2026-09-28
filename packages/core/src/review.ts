@@ -230,7 +230,10 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: [];
 	});
 
-	const tools = createRepoTools(input.repoDir, emit, { token: input.trustedSource?.token });
+	const tools = createRepoTools(input.repoDir, emit, {
+		token: input.trustedSource?.token,
+		baseRef: input.trustedSource?.ref
+	});
 	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
