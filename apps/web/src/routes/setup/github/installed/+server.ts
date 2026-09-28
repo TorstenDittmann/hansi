@@ -2,7 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { getGitHubUserToken } from '$lib/server/github-user';
 import { getContext, getGitHubCredentials } from '$lib/server/context';
 import { listUserInstallationIds, syncInstallation } from '$lib/server/installations';
-import { track } from '$lib/server/analytics';
+import { analyticsPerson, track } from '$lib/server/analytics';
 import { requireOrganization } from '$lib/server/organization';
 import type { RequestHandler } from './$types';
 
@@ -30,7 +30,8 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 		distinctId: locals.user!.id,
 		event: 'github app installed',
 		organizationId: organization.id,
-		properties: { linked }
+		properties: { linked },
+		person: analyticsPerson(locals.user!)
 	});
 	redirect(303, linked ? '/app/repositories' : '/app/repositories?elsewhere=1');
 };
