@@ -238,6 +238,42 @@ describe('runReview', () => {
 		});
 	});
 
+	test('posts one comment per problem, keeping the most severe copy', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [
+						finding(2, 'Division by zero when b is 0', 'minor'),
+						finding(2, 'Division by zero'),
+						{ ...finding(3, 'Result is never logged'), category: 'error-handling' }
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real' }
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.severity])).toEqual([
+			['Division by zero', 'major'],
+			['Result is never logged', 'major']
+		]);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			['Division by zero when b is 0', 'Duplicate of another finding in this review']
+		]);
+	});
+
 	test('skips when nothing is reviewable', async () => {
 		const result = await runReview({
 			repoDir,

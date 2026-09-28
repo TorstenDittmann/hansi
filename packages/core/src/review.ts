@@ -306,20 +306,31 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		return keep;
 	});
 
-	// 4. Verify: a second, skeptical pass removes false positives.
-	const verified = relevant.length
-		? await verifyFindings(relevant, input, tools, limits.maxVerifySteps, dropped, (finding) => {
+	// 4. One comment per problem: the model sometimes reports the same bug twice. The most
+	//    severe copy is kept.
+	const distinct: Finding[] = [];
+	for (const finding of [...relevant].sort(compareSeverity)) {
+		if (isDuplicateFinding(finding, distinct)) {
+			dropped.push({ ...finding, dropReason: 'Duplicate of another finding in this review' });
+		} else {
+			distinct.push(finding);
+		}
+	}
+
+	// 5. Verify: a second, skeptical pass removes false positives.
+	const verified = distinct.length
+		? await verifyFindings(distinct, input, tools, limits.maxVerifySteps, dropped, (finding) => {
 				// A relocation must not land on something already reported.
 				const placed = place(finding);
 				return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
 			})
 		: [];
 
-	// 5. Cap the number of comments, most severe first.
+	// 6. Cap the number of comments, most severe first.
 	verified.sort(compareSeverity);
 	const capped = verified.slice(0, config.reviews.maxComments);
 
-	// 6. A suggestion is applied verbatim with one click: never post one that breaks the code.
+	// 7. A suggestion is applied verbatim with one click: never post one that breaks the code.
 	const posted = await Promise.all(
 		capped.map(async (finding) => {
 			const check = await checkSuggestion(input.repoDir, finding);
@@ -335,7 +346,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		dropped.push({ ...finding, dropReason: `Over maxComments (${config.reviews.maxComments})` });
 	}
 
-	// 7. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
+	// 8. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
