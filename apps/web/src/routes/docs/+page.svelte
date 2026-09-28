@@ -109,7 +109,7 @@
 			Documentation
 		</h1>
 		<p class="mt-4 text-lg text-stone-500 dark:text-stone-400">
-			How Hansi reviews a pull request, how to configure it, and how to clear a review.
+			How Hansi reviews a pull request, how to configure it, and what the grades mean.
 		</p>
 	</header>
 
@@ -156,8 +156,9 @@
 					validation in editors. Hansi also reads
 					<code class="font-mono text-[0.9em]">AGENTS.md</code>,
 					<code class="font-mono text-[0.9em]">CLAUDE.md</code>,
-					<code class="font-mono text-[0.9em]">.cursorrules</code>, and
-					<code class="font-mono text-[0.9em]">.github/copilot-instructions.md</code>
+					<code class="font-mono text-[0.9em]">.cursorrules</code>,
+					<code class="font-mono text-[0.9em]">.github/copilot-instructions.md</code>, and
+					<code class="font-mono text-[0.9em]">CONTRIBUTING.md</code>
 					as review guidelines. Config and guidelines both come from the pull request's base branch, so
 					a change takes effect once it is merged. Every field is optional.
 				</p>
