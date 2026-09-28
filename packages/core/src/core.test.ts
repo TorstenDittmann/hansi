@@ -202,6 +202,42 @@ describe('runReview', () => {
 		]);
 	});
 
+	test('forces a submission on the last allowed step', async () => {
+		const explore = toolCall('read_file', { path: 'src/math.ts' });
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				explore,
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] }),
+				explore,
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: false, reason: 'no' }] })
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			limits: { maxReviewSteps: 2, maxVerifySteps: 2 }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.dropped.map((f) => f.dropReason)).toEqual(['Verifier: no']);
+		const steps = model.doGenerateCalls.map((call) => ({
+			choice: call.toolChoice,
+			tools: call.tools?.map((t) => t.name)
+		}));
+		expect(steps[0]?.tools).toContain('read_file');
+		expect(steps[1]).toEqual({
+			choice: { type: 'tool', toolName: 'submit_review' },
+			tools: ['submit_review']
+		});
+		expect(steps[2]?.tools).toContain('read_file');
+		expect(steps[3]).toEqual({
+			choice: { type: 'tool', toolName: 'submit_verdicts' },
+			tools: ['submit_verdicts']
+		});
+	});
+
 	test('skips when nothing is reviewable', async () => {
 		const result = await runReview({
 			repoDir,

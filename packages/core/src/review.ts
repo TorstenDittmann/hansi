@@ -249,6 +249,14 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			prompt,
 			tools: { ...tools, submit_review: submitReview },
 			stopWhen: [isStepCount(limits.maxReviewSteps), hasToolCall('submit_review')],
+			// Out of steps: submit what was found so far instead of failing the whole review.
+			prepareStep: ({ stepNumber }) =>
+				stepNumber >= limits.maxReviewSteps - 1
+					? {
+							toolChoice: { type: 'tool', toolName: 'submit_review' },
+							activeTools: ['submit_review']
+						}
+					: undefined,
 			abortSignal: input.signal
 		})
 	);
@@ -497,6 +505,13 @@ async function verifyFindings(
 			prompt: `Pull request: ${input.pullRequest.title}\n\n${listing.join('\n\n')}`,
 			tools: { ...tools, submit_verdicts: submitVerdicts },
 			stopWhen: [isStepCount(maxSteps), hasToolCall('submit_verdicts')],
+			prepareStep: ({ stepNumber }) =>
+				stepNumber >= maxSteps - 1
+					? {
+							toolChoice: { type: 'tool', toolName: 'submit_verdicts' },
+							activeTools: ['submit_verdicts']
+						}
+					: undefined,
 			abortSignal: input.signal
 		})
 	);
