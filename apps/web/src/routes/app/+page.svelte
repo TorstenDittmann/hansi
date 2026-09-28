@@ -3,18 +3,12 @@
 	import ProviderLogo from '$lib/components/ProviderLogo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
-	import { formatCost, formatDate, verdictLabel } from '$lib/format';
+	import { formatCost, formatDate, formatDay, verdictLabel } from '$lib/format';
 
 	let { data } = $props();
 	const costs = $derived(data.costs);
 
 	const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
-	const dayLabel = (day: string) =>
-		new Date(`${day}T00:00:00Z`).toLocaleDateString('en', {
-			month: 'short',
-			day: 'numeric',
-			timeZone: 'UTC'
-		});
 
 	const maxDay = $derived(Math.max(...costs.days.map((d) => d.cost)));
 	const total30 = $derived(costs.days.reduce((sum, d) => sum + d.cost, 0));
@@ -81,7 +75,7 @@
 						<div
 							class="relative flex h-full flex-1 items-end"
 							role="listitem"
-							aria-label="{dayLabel(day.day)}: {formatCost(day.cost)}"
+							aria-label="{formatDay(day.day)}: {formatCost(day.cost)}"
 							onpointerenter={() => (hovered = index)}
 							onpointerleave={() => (hovered = null)}
 						>
@@ -98,17 +92,17 @@
 										? 'left-0'
 										: 'right-0'}"
 								>
-									<span class="muted">{dayLabel(day.day)}</span>
+									<span class="muted">{formatDay(day.day)}</span>
 									<span class="ml-2 font-medium tabular-nums">{formatCost(day.cost)}</span>
 								</div>
 							{/if}
 						</div>
 					{/each}
 				</div>
-				<div class="muted mt-2 flex justify-between text-xs" aria-hidden="true">
-					<span>{dayLabel(costs.days[0]!.day)}</span>
-					<span>{dayLabel(costs.days[14]!.day)}</span>
-					<span>{dayLabel(costs.days[29]!.day)}</span>
+				<div class="muted mt-2 grid grid-cols-3 text-xs" aria-hidden="true">
+					<span>{formatDay(costs.days[0]!.day)}</span>
+					<span class="text-center">{formatDay(costs.days[14]!.day)}</span>
+					<span class="text-right">{formatDay(costs.days[29]!.day)}</span>
 				</div>
 			</div>
 		{/if}
@@ -224,7 +218,9 @@
 								</td>
 								<td class="px-4 py-2">{review.posted}</td>
 								<td class="px-4 py-2 text-right tabular-nums">{formatCost(review.costUsd)}</td>
-								<td class="muted px-4 py-2">{formatDate(review.createdAt)}</td>
+								<td class="muted px-4 py-2 whitespace-nowrap tabular-nums">
+									{formatDate(review.createdAt)}
+								</td>
 							</tr>
 						{/each}
 					</tbody>
