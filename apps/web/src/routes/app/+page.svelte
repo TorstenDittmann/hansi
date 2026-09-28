@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import ProviderLogo from '$lib/components/ProviderLogo.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import TierBadge from '$lib/components/TierBadge.svelte';
-	import { formatCost, formatDate, formatDay, verdictLabel } from '$lib/format';
+	import ReviewsTable from '$lib/components/ReviewsTable.svelte';
+	import { formatCost, formatDay } from '$lib/format';
 
 	let { data } = $props();
 	const costs = $derived(data.costs);
@@ -178,53 +177,18 @@
 	</div>
 
 	<section>
-		<h2 class="text-lg font-semibold">Recent reviews</h2>
+		<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+			<h2 class="text-lg font-semibold">Recent reviews</h2>
+			<a href={resolve('/app/reviews')} class="muted hover:underline">All reviews</a>
+		</div>
 		{#if data.reviews.length === 0}
 			<p class="muted mt-2">
 				Reviews appear here when a pull request is opened or someone comments
 				<code>@{data.appSlug ?? 'hansi'} review</code>.
 			</p>
 		{:else}
-			<div class="card mt-3 overflow-x-auto">
-				<table class="w-full text-left text-sm">
-					<thead class="border-b border-stone-200 text-stone-500 dark:border-stone-800">
-						<tr>
-							<th class="px-4 py-2 font-medium">Pull request</th>
-							<th class="px-4 py-2 font-medium">Tier</th>
-							<th class="px-4 py-2 font-medium">Status</th>
-							<th class="px-4 py-2 font-medium">Comments</th>
-							<th class="px-4 py-2 text-right font-medium">Cost</th>
-							<th class="px-4 py-2 font-medium">Created</th>
-						</tr>
-					</thead>
-					<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
-						{#each data.reviews as review (review.id)}
-							<tr class="hover:bg-stone-50 dark:hover:bg-stone-800/50">
-								<td class="px-4 py-2">
-									<a
-										class="font-mono hover:underline"
-										href={resolve('/app/reviews/[id]', { id: review.id })}
-									>
-										{review.repository}#{review.pullNumber}
-									</a>
-								</td>
-								<td class="px-4 py-2"><TierBadge tier={review.tier} /></td>
-								<td class="px-4 py-2">
-									{#if review.status === 'completed' && review.verdict}
-										{verdictLabel[review.verdict]}
-									{:else}
-										<StatusBadge status={review.status} />
-									{/if}
-								</td>
-								<td class="px-4 py-2">{review.posted}</td>
-								<td class="px-4 py-2 text-right tabular-nums">{formatCost(review.costUsd)}</td>
-								<td class="muted px-4 py-2 whitespace-nowrap tabular-nums">
-									{formatDate(review.createdAt)}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+			<div class="mt-3">
+				<ReviewsTable reviews={data.reviews} />
 			</div>
 		{/if}
 	</section>

@@ -57,7 +57,7 @@
 
 <div class="space-y-8">
 	<header>
-		<a href={resolve('/app')} class="muted hover:underline">← Overview</a>
+		<a href={resolve('/app/reviews')} class="muted hover:underline">← Reviews</a>
 		<div class="mt-2 flex flex-wrap items-center gap-3">
 			<h1 class="font-mono text-2xl font-semibold">{review.repository}#{review.pullNumber}</h1>
 			<StatusBadge status={review.status} />
