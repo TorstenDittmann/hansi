@@ -264,7 +264,7 @@ export async function deleteLearning(organizationId: string, learningId: string)
 		);
 }
 
-/** Spend and review totals for the overview. Includes skipped reviews. */
+/** Spend and review totals for the overview. Review counts are completed reviews. */
 export async function getCostSummary(organizationId: string, now = new Date()) {
 	const { db } = await getContext();
 	return costSummary(db, organizationId, now);
