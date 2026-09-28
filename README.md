@@ -153,11 +153,13 @@ to review that one; otherwise it uses the pull request for the current branch.
 
 ## Development
 
-Requires [Bun](https://bun.sh) 1.4 or later, `git`, and
-[`ripgrep`](https://github.com/BurntSushi/ripgrep). No Docker needed: the database is a local
+Requires [Bun](https://bun.sh) 1.4.2, `git`, and
+[`ripgrep`](https://github.com/BurntSushi/ripgrep). Bun is pinned in `mise.toml`; install it with
+[mise](https://mise.jdx.dev/) (`mise install`). No Docker needed: the database is a local
 libSQL file (`data/hans.db`).
 
 ```sh
+mise install
 bun install
 cp .env.example .env   # fill in HANS_ENCRYPTION_KEY and BETTER_AUTH_SECRET
 bun run dev            # migrates, then starts the web app and worker
