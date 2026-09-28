@@ -1,10 +1,10 @@
-# Hansi
+# hansi.codes
 
 [hansi.codes](https://hansi.codes) reviews GitHub pull requests and grades them from **S** to **F**. This plugin installs the `hansi-loop` skill, which keeps fixing the current pull request until Hansi grades it **Tier S** and no review comments are left open.
 
 ## Install
 
-From the [Cursor Marketplace](https://cursor.com/marketplace), install **Hansi**. In chat, run `/hansi-loop`.
+From the [Cursor Marketplace](https://cursor.com/marketplace), install **hansi.codes**. In chat, run `/hansi-loop`.
 
 Or install the skill with the [skills CLI](https://github.com/vercel-labs/skills):
 

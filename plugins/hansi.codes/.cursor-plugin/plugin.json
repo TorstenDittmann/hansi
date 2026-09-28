@@ -1,12 +1,12 @@
 {
-	"name": "hansi",
-	"displayName": "Hansi",
+	"name": "hansi.codes",
+	"displayName": "hansi.codes",
 	"version": "1.0.0",
 	"description": "Fix a GitHub pull request until Hansi grades it Tier S and no review comments are left open.",
 	"author": {
 		"name": "Torsten Dittmann"
 	},
-	"publisher": "Hansi",
+	"publisher": "hansi.codes",
 	"homepage": "https://hansi.codes",
 	"repository": "https://github.com/TorstenDittmann/hansi",
 	"license": "MIT",
