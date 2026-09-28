@@ -86,12 +86,18 @@
 	afterNavigate(({ type }) => {
 		if (type !== 'enter') posthog?.capture('$pageview');
 	});
+	// Visitors who never signed in stay anonymous; reset only once an identified user signs out.
+	let identifiedId: string | null = null;
 	$effect(() => {
 		if (!posthog) return;
 		if (data.user) {
 			const { id, name, email, login } = data.user;
 			posthog.identify(id, { name, email, github_login: login });
-		} else posthog.reset();
+			identifiedId = id;
+		} else if (identifiedId) {
+			posthog.reset();
+			identifiedId = null;
+		}
 	});
 	$effect(() => {
 		if (posthog && activeOrganization) {
