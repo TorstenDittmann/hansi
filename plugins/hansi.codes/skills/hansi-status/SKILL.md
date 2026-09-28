@@ -6,16 +6,17 @@ description: >
   change the pull request. Use when the user wants to know what Hansi said, the current tier,
   or which comments are still open, or when they run hansi-status.
 license: MIT
-compatibility: Requires the GitHub CLI (gh), authenticated, and the Hansi GitHub App installed on the repository.
+compatibility: The Hansi GitHub App must be installed on the repository. Examples use the GitHub CLI.
 metadata:
   author: hansi
-  version: '1.0'
-allowed-tools: Bash(gh:*)
+  version: '1.1'
 ---
 
 # hansi-status
 
 Read Hansi's review of a pull request and stop. Do not comment, push, commit, or resolve a thread. A new review spends the repository owner's model credits.
+
+The command blocks are examples, written for the GitHub CLI. Run whatever this environment actually provides to do the same job, including commands the examples do not list. If `gh` is missing, or a command fails because of how this machine authenticates, try another client before stopping.
 
 ## Inputs
 
