@@ -5,6 +5,12 @@ import { encryptSecret, keyHint } from '@hans/llm';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { costSummary } from './costs';
 import { getContext } from './context';
+import {
+	countReviewList,
+	listReviewedRepositoryNames,
+	queryReviewList,
+	type ReviewListOptions
+} from './review-list';
 
 export async function listRepositories(organizationId: string) {
 	const { db } = await getContext();
@@ -76,27 +82,23 @@ export async function setRepositoriesEnabled(
 		);
 }
 
-export async function listReviews(organizationId: string, limit = 50) {
+export async function listReviews(organizationId: string, options: ReviewListOptions = {}) {
 	const { db } = await getContext();
-	return db
-		.select({
-			id: schema.reviews.id,
-			repository: schema.repositories.fullName,
-			pullNumber: schema.reviews.pullNumber,
-			status: schema.reviews.status,
-			trigger: schema.reviews.trigger,
-			verdict: schema.reviews.verdict,
-			tier: schema.reviews.tier,
-			costUsd: schema.reviews.costUsd,
-			createdAt: schema.reviews.createdAt,
-			finishedAt: schema.reviews.finishedAt,
-			posted: sql<number>`(select count(*) from ${schema.reviewFindings} where ${schema.reviewFindings.reviewId} = ${schema.reviews.id} and ${schema.reviewFindings.status} = 'posted')`
-		})
-		.from(schema.reviews)
-		.innerJoin(schema.repositories, eq(schema.repositories.id, schema.reviews.repositoryId))
-		.where(eq(schema.reviews.organizationId, organizationId))
-		.orderBy(desc(schema.reviews.createdAt))
-		.limit(limit);
+	return queryReviewList(db, organizationId, options);
+}
+
+export async function countReviews(
+	organizationId: string,
+	options: Pick<ReviewListOptions, 'query' | 'status' | 'repository'> = {}
+) {
+	const { db } = await getContext();
+	return countReviewList(db, organizationId, options);
+}
+
+/** Repository names that have at least one review in this organization. */
+export async function listReviewedRepositories(organizationId: string) {
+	const { db } = await getContext();
+	return listReviewedRepositoryNames(db, organizationId);
 }
 
 export async function getReview(organizationId: string, reviewId: string) {
