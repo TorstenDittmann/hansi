@@ -2,6 +2,8 @@ export interface SignupCandidate {
 	githubLogin?: string | null;
 	existingUsers: number;
 	hasPendingInvitation: boolean;
+	/** True when the request carries a cookie for an active organization invite link. */
+	hasInviteLink?: boolean;
 }
 
 export interface SignupPolicy {
@@ -16,7 +18,7 @@ export interface SignupPolicy {
 export function canSignUp(policy: SignupPolicy, candidate: SignupCandidate): boolean {
 	if (policy.mode === 'open') return true;
 	if (candidate.existingUsers === 0) return true;
-	if (candidate.hasPendingInvitation) return true;
+	if (candidate.hasPendingInvitation || candidate.hasInviteLink) return true;
 	const login = candidate.githubLogin?.toLowerCase();
 	return !!login && policy.allowedGithubUsers.includes(login);
 }

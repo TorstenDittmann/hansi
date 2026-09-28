@@ -38,7 +38,8 @@ export const envSchema = z.object({
 
 	/**
 	 * `restricted` (default, for self-hosting): only the first user, GitHub logins listed in
-	 * ALLOWED_GITHUB_USERS, and people with a pending workspace invitation can sign up.
+	 * ALLOWED_GITHUB_USERS, people with a pending workspace invitation, and people opening an
+	 * active organization invite link can sign up.
 	 * `open`: anyone with a GitHub account can sign up (hosted service).
 	 */
 	SIGNUP_MODE: z.enum(['restricted', 'open']).default('restricted'),

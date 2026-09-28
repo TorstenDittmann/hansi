@@ -43,6 +43,13 @@
       "when": 1790173569946,
       "tag": "0005_bedrock_region",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790595438772,
+      "tag": "0006_organization_invite_link",
+      "breakpoints": true
     }
   ]
 }

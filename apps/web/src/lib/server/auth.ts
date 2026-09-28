@@ -8,6 +8,7 @@ import { and, count, eq, gt } from 'drizzle-orm';
 import { prepareAccountDeletion } from './account';
 import { track } from './analytics';
 import { getContext, getGitHubCredentials } from './context';
+import { findActiveInviteLink, inviteTokenFromCookie } from './invite-link';
 
 async function createAuth() {
 	const { db, env } = await getContext();
@@ -51,7 +52,7 @@ async function createAuth() {
 		databaseHooks: {
 			user: {
 				create: {
-					before: async (user) => {
+					before: async (user, context) => {
 						const [{ users }] = await db.select({ users: count() }).from(schema.user);
 						const [invitation] = await db
 							.select({ id: schema.invitation.id })
@@ -64,12 +65,17 @@ async function createAuth() {
 								)
 							)
 							.limit(1);
+						// The invite page sets this cookie before the GitHub redirect, so it is present
+						// on the callback that creates the account.
+						const inviteToken = inviteTokenFromCookie(context?.request?.headers.get('cookie'));
+						const inviteLink = inviteToken ? await findActiveInviteLink(db, inviteToken) : null;
 						const allowed = canSignUp(
 							{ mode: env.SIGNUP_MODE, allowedGithubUsers: env.ALLOWED_GITHUB_USERS },
 							{
 								githubLogin: user.githubLogin as string | undefined,
 								existingUsers: users,
-								hasPendingInvitation: !!invitation
+								hasPendingInvitation: !!invitation,
+								hasInviteLink: !!inviteLink
 							}
 						);
 						if (!allowed) {

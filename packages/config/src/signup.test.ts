@@ -20,6 +20,10 @@ test('restricted mode admits invited users', () => {
 	expect(canSignUp(restricted, { ...candidate, hasPendingInvitation: true })).toBe(true);
 });
 
+test('restricted mode admits users with an invite link', () => {
+	expect(canSignUp(restricted, { ...candidate, hasInviteLink: true })).toBe(true);
+});
+
 test('restricted mode rejects everyone else', () => {
 	expect(canSignUp(restricted, candidate)).toBe(false);
 	expect(canSignUp(restricted, { ...candidate, githubLogin: null })).toBe(false);

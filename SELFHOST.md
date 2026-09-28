@@ -117,11 +117,12 @@ With `SIGNUP_MODE=restricted` (the default), these people can create an account:
 
 - the first user;
 - the GitHub logins in `ALLOWED_GITHUB_USERS`;
-- anyone with a pending invitation to an organization on the instance.
+- anyone with a pending invitation to an organization on the instance;
+- anyone who opens an active invite link for an organization on the instance.
 
-Invite teammates from **Members** in the dashboard. Set `SIGNUP_MODE=open` to let anyone with a
-GitHub account sign up, e.g. for a public service. Each organization keeps its own model keys,
-installations, and costs.
+Invite teammates from **Members** in the dashboard, by email or with an invite link. Set
+`SIGNUP_MODE=open` to let anyone with a GitHub account sign up, e.g. for a public service. Each
+organization keeps its own model keys, installations, and costs.
 
 ## Deployment modes
 
