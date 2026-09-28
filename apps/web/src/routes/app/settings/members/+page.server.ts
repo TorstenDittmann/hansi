@@ -8,6 +8,11 @@ import {
 	inviteLinkUrl,
 	revokeInviteLink
 } from '$lib/server/invite-link';
+import {
+	assignableMembershipRoles,
+	hasMembershipRole,
+	membershipRoleChangeError
+} from '$lib/server/membership';
 import { requireOrganization } from '$lib/server/organization';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -25,6 +30,7 @@ export const load: PageServerLoad = async ({ parent, request }) => {
 		findActiveInviteLinkForOrganization(db, organization.id)
 	]);
 	const canInvite = canManageInviteLinks(activeMember?.role);
+	const ownerCount = members.filter((member) => hasMembershipRole(member.role, 'owner')).length;
 	return {
 		canInvite,
 		inviteLink:
@@ -34,7 +40,12 @@ export const load: PageServerLoad = async ({ parent, request }) => {
 			role: member.role,
 			name: member.user.name,
 			email: member.user.email,
-			image: member.user.image ?? null
+			image: member.user.image ?? null,
+			assignableRoles: assignableMembershipRoles({
+				viewerRole: activeMember?.role,
+				memberRole: member.role,
+				ownerCount
+			})
 		})),
 		invitations: invitations
 			.filter((invitation) => invitation.status === 'pending')
@@ -47,7 +58,7 @@ export const load: PageServerLoad = async ({ parent, request }) => {
 	};
 };
 
-/** better-auth enforces permissions (only owners and admins can invite or remove). */
+/** better-auth enforces permissions (only owners and admins can invite, remove, or change roles). */
 async function run(action: () => Promise<unknown>) {
 	try {
 		await action();
@@ -93,6 +104,41 @@ export const actions: Actions = {
 			auth.api.removeMember({
 				headers: request.headers,
 				body: { memberIdOrEmail: String(form.get('memberId')), organizationId: organization.id }
+			})
+		);
+	},
+
+	updateRole: async ({ locals, request }) => {
+		const organization = await requireOrganization(locals, request.headers);
+		const form = await request.formData();
+		const memberId = String(form.get('memberId') ?? '');
+		const role = String(form.get('role') ?? '');
+		const auth = await getAuth();
+		const [{ members }, activeMember] = await Promise.all([
+			auth.api.listMembers({
+				headers: request.headers,
+				query: { organizationId: organization.id }
+			}),
+			auth.api.getActiveMember({ headers: request.headers })
+		]);
+		const member = members.find((candidate) => candidate.id === memberId);
+		if (!member) return fail(400, { error: 'Member not found' });
+		// Keeping the current role is not a change, including for the last owner.
+		if (member.role === role) return;
+		const ownerCount = members.filter((candidate) =>
+			hasMembershipRole(candidate.role, 'owner')
+		).length;
+		const denied = membershipRoleChangeError({
+			viewerRole: activeMember?.role,
+			memberRole: member.role,
+			ownerCount,
+			nextRole: role
+		});
+		if (denied) return fail(denied.status, { error: denied.error });
+		return run(() =>
+			auth.api.updateMemberRole({
+				headers: request.headers,
+				body: { memberId, role, organizationId: organization.id }
 			})
 		);
 	},
