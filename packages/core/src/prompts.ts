@@ -132,7 +132,7 @@ export function buildReviewPrompt(input: {
 	config: RepoConfig;
 	pathInstructions: string[];
 	diff: string;
-	excludedFiles: string[];
+	excludedFiles: { path: string; reason: string }[];
 	incrementalFrom?: string;
 	learnings?: string[];
 	previousFindings?: { path: string; startLine: number; endLine: number; title: string }[];
@@ -183,8 +183,12 @@ export function buildReviewPrompt(input: {
 		})
 	);
 	if (input.excludedFiles.length) {
+		const list = input.excludedFiles.map((f) => `- ${f.path} (${f.reason})`).join('\n');
+		const deleted = input.excludedFiles.some((f) => f.reason === 'deleted')
+			? '\nDeleted files may still be imported or called elsewhere: use grep to check whether the changed files still use them.'
+			: '';
 		parts.push(
-			`Files changed but not shown (excluded from review): ${input.excludedFiles.join(', ')}`
+			`<files_not_shown>\nChanged in this pull request but not shown in the diff below.\n${list}${deleted}\n</files_not_shown>`
 		);
 	}
 	if (input.previousFindings?.length) {

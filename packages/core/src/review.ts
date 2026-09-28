@@ -210,12 +210,12 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// Keep the prompt within budget; files that don't fit are listed but not shown.
 	const shown: FileDiff[] = [];
-	const excludedPaths = excluded.map((e) => e.path);
+	const notShown = [...excluded];
 	let budget = limits.maxDiffChars;
 	for (const file of included) {
 		const rendered = renderFileDiff(file);
 		if (rendered.length > budget) {
-			excludedPaths.push(file.path);
+			notShown.push({ path: file.path, reason: 'too large to show' });
 			continue;
 		}
 		budget -= rendered.length;
@@ -240,7 +240,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		config,
 		pathInstructions,
 		diff: shown.map(renderFileDiff).join('\n\n'),
-		excludedFiles: excludedPaths,
+		excludedFiles: notShown,
 		incrementalFrom: input.incrementalFrom,
 		learnings: input.learnings,
 		previousFindings,
