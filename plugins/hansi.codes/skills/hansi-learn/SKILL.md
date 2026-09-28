@@ -1,0 +1,117 @@
+---
+name: hansi-learn
+description: >
+  Replies on a Hansi finding with a lasting review rule so Hansi remembers it for future
+  reviews of the repository. Use when the user says a finding should not be flagged, asks
+  Hansi to remember a preference, wants a disagreement saved as a team rule, or runs
+  hansi-learn.
+license: MIT
+compatibility: Requires the GitHub CLI (gh), authenticated, and the Hansi GitHub App installed on the repository.
+metadata:
+  author: hansi
+  version: '1.0'
+allowed-tools: Bash(gh:*)
+---
+
+# hansi-learn
+
+Save a lasting review rule by replying on the Hansi finding it applies to. Hansi stores the rule when a reply states a durable preference, then follows it on later reviews.
+
+Do not request a review. Do not push. Do not call `resolveReviewThread`. Resolving a thread in GitHub leaves the finding open in Hansi's summary, so the tier stays capped. Hansi resolves the thread when it dismisses the finding.
+
+## Inputs
+
+- **Pull request number** (optional). If omitted, use the pull request for the current branch.
+- **Finding** (optional). A comment id, a file and line, or a quote of the title. If omitted, use the unresolved Hansi finding the user is talking about. If several match, ask which one.
+- **Rule** (optional). If the user did not state a lasting preference, ask once, then stop until they answer. Do not invent a rule.
+
+## Instructions
+
+### 1. Identify the pull request and the finding
+
+```bash
+if [ -n "$PR_NUMBER" ]; then
+  gh pr view "$PR_NUMBER" --json number,url -q '{number: .number, url: .url}'
+else
+  gh pr view --json number,url -q '{number: .number, url: .url}'
+fi
+```
+
+Use the `number` as `<PR_NUMBER>`. Stop if there is no open pull request.
+
+Read the summary comment (the issue comment whose body contains `<!-- hans:summary -->`) and take the mention handle from the footer `Comment <code>@hansi-codes review</code>`. Review comments are authored by `<slug>[bot]`.
+
+```bash
+gh api --paginate "repos/{owner}/{repo}/issues/<PR_NUMBER>/comments?per_page=100" \
+  --jq '[.[] | select(.body | contains("<!-- hans:summary -->"))] | sort_by(.updated_at) | last | .body'
+```
+
+List unresolved threads and keep the ones whose first comment is from `<slug>[bot]`:
+
+```bash
+gh api graphql -f query='
+query($cursor: String) {
+  repository(owner: "OWNER", name: "REPO") {
+    pullRequest(number: PR_NUMBER) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          isResolved
+          comments(first: 20) {
+            nodes { databaseId body path author { login } }
+          }
+        }
+      }
+    }
+  }
+}'
+```
+
+Page with `endCursor` while `hasNextPage` is true. The finding comment's `databaseId` is `<COMMENT_ID>`. A finding starts with a bold title, then the explanation, and a footer like `Major · bug`.
+
+If the user did not identify a finding and more than one Hansi thread is unresolved, ask which one. Do not reply on every thread.
+
+### 2. Write the rule
+
+One imperative sentence, understandable without this thread. Name the path or situation it covers.
+
+```
+Do not flag missing error handling in tests.
+```
+
+A one-off ("ignore this once", "this line is fine today") is not a rule. Say so and stop without posting.
+
+Show the sentence to the user when they did not write it themselves, and wait for a yes before posting.
+
+### 3. Reply on that thread
+
+The reply must be plain text on the finding. Do not mention `@<slug> review`. A review mention starts a new review.
+
+```bash
+gh api "repos/{owner}/{repo}/pulls/<PR_NUMBER>/comments/<COMMENT_ID>/replies" \
+  -f body='Do not flag missing error handling in tests. This is a lasting review rule for this repository.'
+```
+
+Lead with the rule. Say that it is a lasting review rule for this repository so Hansi treats it as a preference to remember, not a one-off.
+
+### 4. Wait for Hansi
+
+Hansi reacts with 👀, then comments. Poll the thread for about 5 minutes (30 attempts, 10 seconds apart). A new comment from `<slug>[bot]` after the reply is the answer.
+
+Read that comment:
+
+- Hansi agrees and says it will follow the rule: the preference is saved. Future reviews of this repository use it. The summary comment updates when the finding is dismissed.
+- Hansi disagrees, or treats the reply as a one-off: the rule was not saved. Quote the answer and stop. Do not post a second reply unless the user asks.
+
+### 5. Report
+
+```
+hansi-learn
+  Pull request:  #123
+  Finding:       src/auth.test.ts:12 — "Missing error handling"
+  Rule:          Do not flag missing error handling in tests.
+  Saved:         yes
+```
+
+Include the pull request URL. When it was not saved, set `Saved` to `no` and quote Hansi's reply.

@@ -137,20 +137,28 @@ and with no open findings the tier is **S**.
 The `Hansi` check run follows the verdict (success, failure, or neutral), so you can make it a
 required check.
 
-## hansi-loop
+## Cursor plugin
 
-[`hansi-loop`](plugins/hansi/skills/hansi-loop/SKILL.md) is an agent skill that keeps fixing the current pull
-request until Hansi grades it **S** and has no comments left open. Install the Hansi plugin from
-the [Cursor Marketplace](https://cursor.com/marketplace), or with the
+The [hansi.codes](plugins/hansi.codes/README.md) plugin adds four agent skills. Install it from the
+[Cursor Marketplace](https://cursor.com/marketplace), or install one skill with the
 [skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add TorstenDittmann/hansi --skill hansi-loop
 ```
 
-Then run `/hansi-loop` in your agent. It needs the [GitHub CLI](https://cli.github.com)
-(`gh auth login`) and the Hansi GitHub App installed on the repository. Pass a pull request number
-to review that one; otherwise it uses the pull request for the current branch.
+| Skill                                                              | What it does                                                                    |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| [`hansi-status`](plugins/hansi.codes/skills/hansi-status/SKILL.md) | Read the current tier and open findings. Does not start a review.               |
+| [`hansi-learn`](plugins/hansi.codes/skills/hansi-learn/SKILL.md)   | Reply on a finding with a lasting rule so Hansi remembers it.                   |
+| [`hansi-setup`](plugins/hansi.codes/skills/hansi-setup/SKILL.md)   | Write `.hansi.json` and open a pull request onto the base branch.               |
+| [`hansi-loop`](plugins/hansi.codes/skills/hansi-loop/SKILL.md)     | Fix the pull request until Hansi grades it **S** and no comments are left open. |
+
+They need the [GitHub CLI](https://cli.github.com) (`gh auth login`) and the Hansi GitHub App
+installed on the repository. Pass a pull request number to review that one; otherwise the skill uses
+the pull request for the current branch. A rule in the plugin tells the agent not to resolve Hansi
+threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses
+the finding.
 
 ## Development
 
