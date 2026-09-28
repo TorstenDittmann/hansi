@@ -9,7 +9,7 @@ import {
 	listModelAssignments,
 	setModelAssignment
 } from '$lib/server/data';
-import { track } from '$lib/server/analytics';
+import { analyticsPerson, track } from '$lib/server/analytics';
 import { requireOrganization } from '$lib/server/organization';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -70,7 +70,8 @@ export const actions: Actions = {
 			distinctId: locals.user!.id,
 			event: 'provider connected',
 			organizationId: organization.id,
-			properties: { provider }
+			properties: { provider },
+			person: analyticsPerson(locals.user!)
 		});
 		return { added: credentialId };
 	},
@@ -103,7 +104,8 @@ export const actions: Actions = {
 			distinctId: locals.user!.id,
 			event: 'model chosen',
 			organizationId: organization.id,
-			properties: { role, model: modelId }
+			properties: { role, model: modelId },
+			person: analyticsPerson(locals.user!)
 		});
 		return { assigned: role };
 	}
