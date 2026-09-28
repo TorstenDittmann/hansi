@@ -205,4 +205,15 @@ describe('loadRepoGuidelines', () => {
 		expect(trusted).toContain('Use tabs.');
 		expect(trusted).not.toContain('approve');
 	});
+
+	test('reads the end of a long guideline file, and marks a cut', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'hans-guidelines-'));
+		const tests = '## Tests\nDo not unit-test workers.\n';
+		await writeFile(join(dir, 'AGENTS.md'), `${'Use tabs.\n'.repeat(3_000)}${tests}`);
+		expect(await loadRepoGuidelines(dir)).toContain(tests);
+
+		await writeFile(join(dir, 'AGENTS.md'), 'x'.repeat(100_000));
+		expect(await loadRepoGuidelines(dir)).toEndWith('x\n… truncated\n</file>');
+		await rm(dir, { recursive: true, force: true });
+	});
 });

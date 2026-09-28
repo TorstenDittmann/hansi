@@ -228,7 +228,9 @@ const GUIDELINE_FILES = [
 	'.github/copilot-instructions.md',
 	'CONTRIBUTING.md'
 ];
-const MAX_GUIDELINE_CHARS = 20_000;
+// Agent guideline files are often 20-30k characters, and their last sections (tests, releases)
+// hold rules a reviewer needs as much as the first ones.
+const MAX_GUIDELINE_CHARS = 60_000;
 
 export interface TrustedSource {
 	/** Commit to read from, typically the PR's base: a PR must not rewrite its own review rules. */
@@ -258,7 +260,8 @@ export async function loadRepoGuidelines(
 		if (!content?.trim()) continue;
 		const excerpt = content.slice(0, budget);
 		budget -= excerpt.length;
-		sections.push(`<file path="${file}">\n${excerpt}\n</file>`);
+		const cut = excerpt.length < content.length ? '\n… truncated' : '';
+		sections.push(`<file path="${file}">\n${excerpt}${cut}\n</file>`);
 	}
 	return sections.join('\n\n');
 }
