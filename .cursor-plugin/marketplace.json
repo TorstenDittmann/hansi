@@ -10,7 +10,7 @@
 		{
 			"name": "hansi.codes",
 			"source": "./plugins/hansi.codes",
-			"description": "Fix a GitHub pull request until Hansi grades it Tier S and no review comments are left open."
+			"description": "Read a Hansi review, save a lasting rule, configure .hansi.json, or fix a pull request until Tier S."
 		}
 	]
 }

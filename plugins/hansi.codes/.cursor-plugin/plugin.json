@@ -1,8 +1,8 @@
 {
 	"name": "hansi.codes",
 	"displayName": "hansi.codes",
-	"version": "1.0.0",
-	"description": "Fix a GitHub pull request until Hansi grades it Tier S and no review comments are left open.",
+	"version": "1.1.0",
+	"description": "Read a Hansi review, save a lasting rule, configure .hansi.json, or fix a pull request until Tier S.",
 	"author": {
 		"name": "Torsten Dittmann"
 	},
@@ -11,8 +11,18 @@
 	"repository": "https://github.com/TorstenDittmann/hansi",
 	"license": "MIT",
 	"logo": "assets/logo.svg",
-	"keywords": ["hansi", "hansi-loop", "code-review", "github", "pull-request"],
+	"keywords": [
+		"hansi",
+		"hansi-loop",
+		"hansi-status",
+		"hansi-learn",
+		"hansi-setup",
+		"code-review",
+		"github",
+		"pull-request"
+	],
 	"category": "developer-tools",
 	"tags": ["code-review", "github", "pull-request"],
-	"skills": "./skills/"
+	"skills": "./skills/",
+	"rules": "./rules/"
 }
