@@ -1,57 +1,27 @@
 import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
-import {
-	buildReviewPrompt,
-	enforcedRuleSections,
-	reviewerInstructions,
-	verifierInstructions
-} from './prompts';
+import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
 
 const withProfile = (profile: string) =>
 	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
 
-const allRules = {
-	guidelines: 'Do not add regular expressions.',
-	learnings: ['We do not flag this in tests.'],
-	instructions: 'Use Result types.',
-	pathInstructions: ['For files matching migrations/**: Check reversibility.']
-};
-
-test('every profile enforces the rules the team wrote, but only strict the guidelines', () => {
-	const configured = ['<review_instructions>', '<path_instructions>', '<team_learnings>'];
-	expect(enforcedRuleSections('chill', allRules)).toEqual(configured);
-	expect(enforcedRuleSections('balanced', allRules)).toEqual(configured);
-	expect(enforcedRuleSections('strict', allRules)).toEqual([
-		'<repository_guidelines>',
-		...configured
-	]);
-	expect(
-		enforcedRuleSections('balanced', {
-			guidelines: 'Use tabs.',
-			instructions: ' ',
-			pathInstructions: []
-		})
-	).toEqual([]);
-});
-
-test('names the enforced sections in both passes, and says nothing without any', () => {
-	const enforced = enforcedRuleSections('strict', { ...allRules, learnings: [] });
-	const sections = '<repository_guidelines>, <review_instructions>, and <path_instructions>';
-	const strict = reviewerInstructions(withProfile('strict'), enforced);
-	expect(strict).toContain(`The team's rules in ${sections} come before these defaults.`);
+test('only strict counts naming and style rules, and reviews tests and docs', () => {
+	const strict = reviewerInstructions(withProfile('strict'));
+	expect(strict).toContain('Naming and style rules count too');
 	expect(strict).toContain(
-		'Never report formatting, import order, or anything a linter would catch, unless a team rule asks for it.'
+		'Never report formatting, import order, or anything a linter would catch.'
 	);
-	expect(verifierInstructions('strict', enforced)).toContain(
-		`breaks a rule stated in ${sections},`
+	expect(strict).toContain('tests coupled to implementation details');
+	expect(verifierInstructions('strict')).toContain(
+		'you can see the violation in the code. Formatting rules do not count.'
 	);
 
 	const balanced = reviewerInstructions(withProfile('balanced'));
-	expect(balanced).not.toContain(`The team's rules in`);
-	expect(balanced).toContain(
-		'Never report formatting, style, naming, missing comments, import order, or anything a linter would catch.'
+	expect(balanced).toContain('Do not report formatting, naming, or style rules.');
+	expect(balanced).not.toContain('tests coupled to implementation details');
+	expect(verifierInstructions('balanced')).toContain(
+		'Formatting, naming, and style rules do not count.'
 	);
-	expect(verifierInstructions('balanced')).not.toContain('also keep');
 });
 
 const base = {
@@ -110,4 +80,21 @@ test('says why files are not shown, and asks for callers of deleted files', () =
 	});
 	expect(deleted).toContain('- src/legacy.ts (deleted)\n- src/big.ts (too large to show)');
 	expect(deleted).toContain('Deleted files may still be imported');
+});
+
+test('treats repository guidelines as rules the review has to apply', () => {
+	const prompt = buildReviewPrompt({
+		...base,
+		guidelines:
+			'<file path="AGENTS.md">\nDo not run Swoole coroutine work in the shared unit process.\n</file>'
+	});
+	expect(prompt).toContain('Do not run Swoole coroutine work in the shared unit process.');
+	expect(prompt).toContain('Project rules from every instruction file.');
+
+	const instructions = reviewerInstructions(base.config);
+	expect(instructions).toContain('A concrete project rule is not a style opinion.');
+	expect(instructions).toContain('not from this pull request');
+	expect(verifierInstructions('balanced')).toContain(
+		'the changed code breaks a concrete rule in <repository_guidelines>'
+	);
 });

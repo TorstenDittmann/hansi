@@ -52,7 +52,7 @@ Tell it "we don't flag this in tests" and it remembers for future reviews.
 Add `.hansi.json` to the repository root. The `$schema` line gives you autocompletion and
 validation in editors like VS Code. Schemas are versioned: `schema/v1.json` never changes, and
 `https://hansi.codes/schema.json` always serves the latest version. Hansi also reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and
-`.github/copilot-instructions.md` as review guidelines. Both come from the pull request's base
+`.github/copilot-instructions.md` as review guidelines. Every one of those files is included in full when it exists. Both come from the pull request's base
 branch, so changes take effect once they are merged. Every field is optional:
 
 ```json
@@ -101,14 +101,14 @@ branch, so changes take effect once they are merged. Every field is optional:
 - `chill` flags only bugs it can confirm in the code.
 - `balanced` also flags risky patterns: unintended behavior changes, realistic races, missing
   error handling, and clear performance problems.
-- `strict` holds the pull request to a demanding senior reviewer's bar. It also enforces the rules
-  in your guideline files, and flags missing or ineffective tests, tests coupled to implementation
-  details, documentation examples that would not work, broken build or CI configuration, and
-  maintainability problems.
+- `strict` holds the pull request to a demanding senior reviewer's bar. It also flags missing or
+  ineffective tests, tests coupled to implementation details, documentation examples that would
+  not work, broken build or CI configuration, and maintainability problems.
 
-In every profile, a pull request that breaks a rule from `instructions`, `pathInstructions`, or a
-remembered team preference gets a comment, even when the rule is about style. These findings,
-test gaps, and broken examples are `minor`. To block on them, set `requestChanges` to `minor`.
+Every profile reports changed code that breaks a concrete rule from the guideline files,
+`instructions`, `pathInstructions`, or a remembered team preference. `strict` also counts naming
+and style rules; only formatting is left to linters. Broken rules, test gaps, and broken examples
+are `minor`. To block on them, set `requestChanges` to `minor`.
 
 ### Verdicts and tiers
 

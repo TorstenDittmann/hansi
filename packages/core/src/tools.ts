@@ -228,9 +228,11 @@ const GUIDELINE_FILES = [
 	'.github/copilot-instructions.md',
 	'CONTRIBUTING.md'
 ];
-// Agent guideline files are often 20-30k characters, and their last sections (tests, releases)
-// hold rules a reviewer needs as much as the first ones.
-const MAX_GUIDELINE_CHARS = 60_000;
+/**
+ * Per file, and every file is loaded. Authors do not place their rules to survive a cut,
+ * so a long AGENTS.md must not drop its own middle or crowd out CLAUDE.md.
+ */
+const MAX_GUIDELINE_FILE_CHARS = 200_000;
 
 export interface TrustedSource {
 	/** Commit to read from, typically the PR's base: a PR must not rewrite its own review rules. */
@@ -239,9 +241,27 @@ export interface TrustedSource {
 	token?: string;
 }
 
+interface GuidelineSection {
+	path: string;
+	content: string;
+}
+
+function renderGuidelines(sections: GuidelineSection[]): string {
+	return sections
+		.map((section) => {
+			const content =
+				section.content.length <= MAX_GUIDELINE_FILE_CHARS
+					? section.content
+					: `${section.content.slice(0, MAX_GUIDELINE_FILE_CHARS)}\n… rest of this file was not loaded\n`;
+			return `<file path="${section.path}">\n${content}\n</file>`;
+		})
+		.join('\n\n');
+}
+
 /**
- * Project conventions the review should respect, from the files agents already use. With a
- * `trusted` source they come from that commit instead of the (untrusted) PR checkout.
+ * Project conventions the review should respect, from the files agents already use. Every file
+ * that exists is included, in full. With a `trusted` source they come from that commit instead
+ * of the (untrusted) PR checkout.
  */
 export async function loadRepoGuidelines(
 	repoDir: string,
@@ -252,16 +272,11 @@ export async function loadRepoGuidelines(
 			? git(['show', `${trusted.ref}:${file}`], { cwd: repoDir, token: trusted.token })
 			: readFile(resolve(repoDir, file), 'utf8');
 
-	const sections: string[] = [];
-	let budget = MAX_GUIDELINE_CHARS;
+	const sections: GuidelineSection[] = [];
 	for (const file of GUIDELINE_FILES) {
-		if (budget <= 0) break;
 		const content = await read(file).catch(() => null);
-		if (!content?.trim()) continue;
-		const excerpt = content.slice(0, budget);
-		budget -= excerpt.length;
-		const cut = excerpt.length < content.length ? '\n… truncated' : '';
-		sections.push(`<file path="${file}">\n${excerpt}${cut}\n</file>`);
+		if (!content?.trim() || content.includes('\0')) continue;
+		sections.push({ path: file, content });
 	}
-	return sections.join('\n\n');
+	return renderGuidelines(sections);
 }

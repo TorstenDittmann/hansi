@@ -23,7 +23,6 @@ import {
 } from './findings';
 import {
 	buildReviewPrompt,
-	enforcedRuleSections,
 	reviewerInstructions,
 	reviewRules,
 	verifierInstructions
@@ -233,13 +232,6 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		baseRef: input.trustedSource?.ref
 	});
 	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
-	const ruleInput = {
-		guidelines,
-		learnings: input.learnings,
-		instructions: config.instructions,
-		pathInstructions
-	};
-	const enforced = enforcedRuleSections(config.reviews.profile, ruleInput);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
 		linkedIssues: input.linkedIssues,
@@ -268,7 +260,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const review = await callModel('review', input.models.review, input, () =>
 		generateText({
 			model: input.models.review.model,
-			instructions: reviewerInstructions(config, enforced),
+			instructions: reviewerInstructions(config),
 			prompt: cachedPrompt(input.models.review, prompt),
 			tools: { ...tools, submit_review: submitReview },
 			stopWhen: [isStepCount(limits.maxReviewSteps), validCall('submit_review')],
@@ -336,11 +328,16 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// 5. Verify: a second, skeptical pass removes false positives. It can move findings, so
 	//    two of them may now sit on the same lines: check for duplicates again.
-	const rules = reviewRules(ruleInput);
+	const rules = reviewRules({
+		guidelines,
+		learnings: input.learnings,
+		instructions: config.instructions,
+		pathInstructions
+	});
 	const verified = distinct.length
 		? await verifyFindings(
 				distinct,
-				{ files: shown, rules, enforced },
+				{ files: shown, rules },
 				input,
 				tools,
 				limits.maxVerifySteps,
@@ -528,7 +525,7 @@ export function placeFinding(finding: Finding, files: FileDiff[]): Finding | nul
 
 async function verifyFindings(
 	findings: Finding[],
-	{ files, rules, enforced }: { files: FileDiff[]; rules: string[]; enforced: string[] },
+	{ files, rules }: { files: FileDiff[]; rules: string[] },
 	input: ReviewInput,
 	tools: ReturnType<typeof createRepoTools>,
 	maxSteps: number,
@@ -564,7 +561,7 @@ async function verifyFindings(
 	const result = await callModel('verify', verifyModel, input, () =>
 		generateText({
 			model: verifyModel.model,
-			instructions: verifierInstructions(input.config.reviews.profile, enforced),
+			instructions: verifierInstructions(input.config.reviews.profile),
 			prompt: cachedPrompt(
 				verifyModel,
 				[`Pull request: ${input.pullRequest.title}`, ...rules, ...listing].join('\n\n')
