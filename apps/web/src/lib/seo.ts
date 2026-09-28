@@ -1,4 +1,4 @@
-import { ANALYTICS_HOSTNAME } from '@hans/analytics/constants';
+import { ANALYTICS_HOSTNAME, POSTHOG_PROXY_PATH } from '@hans/analytics/constants';
 
 /**
  * Canonical origin of the hosted product. Matches production `APP_URL` and the hostname analytics
@@ -21,7 +21,7 @@ export const OG_IMAGE_HEIGHT = 630;
 /** Public HTML pages that search engines may index. Login, invites, dashboard, setup, and API stay out. */
 export const PUBLIC_PATHS = ['/'] as const;
 
-const PRIVATE_PREFIXES = ['/app', '/login', '/invite', '/setup', '/api'];
+const PRIVATE_PREFIXES = ['/app', '/login', '/invite', '/setup', '/api', POSTHOG_PROXY_PATH];
 
 /** True for the marketing homepage (and any future public page that is not an app/auth route). */
 export function isIndexablePath(pathname: string): boolean {

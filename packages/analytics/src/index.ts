@@ -22,7 +22,8 @@ export interface Analytics {
 export function createAnalytics(appUrl: string): Analytics {
 	if (!analyticsEnabled(appUrl)) return { capture() {}, shutdown: async () => {} };
 
-	// Traffic is low, so each event is sent right away instead of batched.
+	// Traffic is low, so each event is sent right away instead of batched. Server events skip the
+	// browser proxy and go straight to PostHog.
 	const client = new PostHog(POSTHOG_KEY, { host: POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
 	return {
 		capture({ distinctId, event, organizationId, properties }) {

@@ -163,7 +163,8 @@ Push to `main` and both redeploy.
 
 Self-hosted instances send no analytics. The hosted service at hansi.codes uses PostHog, and the
 code only turns it on when the instance runs at `hansi.codes`, based on the browser's hostname and
-on `APP_URL`.
+on `APP_URL`. Browser events are posted to `/ink` on that host; the SvelteKit server hook forwards
+them to PostHog's EU Cloud. Server-side events still go to PostHog directly.
 
 ## Backups and upgrades
 

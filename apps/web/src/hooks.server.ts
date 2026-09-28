@@ -1,7 +1,9 @@
+import { sequence } from '@sveltejs/kit/hooks';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { getAuth } from '$lib/server/auth';
+import { posthogProxy } from '$lib/server/posthog-proxy';
 
-export const handle: Handle = async ({ event, resolve }) => {
+const authenticate: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
 	event.locals.session = null;
 
@@ -21,3 +23,5 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	return resolve(event);
 };
+
+export const handle = sequence(posthogProxy, authenticate);

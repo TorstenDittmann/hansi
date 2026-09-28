@@ -20,6 +20,8 @@ test('login, dashboard, setup, and API routes are not indexable', () => {
 	expect(isIndexablePath('/setup')).toBe(false);
 	expect(isIndexablePath('/setup/github/callback')).toBe(false);
 	expect(isIndexablePath('/api/auth/ok')).toBe(false);
+	expect(isIndexablePath('/ink')).toBe(false);
+	expect(isIndexablePath('/ink/e')).toBe(false);
 });
 
 test('the sitemap lists only public pages at hansi.codes', () => {
