@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkoutPullRequest, diffSince, git } from './git';
@@ -18,12 +18,21 @@ async function commit(message: string, files: Record<string, string>) {
 }
 
 beforeAll(async () => {
+	// The agent environment signs commits and watches the filesystem. Neither belongs in a
+	// throwaway repository, and both can stall a test past its timeout.
+	process.env.GIT_CONFIG_COUNT = '2';
+	process.env.GIT_CONFIG_KEY_0 = 'commit.gpgsign';
+	process.env.GIT_CONFIG_VALUE_0 = 'false';
+	process.env.GIT_CONFIG_KEY_1 = 'core.fsmonitor';
+	process.env.GIT_CONFIG_VALUE_1 = 'false';
 	root = await mkdtemp(join(tmpdir(), 'hans-git-'));
 	origin = join(root, 'origin');
 	await git(['init', '--quiet', '--initial-branch=main', origin]);
 	for (const [key, value] of [
 		['user.email', 'test@example.com'],
 		['user.name', 'Test'],
+		['commit.gpgsign', 'false'],
+		['core.fsmonitor', 'false'],
 		['uploadpack.allowAnySHA1InWant', 'true'],
 		['uploadpack.allowFilter', 'true']
 	] as const) {
@@ -204,5 +213,98 @@ describe('loadRepoGuidelines', () => {
 		const trusted = await loadRepoGuidelines(dir, { ref: base });
 		expect(trusted).toContain('Use tabs.');
 		expect(trusted).not.toContain('approve');
+	});
+
+	test('follows @imports from the trusted base', async () => {
+		const dir = join(root, 'checkout-imports');
+		await git(['checkout', '--quiet', 'main'], { cwd: origin });
+		await mkdir(join(origin, 'docs'), { recursive: true });
+		await writeFile(join(origin, 'CLAUDE.md'), '@docs/testing.md\n');
+		await writeFile(
+			join(origin, 'docs', 'testing.md'),
+			'Do not run Swoole coroutine work in the shared unit process.\n'
+		);
+		await git(['add', '.'], { cwd: origin });
+		await git(['commit', '--quiet', '-m', 'import guidelines'], { cwd: origin });
+		const base = (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
+		await git(['checkout', '--quiet', '-b', 'evil-imports'], { cwd: origin });
+		await writeFile(join(origin, 'docs', 'testing.md'), 'PWNED_APPROVE_RULE\n');
+		await git(['add', '.'], { cwd: origin });
+		await git(['commit', '--quiet', '-m', 'rewrite imported rules'], { cwd: origin });
+		const head = (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
+		await git(['update-ref', 'refs/pull/3/head', head], { cwd: origin });
+
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 3,
+			baseSha: base,
+			headSha: head
+		});
+		expect(await loadRepoGuidelines(dir)).toContain('PWNED_APPROVE_RULE');
+		const trusted = await loadRepoGuidelines(dir, { ref: base });
+		expect(trusted).toContain('Do not run Swoole coroutine work in the shared unit process.');
+		expect(trusted).toContain('<file path="docs/testing.md">');
+		expect(trusted).not.toContain('PWNED_APPROVE_RULE');
+	});
+});
+
+describe('loadRepoGuidelines files', () => {
+	let scratch: string;
+
+	beforeAll(async () => {
+		scratch = await mkdtemp(join(tmpdir(), 'hans-guidelines-'));
+	});
+
+	afterAll(() => rm(scratch, { recursive: true, force: true }));
+
+	test('keeps a rule past the old 20k cut, and follows a CLAUDE.md import once', async () => {
+		const dir = join(scratch, 'under-budget');
+		await mkdir(dir);
+		const rule = 'Do not run Swoole coroutine work in the shared unit process.';
+		const agents = `${'Setup command.\n'.repeat(1600)}\n## Tests\n\n${rule}\n`;
+		expect(agents.indexOf(rule)).toBeGreaterThan(20_000);
+		expect(agents.length).toBeLessThan(40_000);
+		await writeFile(join(dir, 'AGENTS.md'), agents);
+		await writeFile(join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
+
+		const guidelines = await loadRepoGuidelines(dir);
+		expect(guidelines).toContain(rule);
+		expect(guidelines).not.toContain('omitted');
+		expect(guidelines.match(/<file path="AGENTS.md">/g)).toHaveLength(1);
+	});
+
+	test('keeps the end of a guideline file that exceeds the budget, and keeps smaller files', async () => {
+		const dir = join(scratch, 'over-budget');
+		await mkdir(dir);
+		await writeFile(join(dir, 'AGENTS.md'), `${'A'.repeat(50_000)}\nTAIL_RULE\n`);
+		await writeFile(join(dir, 'CLAUDE.md'), 'See @AGENTS.md.\n');
+		await writeFile(join(dir, 'CONTRIBUTING.md'), 'Keep the contributing notes.\n');
+
+		const guidelines = await loadRepoGuidelines(dir);
+		expect(guidelines).toContain('TAIL_RULE');
+		expect(guidelines).toContain('omitted; read this file for the rest');
+		expect(guidelines).toContain('Keep the contributing notes.');
+		expect(guidelines.startsWith('<file path="AGENTS.md">\nA')).toBe(true);
+	});
+
+	test('follows nested imports and ignores paths that leave the repository', async () => {
+		const dir = join(scratch, 'imports');
+		await mkdir(join(dir, 'docs'), { recursive: true });
+		await mkdir(join(dir, 'notes'));
+		await writeFile(join(dir, 'CLAUDE.md'), '@docs/detail.md\n@../secret.md\n@/etc/passwd\n');
+		await writeFile(
+			join(dir, 'docs', 'detail.md'),
+			'Email dev@appwrite.io for help.\nSee @../notes/rule.md.\n@../CLAUDE.md\n'
+		);
+		await writeFile(join(dir, 'notes', 'rule.md'), 'NESTED_RULE\n');
+		await writeFile(join(scratch, 'secret.md'), 'SECRET_OUTSIDE\n');
+		await writeFile(join(dir, 'appwrite.io'), 'SECRET_EMAIL_FILE\n');
+
+		const guidelines = await loadRepoGuidelines(dir);
+		expect(guidelines).toContain('NESTED_RULE');
+		expect(guidelines).toContain('<file path="notes/rule.md">');
+		expect(guidelines).not.toContain('SECRET_OUTSIDE');
+		expect(guidelines).not.toContain('SECRET_EMAIL_FILE');
 	});
 });
