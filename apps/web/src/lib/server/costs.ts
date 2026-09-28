@@ -1,16 +1,10 @@
-import { schema, type Database, type ReviewStatus } from '@hans/db';
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-
-/**
- * Reviews that count on the overview: a finished review, or one Hansi skipped (draft, nothing
- * to review, reviews disabled). Queued, running, failed, and superseded rows do not.
- */
-const countedReviewStatuses = ['completed', 'skipped'] as const satisfies readonly ReviewStatus[];
+import { schema, type Database } from '@hans/db';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 
 /**
  * What the organization's model calls cost: this and last calendar month (UTC), daily spend for
  * the last 30 days, and a breakdown by model and by repository over the same 30 days.
- * Review totals include skipped reviews.
+ * Review totals count completed reviews only.
  */
 export async function costSummary(db: Database, organizationId: string, now = new Date()) {
 	const { llmCalls, reviews, repositories } = schema;
@@ -21,7 +15,7 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 	const cost = sql<number>`coalesce(sum(${llmCalls.costUsd}), 0)`;
 	const day = sql<string>`date(${llmCalls.createdAt} / 1000, 'unixepoch')`;
 
-	const countedReviews = inArray(reviews.status, [...countedReviewStatuses]);
+	const completed = eq(reviews.status, 'completed');
 	const [
 		[month],
 		[lastMonth],
@@ -57,7 +51,7 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 				and(
 					eq(reviews.organizationId, organizationId),
 					gte(reviews.createdAt, monthStart),
-					countedReviews
+					completed
 				)
 			),
 		db
@@ -95,11 +89,7 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 			.from(reviews)
 			.innerJoin(repositories, eq(repositories.id, reviews.repositoryId))
 			.where(
-				and(
-					eq(reviews.organizationId, organizationId),
-					gte(reviews.createdAt, since),
-					countedReviews
-				)
+				and(eq(reviews.organizationId, organizationId), gte(reviews.createdAt, since), completed)
 			)
 			.groupBy(repositories.fullName)
 	]);
@@ -120,7 +110,7 @@ export async function costSummary(db: Database, organizationId: string, now = ne
 	};
 }
 
-/** Spend from model calls, with completed and skipped reviews counted on their own. */
+/** Spend from model calls. Review counts are completed reviews. */
 function repositoryBreakdown(
 	spend: { repository: string; cost: number }[],
 	reviewCounts: { repository: string; reviews: number }[]
