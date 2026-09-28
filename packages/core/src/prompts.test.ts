@@ -38,4 +38,24 @@ test('leaves the sections out when there is nothing to show', () => {
 	const prompt = buildReviewPrompt({ ...base, linkedIssues: [], failedChecks: [] });
 	expect(prompt).not.toContain('<linked_issues>');
 	expect(prompt).not.toContain('<failed_checks>');
+	expect(prompt).not.toContain('<files_not_shown>');
+});
+
+test('says why files are not shown, and asks for callers of deleted files', () => {
+	const ignored = buildReviewPrompt({
+		...base,
+		excludedFiles: [{ path: 'bun.lock', reason: 'ignored by default' }]
+	});
+	expect(ignored).toContain('- bun.lock (ignored by default)');
+	expect(ignored).not.toContain('Deleted files');
+
+	const deleted = buildReviewPrompt({
+		...base,
+		excludedFiles: [
+			{ path: 'src/legacy.ts', reason: 'deleted' },
+			{ path: 'src/big.ts', reason: 'too large to show' }
+		]
+	});
+	expect(deleted).toContain('- src/legacy.ts (deleted)\n- src/big.ts (too large to show)');
+	expect(deleted).toContain('Deleted files may still be imported');
 });

@@ -91,3 +91,27 @@ export function renderFileDiff(file: FileDiff): string {
 	});
 	return [header, ...hunks].join('\n');
 }
+
+/**
+ * The diff around new-file lines `start`..`end`, cut to `context` lines either side, so a reader
+ * can see what the code did before. Null when no hunk touches the lines, or the file is new and
+ * the diff would only repeat its contents.
+ */
+export function renderDiffExcerpt(
+	file: FileDiff,
+	start: number,
+	end: number,
+	context = 15
+): string | null {
+	if (file.status === 'added') return null;
+	const inRange = (line: DiffLine) =>
+		line.newLine !== undefined && line.newLine >= start && line.newLine <= end;
+	const hunks = file.hunks.flatMap((hunk) => {
+		const first = hunk.lines.findIndex(inRange);
+		if (first === -1) return [];
+		const last = hunk.lines.findLastIndex(inRange);
+		const lines = hunk.lines.slice(Math.max(first - context, 0), last + context + 1);
+		return [{ header: hunk.header, lines }];
+	});
+	return hunks.length ? renderFileDiff({ ...file, hunks }) : null;
+}

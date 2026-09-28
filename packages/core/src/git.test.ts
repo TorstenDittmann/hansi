@@ -120,6 +120,64 @@ describe('file_history', () => {
 	});
 });
 
+describe('read_file', () => {
+	test('reads a file as it was before the pull request', async () => {
+		const dir = join(root, 'checkout-read-base');
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 1,
+			baseSha: sha.base!,
+			headSha: sha.second!
+		});
+		const read = (tools: ReturnType<typeof createRepoTools>, path: string, ref?: 'base') =>
+			tools.read_file.execute!({ path, ref }, { toolCallId: 't', messages: [] } as never);
+		const tools = createRepoTools(dir, () => {}, { baseRef: sha.base! });
+
+		expect(await read(tools, 'a.ts')).toContain('export const a = 2;');
+		const before = await read(tools, 'a.ts', 'base');
+		expect(before).toStartWith('a.ts at base (lines 1-2 of 2)');
+		expect(before).toContain('export const a = 1;');
+		expect(await read(tools, 'b.ts', 'base')).toBe(
+			'Error: b.ts does not exist at the base; it is new in this pull request'
+		);
+		expect(await read(tools, '../outside', 'base')).toStartWith(
+			'Error: Path is outside the repository'
+		);
+		expect(
+			await read(
+				createRepoTools(dir, () => {}),
+				'a.ts',
+				'base'
+			)
+		).toBe('Error: The base version is not available here');
+	});
+
+	test('follows files the pull request renamed', async () => {
+		await git(['checkout', '--quiet', '-b', 'rename', sha.base!], { cwd: origin });
+		await git(['mv', 'a.ts', 'moved.ts'], { cwd: origin });
+		await git(['commit', '--quiet', '-m', 'move a.ts'], { cwd: origin });
+		const head = (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
+		await git(['update-ref', 'refs/pull/3/head', head], { cwd: origin });
+
+		const dir = join(root, 'checkout-read-renamed');
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 3,
+			baseSha: sha.base!,
+			headSha: head
+		});
+		const tools = createRepoTools(dir, () => {}, { baseRef: sha.base! });
+		const before = await tools.read_file.execute!({ path: 'moved.ts', ref: 'base' }, {
+			toolCallId: 't',
+			messages: []
+		} as never);
+		expect(before).toStartWith('moved.ts at base, renamed from a.ts (lines 1-2 of 2)');
+		expect(before).toContain('export const a = 1;');
+	});
+});
+
 describe('loadRepoGuidelines', () => {
 	test('reads guidelines from the trusted base, not from the pull request', async () => {
 		const dir = join(root, 'checkout-guidelines');

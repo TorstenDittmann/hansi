@@ -102,6 +102,44 @@ const priceAfter = `export function total(prices: number[], taxRate: number) {
 }
 `;
 
+const moneyAfter = `/** Formats an amount in dollars, e.g. 19.99 → "$19.99". */
+export function formatPrice(dollars: number, currency = '$'): string {
+	return \`\${currency}\${dollars.toFixed(2)}\`;
+}
+`;
+
+const fetchBefore = `export async function fetchJson(url: string, timeoutMs = 30_000, retries = 2): Promise<unknown> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+			if (!response.ok) throw new Error(\`HTTP \${response.status}\`);
+			return await response.json();
+		} catch (error) {
+			if (attempt >= retries) throw error;
+		}
+	}
+}
+`;
+
+const fetchAfter = `export interface FetchOptions {
+	timeoutMs?: number;
+	retries?: number;
+}
+
+export async function fetchJson(url: string, options: FetchOptions = {}): Promise<unknown> {
+	const { timeoutMs = 3_000, retries = 2 } = options;
+	for (let attempt = 0; ; attempt++) {
+		try {
+			const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+			if (!response.ok) throw new Error(\`HTTP \${response.status}\`);
+			return await response.json();
+		} catch (error) {
+			if (attempt >= retries) throw error;
+		}
+	}
+}
+`;
+
 export const cases: EvalCase[] = [
 	{
 		name: 'ts-pagination-off-by-one',
@@ -232,6 +270,79 @@ export function canDelete(user: User, ownerId: string): boolean {
 				lines: lineOf(auth, 'if (!isAdmin(user)) return true'),
 				description:
 					'The condition is inverted: non-admins get true, admins fall through to the owner check.'
+			}
+		]
+	},
+	{
+		name: 'ts-caller-left-behind',
+		description: 'formatPrice switches from cents to dollars; one caller still passes cents.',
+		base: {
+			'src/money.ts': `/** Formats an amount in cents, e.g. 1999 → "$19.99". */
+export function formatPrice(cents: number): string {
+	return \`$\${(cents / 100).toFixed(2)}\`;
+}
+`,
+			'src/cart.ts': `import { formatPrice } from './money';
+
+export interface Item {
+	name: string;
+	priceCents: number;
+}
+
+export function cartLine(item: Item): string {
+	return \`\${item.name}: \${formatPrice(item.priceCents)}\`;
+}
+`,
+			'src/invoice.ts': `import { formatPrice } from './money';
+
+export function invoiceTotal(totalCents: number): string {
+	return \`Total: \${formatPrice(totalCents)}\`;
+}
+`
+		},
+		head: {
+			'src/money.ts': moneyAfter,
+			'src/invoice.ts': `import { formatPrice } from './money';
+
+export function invoiceTotal(totalCents: number): string {
+	return \`Total: \${formatPrice(totalCents / 100)}\`;
+}
+`
+		},
+		pullRequest: { title: 'Let formatPrice take dollars and a currency symbol' },
+		expected: [
+			{
+				path: 'src/money.ts',
+				lines: [
+					lineOf(moneyAfter, 'export function formatPrice')[0],
+					lineOf(moneyAfter, 'return `${currency}')[0]
+				],
+				description:
+					'cartLine in src/cart.ts still passes cents, so cart prices show 100 times too high.'
+			}
+		]
+	},
+	{
+		name: 'ts-changed-default',
+		description: 'A refactor to an options object silently cuts the default timeout to 3s.',
+		base: {
+			'src/http.ts': fetchBefore,
+			'src/reports.ts': `import { fetchJson } from './http';
+
+/** Monthly reports are generated on request and can take 20 seconds. */
+export function monthlyReport(month: string) {
+	return fetchJson(\`https://api.example.com/reports/\${month}\`);
+}
+`
+		},
+		head: { 'src/http.ts': fetchAfter },
+		pullRequest: { title: 'Take fetchJson options as an object' },
+		expected: [
+			{
+				path: 'src/http.ts',
+				lines: lineOf(fetchAfter, 'const { timeoutMs = 3_000'),
+				description:
+					'The default timeout changed from 30s to 3s, so slow requests such as monthly reports now fail.'
 			}
 		]
 	},

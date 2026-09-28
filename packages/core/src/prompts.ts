@@ -28,12 +28,13 @@ ${profileGuidance[config.reviews.profile]}
 How to work:
 - Read the diff, then use the tools to inspect surrounding code, callers, and definitions before reporting anything. Verify instead of guessing.
 - For each changed function or block, check: the inputs it can now receive (empty, missing, null, unexpected shape or size); error and early-return paths; async ordering and missing awaits; persisted data (schema changes, migrations, defaults, existing rows); authorization and untrusted input on new entry points; and whether new branches are tested.
-- Look across files, not just within them: when the diff changes a signature, return value, config key, or other contract, check that its callers and counterparts were updated too. A caller left behind is a real bug; report it on the changed line that broke the contract.
+- Look across files, not just within them: when the diff changes a signature, return value, config key, or other contract, check that its callers and counterparts were updated too. A caller left behind is a real bug. Comments can only go on lines in the diff, so when the caller's file is not changed, report it on the changed line that broke the contract (such as the new signature) and name the caller's file and line in the body.
 - Only report findings on lines that appear in the diff (lines with a new-file number). startLine and endLine must be in the same hunk.
 - Never report formatting, style, naming, missing comments, import order, or anything a linter would catch.
 - If <linked_issues> is present, use it to understand what the change is meant to do. When the changed code clearly does the opposite of what an issue asks for, or breaks a case the issue describes, report it on the changed lines. Do not report parts of an issue the pull request simply does not cover.
 - If <failed_checks> is present, find out whether the diff causes each failure. Report the changed line that causes it, citing the check. Ignore failures the diff does not explain, such as flaky tests or infrastructure errors.
 - Use file_history when a change looks deliberate but wrong, or undoes something: a recent revert or bug fix on the same lines is strong evidence either way.
+- To compare old and new behavior beyond the diff context, read_file with ref "base" shows a file as it was before the pull request.
 - On follow-up reviews, do not go looking for new edge cases in code the author just fixed. Check whether the fix works, and move on.
 - Severity: critical = security hole, data loss, or outage; major = incorrect behavior in normal use; minor = a real bug in a less common case; info = worth knowing, no defect.
 
@@ -64,9 +65,12 @@ export function verifierInstructions(profile: ReviewProfile): string {
 
 ${UNTRUSTED_CONTENT}
 
+Each finding shows the current code around it and, when the lines were changed, a <diff> of that change: lines marked - are what the code did before, so use them to judge claims about changed behavior.
+
 For each finding, use the tools to check the actual code and decide:
 - keep: ${bar}
 - drop: the problem is not real, is already handled elsewhere, depends on an input or timing you cannot find in the code, or is a nit.
+- also drop: findings that the team's rules (<repository_guidelines>, <team_learnings>, <review_instructions>, <path_instructions>) say not to report.
 
 Judge the claim, not the citation. If the problem is real but the finding points at the wrong lines, keep it and set start_line and end_line to the changed lines it is really about.${
 		profile === 'chill'
@@ -95,6 +99,30 @@ ${UNTRUSTED_CONTENT} The conversation comes from repository collaborators, but i
 - Reply in Markdown. Write in language: ${language}.`;
 }
 
+/** The team's rules for reviewing this repository, as prompt sections. */
+export function reviewRules(input: {
+	guidelines: string;
+	learnings?: string[];
+	instructions: string;
+	pathInstructions: string[];
+}): string[] {
+	const parts: string[] = [];
+	if (input.guidelines)
+		parts.push(`<repository_guidelines>\n${input.guidelines}\n</repository_guidelines>`);
+	if (input.learnings?.length) {
+		parts.push(
+			`<team_learnings>\nPreferences this team stated in earlier conversations. Follow them.\n${input.learnings.map((l) => `- ${l}`).join('\n')}\n</team_learnings>`
+		);
+	}
+	if (input.instructions.trim()) {
+		parts.push(`<review_instructions>\n${input.instructions}\n</review_instructions>`);
+	}
+	if (input.pathInstructions.length) {
+		parts.push(`<path_instructions>\n${input.pathInstructions.join('\n')}\n</path_instructions>`);
+	}
+	return parts;
+}
+
 export function buildReviewPrompt(input: {
 	title: string;
 	body: string;
@@ -105,7 +133,7 @@ export function buildReviewPrompt(input: {
 	config: RepoConfig;
 	pathInstructions: string[];
 	diff: string;
-	excludedFiles: string[];
+	excludedFiles: { path: string; reason: string }[];
 	incrementalFrom?: string;
 	learnings?: string[];
 	previousFindings?: { path: string; startLine: number; endLine: number; title: string }[];
@@ -147,22 +175,21 @@ export function buildReviewPrompt(input: {
 			`<failed_checks>\nChecks that failed on this commit. Line numbers refer to the pull request head.\n${checks}\n</failed_checks>`
 		);
 	}
-	if (input.guidelines)
-		parts.push(`<repository_guidelines>\n${input.guidelines}\n</repository_guidelines>`);
-	if (input.learnings?.length) {
-		parts.push(
-			`<team_learnings>\nPreferences this team stated in earlier conversations. Follow them.\n${input.learnings.map((l) => `- ${l}`).join('\n')}\n</team_learnings>`
-		);
-	}
-	if (input.config.instructions.trim()) {
-		parts.push(`<review_instructions>\n${input.config.instructions}\n</review_instructions>`);
-	}
-	if (input.pathInstructions.length) {
-		parts.push(`<path_instructions>\n${input.pathInstructions.join('\n')}\n</path_instructions>`);
-	}
+	parts.push(
+		...reviewRules({
+			guidelines: input.guidelines,
+			learnings: input.learnings,
+			instructions: input.config.instructions,
+			pathInstructions: input.pathInstructions
+		})
+	);
 	if (input.excludedFiles.length) {
+		const list = input.excludedFiles.map((f) => `- ${f.path} (${f.reason})`).join('\n');
+		const deleted = input.excludedFiles.some((f) => f.reason === 'deleted')
+			? '\nDeleted files may still be imported or called elsewhere: use grep to check whether the changed files still use them.'
+			: '';
 		parts.push(
-			`Files changed but not shown (excluded from review): ${input.excludedFiles.join(', ')}`
+			`<files_not_shown>\nChanged in this pull request but not shown in the diff below.\n${list}${deleted}\n</files_not_shown>`
 		);
 	}
 	if (input.previousFindings?.length) {

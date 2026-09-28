@@ -1,25 +1,32 @@
 import { readFile } from 'node:fs/promises';
 import { blockingSeverity, severityAtLeast, type RepoConfig, type Severity } from '@hans/config';
-import { generateText, hasToolCall, isStepCount, tool, type LanguageModel } from 'ai';
+import { generateText, isStepCount, tool, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
 	commentableLines,
 	hunkIndexOf,
 	parseUnifiedDiff,
+	renderDiffExcerpt,
 	renderFileDiff,
 	type FileDiff
 } from './diff';
 import { filterFiles } from './filters';
-import { callModel, type ModelCall, type ModelFailure } from './model-call';
+import { cachedPrompt, callModel, type ModelCall, type ModelFailure } from './model-call';
 import {
 	compareSeverity,
 	findingSchema,
 	isDuplicateFinding,
+	omittable,
 	type DroppedFinding,
 	type Finding,
 	type PreviousFinding
 } from './findings';
-import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
+import {
+	buildReviewPrompt,
+	reviewerInstructions,
+	reviewRules,
+	verifierInstructions
+} from './prompts';
 import { finalTier, tierCap, tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
 import { decideVerdict, type Verdict } from './verdict';
@@ -136,18 +143,19 @@ const submissionSchema = z.object({
 	findings: z.array(findingSchema),
 	resolved: z
 		.array(z.string())
-		.default([])
+		.nullish()
+		.transform((ids) => ids ?? [])
 		.describe('Ids of <open_findings> that the current code fixes'),
-	tier: z.enum(tiers).optional().describe('Merge confidence for the whole pull request'),
+	tier: omittable(z.enum(tiers)).describe('Merge confidence for the whole pull request'),
 	walkthrough: z
 		.array(z.object({ path: z.string(), change: z.string() }))
-		.default([])
+		.nullish()
+		.transform((entries) => entries ?? [])
 		.describe('One short line per changed file (or group of files) describing what changed'),
-	latest_changes: z
-		.string()
-		.optional()
-		.describe('Incremental reviews only: one sentence on what the newest commits changed'),
-	tier_reason: z.string().optional().describe('One sentence explaining the tier')
+	latest_changes: omittable(z.string()).describe(
+		'Incremental reviews only: one sentence on what the newest commits changed'
+	),
+	tier_reason: omittable(z.string()).describe('One sentence explaining the tier')
 });
 const verdictsSchema = z.object({
 	verdicts: z.array(
@@ -155,20 +163,15 @@ const verdictsSchema = z.object({
 			id: z.string(),
 			keep: z.boolean(),
 			reason: z.string(),
-			suggestion_ok: z
-				.boolean()
-				.optional()
-				.describe('For findings with a suggestion: is applying it correct?'),
-			start_line: z
-				.number()
-				.int()
-				.optional()
-				.describe('Only when the finding points at the wrong lines: the correct first line'),
-			end_line: z
-				.number()
-				.int()
-				.optional()
-				.describe('Only when the finding points at the wrong lines: the correct last line')
+			suggestion_ok: omittable(z.boolean()).describe(
+				'For findings with a suggestion: is applying it correct?'
+			),
+			start_line: omittable(z.number().int()).describe(
+				'Only when the finding points at the wrong lines: the correct first line'
+			),
+			end_line: omittable(z.number().int()).describe(
+				'Only when the finding points at the wrong lines: the correct last line'
+			)
 		})
 	)
 });
@@ -180,10 +183,19 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const emit: EmitEvent = input.onEvent ?? (() => {});
 	const { config } = input;
 
+	const pullRequestFiles = input.pullRequestDiff ? parseUnifiedDiff(input.pullRequestDiff) : null;
+	// After the base branch is merged into the pull request, the increment also carries the base
+	// branch's changes. Comments can only land on files the pull request itself changes.
+	const inPullRequest = (file: FileDiff) =>
+		!pullRequestFiles || pullRequestFiles.some((f) => f.path === file.path);
+	const changed = parseUnifiedDiff(input.diff);
 	const { included, excluded } = filterFiles(
-		parseUnifiedDiff(input.diff),
+		changed.filter(inPullRequest),
 		config.reviews.pathFilters
 	);
+	for (const file of changed.filter((f) => !inPullRequest(f))) {
+		excluded.push({ path: file.path, reason: 'not part of the pull request diff' });
+	}
 	emit({ type: 'files.filtered', data: { included: included.map((f) => f.path), excluded } });
 	if (included.length === 0) {
 		const reason = input.incrementalFrom
@@ -191,17 +203,16 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: 'No reviewable changes';
 		return { status: 'skipped', reason };
 	}
-	const pullRequestFiles = input.pullRequestDiff ? parseUnifiedDiff(input.pullRequestDiff) : null;
 	const previousFindings = input.previousFindings ?? [];
 
 	// Keep the prompt within budget; files that don't fit are listed but not shown.
 	const shown: FileDiff[] = [];
-	const excludedPaths = excluded.map((e) => e.path);
+	const notShown = [...excluded];
 	let budget = limits.maxDiffChars;
 	for (const file of included) {
 		const rendered = renderFileDiff(file);
 		if (rendered.length > budget) {
-			excludedPaths.push(file.path);
+			notShown.push({ path: file.path, reason: 'too large to show' });
 			continue;
 		}
 		budget -= rendered.length;
@@ -216,16 +227,20 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: [];
 	});
 
-	const tools = createRepoTools(input.repoDir, emit, { token: input.trustedSource?.token });
+	const tools = createRepoTools(input.repoDir, emit, {
+		token: input.trustedSource?.token,
+		baseRef: input.trustedSource?.ref
+	});
+	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
 		linkedIssues: input.linkedIssues,
 		failedChecks: input.failedChecks,
-		guidelines: await loadRepoGuidelines(input.repoDir, input.trustedSource),
+		guidelines,
 		config,
 		pathInstructions,
 		diff: shown.map(renderFileDiff).join('\n\n'),
-		excludedFiles: excludedPaths,
+		excludedFiles: notShown,
 		incrementalFrom: input.incrementalFrom,
 		learnings: input.learnings,
 		previousFindings,
@@ -246,16 +261,26 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		generateText({
 			model: input.models.review.model,
 			instructions: reviewerInstructions(config),
-			prompt,
+			prompt: cachedPrompt(input.models.review, prompt),
 			tools: { ...tools, submit_review: submitReview },
-			stopWhen: [isStepCount(limits.maxReviewSteps), hasToolCall('submit_review')],
+			stopWhen: [isStepCount(limits.maxReviewSteps), validCall('submit_review')],
+			// Out of steps: submit what was found so far instead of failing the whole review.
+			prepareStep: ({ stepNumber }) =>
+				stepNumber >= limits.maxReviewSteps - 1
+					? {
+							toolChoice: { type: 'tool', toolName: 'submit_review' },
+							activeTools: ['submit_review']
+						}
+					: undefined,
 			abortSignal: input.signal
 		})
 	);
-	const submission = review.toolCalls.findLast((call) => call.toolName === 'submit_review');
+	const submission = review.toolCalls.findLast(
+		(call) => call.toolName === 'submit_review' && !call.invalid
+	);
 	if (!submission) {
 		throw new Error(
-			'The review model did not submit a review. Check that it supports tool calling.'
+			'The review model did not submit a valid review. Check that it supports tool calling.'
 		);
 	}
 	const submitted = submissionSchema.parse(submission.input);
@@ -298,20 +323,37 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		return keep;
 	});
 
-	// 4. Verify: a second, skeptical pass removes false positives.
-	const verified = relevant.length
-		? await verifyFindings(relevant, input, tools, limits.maxVerifySteps, dropped, (finding) => {
-				// A relocation must not land on something already reported.
-				const placed = place(finding);
-				return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
-			})
+	// 4. One comment per problem: the model sometimes reports the same bug twice.
+	const distinct = dropDuplicates(relevant, dropped);
+
+	// 5. Verify: a second, skeptical pass removes false positives. It can move findings, so
+	//    two of them may now sit on the same lines: check for duplicates again.
+	const rules = reviewRules({
+		guidelines,
+		learnings: input.learnings,
+		instructions: config.instructions,
+		pathInstructions
+	});
+	const verified = distinct.length
+		? await verifyFindings(
+				distinct,
+				{ files: shown, rules },
+				input,
+				tools,
+				limits.maxVerifySteps,
+				dropped,
+				(finding) => {
+					// A relocation must not land on something already reported.
+					const placed = place(finding);
+					return placed && !isDuplicateFinding(placed, previousFindings) ? placed : null;
+				}
+			).then((kept) => dropDuplicates(kept, dropped))
 		: [];
 
-	// 5. Cap the number of comments, most severe first.
-	verified.sort(compareSeverity);
+	// 6. Cap the number of comments, most severe first.
 	const capped = verified.slice(0, config.reviews.maxComments);
 
-	// 6. A suggestion is applied verbatim with one click: never post one that breaks the code.
+	// 7. A suggestion is applied verbatim with one click: never post one that breaks the code.
 	const posted = await Promise.all(
 		capped.map(async (finding) => {
 			const check = await checkSuggestion(input.repoDir, finding);
@@ -327,7 +369,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		dropped.push({ ...finding, dropReason: `Over maxComments (${config.reviews.maxComments})` });
 	}
 
-	// 7. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
+	// 8. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
@@ -407,6 +449,28 @@ export function mergeWalkthrough(
 	return [...current, ...carried];
 }
 
+/** One finding per problem, most severe first; the other copies are dropped. */
+function dropDuplicates(findings: Finding[], dropped: DroppedFinding[]): Finding[] {
+	const distinct: Finding[] = [];
+	for (const finding of [...findings].sort(compareSeverity)) {
+		if (isDuplicateFinding(finding, distinct)) {
+			dropped.push({ ...finding, dropReason: 'Duplicate of another finding in this review' });
+		} else {
+			distinct.push(finding);
+		}
+	}
+	return distinct;
+}
+
+/**
+ * Stops once `toolName` was called with valid input. A call that does not match the schema, such
+ * as an unknown category, gets the validation error back so the model can submit again.
+ */
+function validCall(toolName: string) {
+	return ({ steps }: { steps: { toolCalls: { toolName: string; invalid?: boolean }[] }[] }) =>
+		steps.at(-1)?.toolCalls.some((call) => call.toolName === toolName && !call.invalid) ?? false;
+}
+
 function withoutSuggestion(finding: Finding): Finding {
 	const copy = { ...finding };
 	delete copy.suggestion;
@@ -461,6 +525,7 @@ export function placeFinding(finding: Finding, files: FileDiff[]): Finding | nul
 
 async function verifyFindings(
 	findings: Finding[],
+	{ files, rules }: { files: FileDiff[]; rules: string[] },
 	input: ReviewInput,
 	tools: ReturnType<typeof createRepoTools>,
 	maxSteps: number,
@@ -476,11 +541,14 @@ async function verifyFindings(
 				finding.startLine,
 				finding.endLine
 			);
+			const file = files.find((f) => f.path === finding.path);
+			const excerpt = file && renderDiffExcerpt(file, finding.startLine, finding.endLine);
+			const change = excerpt ? `\n\n<diff>\n${excerpt}\n</diff>` : '';
 			const suggestion =
 				finding.suggestion === undefined
 					? ''
 					: `\n\n<suggestion replaces_lines="${finding.startLine}-${finding.endLine}">\n${finding.suggestion}\n</suggestion>`;
-			return `<finding id="F${i + 1}" path="${finding.path}" lines="${finding.startLine}-${finding.endLine}" severity="${finding.severity}">\n${finding.title}\n\n${finding.body}\n\n<code>\n${context}\n</code>${suggestion}\n</finding>`;
+			return `<finding id="F${i + 1}" path="${finding.path}" lines="${finding.startLine}-${finding.endLine}" severity="${finding.severity}">\n${finding.title}\n\n${finding.body}\n\n<code>\n${context}\n</code>${change}${suggestion}\n</finding>`;
 		})
 	);
 
@@ -494,14 +562,24 @@ async function verifyFindings(
 		generateText({
 			model: verifyModel.model,
 			instructions: verifierInstructions(input.config.reviews.profile),
-			prompt: `Pull request: ${input.pullRequest.title}\n\n${listing.join('\n\n')}`,
+			prompt: cachedPrompt(
+				verifyModel,
+				[`Pull request: ${input.pullRequest.title}`, ...rules, ...listing].join('\n\n')
+			),
 			tools: { ...tools, submit_verdicts: submitVerdicts },
-			stopWhen: [isStepCount(maxSteps), hasToolCall('submit_verdicts')],
+			stopWhen: [isStepCount(maxSteps), validCall('submit_verdicts')],
+			prepareStep: ({ stepNumber }) =>
+				stepNumber >= maxSteps - 1
+					? {
+							toolChoice: { type: 'tool', toolName: 'submit_verdicts' },
+							activeTools: ['submit_verdicts']
+						}
+					: undefined,
 			abortSignal: input.signal
 		})
 	);
 
-	const call = result.toolCalls.findLast((c) => c.toolName === 'submit_verdicts');
+	const call = result.toolCalls.findLast((c) => c.toolName === 'submit_verdicts' && !c.invalid);
 	const verdicts = call ? verdictsSchema.parse(call.input).verdicts : [];
 	const byId = new Map(verdicts.map((v) => [v.id, v]));
 	input.onEvent?.({ type: 'verify.completed', data: { verdicts } });

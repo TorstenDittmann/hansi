@@ -106,6 +106,7 @@ for (const evalCase of selected) {
 			const result = await runReview({
 				repoDir: repo.dir,
 				diff: repo.diff,
+				trustedSource: { ref: repo.baseRef },
 				pullRequest: {
 					title: evalCase.pullRequest.title,
 					body: evalCase.pullRequest.body ?? '',

@@ -44,7 +44,10 @@ const MAX_DIFF_CHARS = 60_000;
 export async function runChat(input: ChatInput): Promise<string> {
 	const emit: EmitEvent = input.onEvent ?? (() => {});
 	const tools: ToolSet = {
-		...createRepoTools(input.repoDir, emit, { token: input.trustedSource?.token }),
+		...createRepoTools(input.repoDir, emit, {
+			token: input.trustedSource?.token,
+			baseRef: input.trustedSource?.ref
+		}),
 		remember: tool({
 			description:
 				'Save a lasting team preference for future reviews of this repository, e.g. "Do not flag missing error handling in scripts/". Only use when the user states a durable rule, not for one-off decisions.',

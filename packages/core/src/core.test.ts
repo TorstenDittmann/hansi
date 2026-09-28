@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRepoConfig } from '@hans/config';
 import { MockLanguageModelV4 } from 'ai/test';
-import { commentableLines, parseUnifiedDiff, renderFileDiff } from './diff';
+import { commentableLines, parseUnifiedDiff, renderDiffExcerpt, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { isDuplicateFinding, titleSimilarity } from './findings';
 import { formatFindingComment } from './format';
@@ -51,6 +51,16 @@ describe('diff', () => {
 		const rendered = renderFileDiff(math!);
 		expect(rendered).toContain('    2 +   const result = a / b;');
 		expect(rendered).toContain('      -   return a / b;');
+	});
+
+	test('renders the diff around a finding', () => {
+		const excerpt = renderDiffExcerpt(math!, 22, 22, 1);
+		expect(excerpt).toContain('      -   return x;');
+		expect(excerpt).toContain('   22 +   return x + 1;');
+		expect(excerpt).not.toContain('return a / b');
+		expect(excerpt).not.toContain('const x = 1');
+		expect(renderDiffExcerpt(math!, 10, 12)).toBeNull();
+		expect(renderDiffExcerpt({ ...math!, status: 'added' }, 2, 2)).toBeNull();
 	});
 });
 
@@ -200,6 +210,202 @@ describe('runReview', () => {
 			['review', 100],
 			['verify', 100]
 		]);
+		// The verifier sees what the changed lines replaced.
+		const verifyPrompt = JSON.stringify(model.doGenerateCalls[1]?.prompt);
+		expect(verifyPrompt).toContain('<diff>');
+		expect(verifyPrompt).toContain('      -   return a / b;');
+	});
+
+	test('forces a submission on the last allowed step', async () => {
+		const explore = toolCall('read_file', { path: 'src/math.ts' });
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				explore,
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] }),
+				explore,
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: false, reason: 'no' }] })
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			limits: { maxReviewSteps: 2, maxVerifySteps: 2 }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.dropped.map((f) => f.dropReason)).toEqual(['Verifier: no']);
+		const steps = model.doGenerateCalls.map((call) => ({
+			choice: call.toolChoice,
+			tools: call.tools?.map((t) => t.name)
+		}));
+		expect(steps[0]?.tools).toContain('read_file');
+		expect(steps[1]).toEqual({
+			choice: { type: 'tool', toolName: 'submit_review' },
+			tools: ['submit_review']
+		});
+		expect(steps[2]?.tools).toContain('read_file');
+		expect(steps[3]).toEqual({
+			choice: { type: 'tool', toolName: 'submit_verdicts' },
+			tools: ['submit_verdicts']
+		});
+	});
+
+	test('lets the model fix a submission that does not match the schema', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [{ ...finding(2, 'Division by zero'), category: 'correctness' }]
+				}),
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [finding(2, 'Division by zero')]
+				}),
+				toolCall('submit_verdicts', { verdicts: 'F1 keep' }),
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: false, reason: 'no' }] })
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.dropped.map((f) => f.dropReason)).toEqual(['Verifier: no']);
+		// Each retry sees why its submission was rejected.
+		for (const retry of [model.doGenerateCalls[1], model.doGenerateCalls[3]]) {
+			expect(JSON.stringify(retry?.prompt)).toContain('Invalid input for tool');
+		}
+	});
+
+	test('accepts null for optional fields instead of failing the review', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [{ ...finding(2, 'Division by zero'), suggestion: null }],
+					resolved: null,
+					tier: null,
+					walkthrough: null,
+					latest_changes: null,
+					tier_reason: null
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{
+							id: 'F1',
+							keep: true,
+							reason: 'real',
+							suggestion_ok: null,
+							start_line: null,
+							end_line: null
+						}
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.startLine, f.suggestion])).toEqual([
+			['Division by zero', 2, undefined]
+		]);
+		expect(result.walkthrough).toEqual([]);
+		expect(result.resolved).toEqual([]);
+	});
+
+	test('asks Anthropic to cache the prompt of both passes', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] }),
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: true, reason: 'real' }] })
+			]
+		});
+		await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'anthropic', modelId: 'claude-sonnet-5' } }
+		});
+		const cached = model.doGenerateCalls.map(
+			(call) => call.prompt.find((message) => message.role === 'user')?.providerOptions
+		);
+		const ephemeral = { anthropic: { cacheControl: { type: 'ephemeral' } } };
+		expect(cached).toEqual([ephemeral, ephemeral]);
+	});
+
+	test("gives the verifier the team's rules", async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] }),
+				toolCall('submit_verdicts', {
+					verdicts: [{ id: 'F1', keep: false, reason: 'team does not want this' }]
+				})
+			]
+		});
+		await runReview({
+			repoDir,
+			diff,
+			learnings: ['Do not flag division by zero in src/math.ts.'],
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig(
+				JSON.stringify({
+					instructions: 'We validate inputs at the API boundary.',
+					pathInstructions: [{ path: 'src/**', instructions: 'Numbers are never zero here.' }]
+				})
+			).config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		const verifyPrompt = JSON.stringify(model.doGenerateCalls[1]?.prompt);
+		expect(verifyPrompt).toContain('Do not flag division by zero in src/math.ts.');
+		expect(verifyPrompt).toContain('We validate inputs at the API boundary.');
+		expect(verifyPrompt).toContain('For files matching src/**: Numbers are never zero here.');
+	});
+
+	test('posts one comment per problem, keeping the most severe copy', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [
+						finding(2, 'Division by zero when b is 0', 'minor'),
+						finding(2, 'Division by zero'),
+						{ ...finding(3, 'Result is never logged'), category: 'error-handling' }
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real' }
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.severity])).toEqual([
+			['Division by zero', 'major'],
+			['Result is never logged', 'major']
+		]);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			['Division by zero when b is 0', 'Duplicate of another finding in this review']
+		]);
 	});
 
 	test('skips when nothing is reviewable', async () => {
@@ -263,6 +469,55 @@ describe('runReview', () => {
 		expect(prompt).toContain('already_reported');
 	});
 
+	test('incremental reviews leave out changes merged in from the base branch', async () => {
+		const upstream = `diff --git a/src/upstream.ts b/src/upstream.ts
+--- a/src/upstream.ts
++++ b/src/upstream.ts
+@@ -1 +1 @@
+-export const upstream = 1;
++export const upstream = 2;
+`;
+		const increment = `diff --git a/src/math.ts b/src/math.ts
+--- a/src/math.ts
++++ b/src/math.ts
+@@ -2,3 +2,3 @@
+   const result = a / b;
+-  return result;
++  return result ?? 0;
+ }
+${upstream}`;
+		const model = new MockLanguageModelV4({
+			doGenerate: [toolCall('submit_review', { summary: 'Adds a fallback.', findings: [] })]
+		});
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const review = (changes: string) =>
+			runReview({
+				repoDir,
+				diff: changes,
+				pullRequestDiff: diff,
+				incrementalFrom: 'abc1234',
+				pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+				config: parseRepoConfig('').config,
+				models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+				onEvent: (e) => void events.push(e)
+			});
+
+		const result = await review(increment);
+		expect(result.status).toBe('completed');
+		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+		expect(prompt).toContain('return result ?? 0;');
+		expect(prompt).not.toContain('export const upstream = 2;');
+		expect(events.find((e) => e.type === 'files.filtered')?.data).toEqual({
+			included: ['src/math.ts'],
+			excluded: [{ path: 'src/upstream.ts', reason: 'not part of the pull request diff' }]
+		});
+
+		expect(await review(upstream)).toEqual({
+			status: 'skipped',
+			reason: 'No new reviewable changes since the last review'
+		});
+	});
+
 	test('never posts a suggestion that would break the code', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [
@@ -305,6 +560,35 @@ describe('runReview', () => {
 		);
 	});
 
+	test('drops a finding the verifier moves onto another one', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [finding(2, 'Division by zero'), finding(4, 'Divides when b is 0', 'minor')]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real', start_line: 2, end_line: 2 }
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.startLine])).toEqual([['Division by zero', 2]]);
+		expect(result.dropped.map((f) => [f.title, f.startLine, f.dropReason])).toEqual([
+			['Divides when b is 0', 2, 'Duplicate of another finding in this review']
+		]);
+	});
+
 	test('moves kept findings to the lines the verifier corrects them to', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [
@@ -312,7 +596,7 @@ describe('runReview', () => {
 					summary: 'Refactors divide.',
 					findings: [
 						{ ...finding(2, 'Returns NaN'), suggestion: '  const result = b ? a / b : 0;' },
-						finding(3, 'Division by zero'),
+						{ ...finding(3, 'Division by zero'), category: 'error-handling' },
 						finding(4, 'Missing guard')
 					]
 				}),
