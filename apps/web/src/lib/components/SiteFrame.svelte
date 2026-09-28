@@ -7,8 +7,12 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	// Same destination as the homepage: sign in once GitHub is configured, otherwise setup.
-	const start = $derived(page.data.configured ? resolve('/login') : resolve('/setup'));
+	const signedIn = $derived(!!page.data.user);
+	// Signed-in visitors go back to the app. Everyone else signs in, or sets Hansi up first.
+	const home = $derived(signedIn ? resolve('/app') : resolve('/'));
+	const start = $derived(
+		signedIn ? resolve('/app') : page.data.configured ? resolve('/login') : resolve('/setup')
+	);
 	const path = $derived(
 		page.url.pathname.length > 1 && page.url.pathname.endsWith('/')
 			? page.url.pathname.slice(0, -1)
@@ -31,7 +35,7 @@
 >
 	<header class="mx-auto flex h-18 max-w-[70rem] items-center justify-between px-4 sm:px-6">
 		<a
-			href={resolve('/')}
+			href={home}
 			class="flex items-center gap-2.5 font-display text-xl font-bold tracking-[-0.04em] {focus}"
 		>
 			<Logo class="size-6" />Hansi
@@ -47,8 +51,11 @@
 				class="hidden sm:inline {navItem(onDocs)}"
 				aria-current={onDocs ? 'page' : undefined}>Docs</a
 			>
-			<a href={start} class="hidden sm:inline {navLink}">Sign in</a>
-			<a href={start} class="px-4 py-2 text-sm {button}">Get started</a>
+			{#if !signedIn}
+				<a href={start} class="hidden sm:inline {navLink}">Sign in</a>
+			{/if}
+			<a href={start} class="px-4 py-2 text-sm {button}">{signedIn ? 'Dashboard' : 'Get started'}</a
+			>
 		</nav>
 	</header>
 
@@ -79,7 +86,7 @@
 			<a href={resolve('/docs')} class={navItem(onDocs)} aria-current={onDocs ? 'page' : undefined}
 				>Docs</a
 			>
-			<a href={start} class={navLink}>Sign in</a>
+			<a href={start} class={navLink}>{signedIn ? 'Dashboard' : 'Sign in'}</a>
 		</nav>
 	</footer>
 </div>
