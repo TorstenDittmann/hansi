@@ -1,0 +1,16 @@
+{
+	"name": "hansi",
+	"owner": {
+		"name": "Torsten Dittmann"
+	},
+	"metadata": {
+		"description": "Hansi plugins for GitHub pull request review."
+	},
+	"plugins": [
+		{
+			"name": "hansi",
+			"source": "./plugins/hansi",
+			"description": "Fix a GitHub pull request until Hansi grades it Tier S and no review comments are left open."
+		}
+	]
+}

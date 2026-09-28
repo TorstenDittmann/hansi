@@ -124,8 +124,9 @@ required check.
 
 ## hansi-loop
 
-[`hansi-loop`](skills/hansi-loop/SKILL.md) is an agent skill that keeps fixing the current pull
-request until Hansi grades it **S** and has no comments left open. Install it with the
+[`hansi-loop`](plugins/hansi/skills/hansi-loop/SKILL.md) is an agent skill that keeps fixing the current pull
+request until Hansi grades it **S** and has no comments left open. Install the Hansi plugin from
+the [Cursor Marketplace](https://cursor.com/marketplace), or with the
 [skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh
