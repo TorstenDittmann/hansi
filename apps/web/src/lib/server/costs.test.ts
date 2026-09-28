@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createTestDatabase, schema, type Database } from '@hans/db';
-import { costSummary } from './data';
+import { costSummary } from './costs';
 
 const now = new Date('2026-09-15T12:00:00Z');
 
