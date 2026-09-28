@@ -44,7 +44,12 @@
 		{
 			name: 'Overview',
 			href: resolve('/app'),
-			match: (path: string) => path === '/app' || path.startsWith('/app/reviews')
+			match: (path: string) => path === '/app'
+		},
+		{
+			name: 'Reviews',
+			href: resolve('/app/reviews'),
+			match: (path: string) => path === '/app/reviews' || path.startsWith('/app/reviews/')
 		},
 		{
 			name: 'Repositories',
