@@ -1,0 +1,4 @@
+# Toolchain for local development and Cloud Agents.
+# https://mise.jdx.dev/lang/bun.html
+[tools]
+bun = "1.4.2"
