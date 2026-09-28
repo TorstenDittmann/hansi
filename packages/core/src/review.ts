@@ -186,10 +186,19 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const emit: EmitEvent = input.onEvent ?? (() => {});
 	const { config } = input;
 
+	const pullRequestFiles = input.pullRequestDiff ? parseUnifiedDiff(input.pullRequestDiff) : null;
+	// After the base branch is merged into the pull request, the increment also carries the base
+	// branch's changes. Comments can only land on files the pull request itself changes.
+	const inPullRequest = (file: FileDiff) =>
+		!pullRequestFiles || pullRequestFiles.some((f) => f.path === file.path);
+	const changed = parseUnifiedDiff(input.diff);
 	const { included, excluded } = filterFiles(
-		parseUnifiedDiff(input.diff),
+		changed.filter(inPullRequest),
 		config.reviews.pathFilters
 	);
+	for (const file of changed.filter((f) => !inPullRequest(f))) {
+		excluded.push({ path: file.path, reason: 'not part of the pull request diff' });
+	}
 	emit({ type: 'files.filtered', data: { included: included.map((f) => f.path), excluded } });
 	if (included.length === 0) {
 		const reason = input.incrementalFrom
@@ -197,7 +206,6 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: 'No reviewable changes';
 		return { status: 'skipped', reason };
 	}
-	const pullRequestFiles = input.pullRequestDiff ? parseUnifiedDiff(input.pullRequestDiff) : null;
 	const previousFindings = input.previousFindings ?? [];
 
 	// Keep the prompt within budget; files that don't fit are listed but not shown.

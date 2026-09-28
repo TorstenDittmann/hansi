@@ -377,6 +377,55 @@ describe('runReview', () => {
 		expect(prompt).toContain('already_reported');
 	});
 
+	test('incremental reviews leave out changes merged in from the base branch', async () => {
+		const upstream = `diff --git a/src/upstream.ts b/src/upstream.ts
+--- a/src/upstream.ts
++++ b/src/upstream.ts
+@@ -1 +1 @@
+-export const upstream = 1;
++export const upstream = 2;
+`;
+		const increment = `diff --git a/src/math.ts b/src/math.ts
+--- a/src/math.ts
++++ b/src/math.ts
+@@ -2,3 +2,3 @@
+   const result = a / b;
+-  return result;
++  return result ?? 0;
+ }
+${upstream}`;
+		const model = new MockLanguageModelV4({
+			doGenerate: [toolCall('submit_review', { summary: 'Adds a fallback.', findings: [] })]
+		});
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const review = (changes: string) =>
+			runReview({
+				repoDir,
+				diff: changes,
+				pullRequestDiff: diff,
+				incrementalFrom: 'abc1234',
+				pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+				config: parseRepoConfig('').config,
+				models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+				onEvent: (e) => void events.push(e)
+			});
+
+		const result = await review(increment);
+		expect(result.status).toBe('completed');
+		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+		expect(prompt).toContain('return result ?? 0;');
+		expect(prompt).not.toContain('export const upstream = 2;');
+		expect(events.find((e) => e.type === 'files.filtered')?.data).toEqual({
+			included: ['src/math.ts'],
+			excluded: [{ path: 'src/upstream.ts', reason: 'not part of the pull request diff' }]
+		});
+
+		expect(await review(upstream)).toEqual({
+			status: 'skipped',
+			reason: 'No new reviewable changes since the last review'
+		});
+	});
+
 	test('never posts a suggestion that would break the code', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [
