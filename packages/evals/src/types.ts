@@ -1,3 +1,5 @@
+import type { RepoConfigInput } from '@hans/config';
+
 export interface ExpectedFinding {
 	path: string;
 	/** Lines (in the head version) where a correct comment may land. */
@@ -14,6 +16,8 @@ export interface EvalCase {
 	/** Files changed by the pull request (full new content; `null` deletes the file). */
 	head: Record<string, string | null>;
 	pullRequest: { title: string; body?: string };
+	/** `.hansi.json` for this case; defaults when omitted. */
+	config?: RepoConfigInput;
 	/** Real problems the review should find. Empty for clean changes: every comment is noise. */
 	expected: ExpectedFinding[];
 }
