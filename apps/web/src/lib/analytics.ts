@@ -1,4 +1,4 @@
-import { ANALYTICS_HOSTNAME, POSTHOG_HOST, POSTHOG_KEY } from '@hans/analytics/constants';
+import { ANALYTICS_HOSTNAME, POSTHOG_KEY } from '@hans/analytics/constants';
 import type { PostHog } from 'posthog-js';
 
 /**
@@ -10,7 +10,9 @@ export async function startAnalytics(userId?: string): Promise<PostHog | null> {
 	if (location.hostname !== ANALYTICS_HOSTNAME) return null;
 	const { default: posthog } = await import('posthog-js');
 	posthog.init(POSTHOG_KEY, {
-		api_host: POSTHOG_HOST,
+		// Proxied to PostHog by hooks.server.ts.
+		api_host: '/ink',
+		ui_host: 'https://eu.posthog.com',
 		persistence: 'memory',
 		person_profiles: 'identified_only',
 		capture_pageview: false,
