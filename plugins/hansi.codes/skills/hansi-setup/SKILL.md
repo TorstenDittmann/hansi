@@ -121,7 +121,7 @@ Check out a new branch from `<BASE>` on `<BASE_REPO>` unless the user asked to a
 Fetch through a remote this environment can already authenticate to. Use an existing remote whose URL is `<BASE_REPO>`. If none exists, add one with the same protocol as the user's other GitHub remotes (SSH or HTTPS), then fetch that remote. Do not fetch a raw `https://github.com/<BASE_REPO>.git` URL when credentials are configured only for another remote. That URL skips SSH keys and credential helpers, so the fetch can fail even when `git fetch` on the existing remote works.
 
 ```bash
-git fetch <REMOTE> "<BASE>"
+git fetch <REMOTE> "+refs/heads/<BASE>:refs/remotes/<REMOTE>/<BASE>"
 git checkout -b hansi-config "<REMOTE>/<BASE>"
 ```
 
