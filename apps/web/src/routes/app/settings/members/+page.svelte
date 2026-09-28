@@ -5,6 +5,13 @@
 	let { data, form } = $props();
 	let copiedUrl = $state<string | null>(null);
 
+	function roleLabel(role: string) {
+		if (role === 'owner') return 'Owner';
+		if (role === 'admin') return 'Admin';
+		if (role === 'member') return 'Member';
+		return role;
+	}
+
 	async function copyLink() {
 		const url = data.inviteLink?.url;
 		if (!url) return;
@@ -29,22 +36,46 @@
 	<section>
 		<ul class="card divide-y divide-stone-200 dark:divide-stone-800">
 			{#each data.members as member (member.id)}
-				<li class="flex items-center justify-between gap-3 px-4 py-3">
-					<div class="flex items-center gap-3">
+				<li class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+					<div class="flex min-w-0 items-center gap-3">
 						{#if member.image}
 							<img src={member.image} alt="" class="size-8 rounded-full" />
 						{/if}
-						<div>
-							<p class="font-medium">{member.name}</p>
-							<p class="muted">{member.email} · {member.role}</p>
+						<div class="min-w-0">
+							<p class="truncate font-medium">{member.name}</p>
+							<p class="muted truncate">
+								{#if member.assignableRoles.length > 1}
+									{member.email}
+								{:else}
+									{member.email} · {roleLabel(member.role)}
+								{/if}
+							</p>
 						</div>
 					</div>
-					{#if member.role !== 'owner'}
-						<form method="post" action="?/remove" use:enhance>
-							<input type="hidden" name="memberId" value={member.id} />
-							<button class="btn btn-danger">Remove</button>
-						</form>
-					{/if}
+					<div class="flex shrink-0 flex-wrap items-center gap-2">
+						{#if member.assignableRoles.length > 1}
+							<form method="post" action="?/updateRole" use:enhance class="flex items-center gap-2">
+								<input type="hidden" name="memberId" value={member.id} />
+								<select
+									name="role"
+									class="input w-auto"
+									aria-label="Role for {member.name}"
+									value={member.role}
+								>
+									{#each member.assignableRoles as role (role)}
+										<option value={role}>{roleLabel(role)}</option>
+									{/each}
+								</select>
+								<button class="btn">Update</button>
+							</form>
+						{/if}
+						{#if member.role !== 'owner'}
+							<form method="post" action="?/remove" use:enhance>
+								<input type="hidden" name="memberId" value={member.id} />
+								<button class="btn btn-danger">Remove</button>
+							</form>
+						{/if}
+					</div>
 				</li>
 			{/each}
 		</ul>
@@ -58,7 +89,11 @@
 					<li class="flex items-center justify-between gap-3 px-4 py-3">
 						<div>
 							<p class="font-medium">{invitation.email}</p>
-							<p class="muted">{invitation.role} · expires {formatDate(invitation.expiresAt)}</p>
+							<p class="muted">
+								{roleLabel(invitation.role ?? 'member')} · expires {formatDate(
+									invitation.expiresAt
+								)}
+							</p>
 						</div>
 						<form method="post" action="?/cancel" use:enhance>
 							<input type="hidden" name="invitationId" value={invitation.id} />
