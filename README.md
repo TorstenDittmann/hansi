@@ -86,7 +86,7 @@ branch, so changes take effect once they are merged. Every field is optional:
 | `reviews.drafts`                     | `false`    | Also review draft pull requests.                                                    |
 | `reviews.baseBranches`               | `[]`       | Only review pull requests into these branches. Empty means all.                     |
 | `reviews.pathFilters`                | `[]`       | Globs for the files to review; prefix with `!` to exclude.                          |
-| `reviews.profile`                    | `balanced` | `chill` flags confirmed bugs only; `balanced` and `strict` dig deeper.              |
+| `reviews.profile`                    | `balanced` | How picky to be; see [Review profiles](#review-profiles).                           |
 | `reviews.minSeverity`                | `minor`    | Findings below this severity (`info`, `minor`, `major`, `critical`) are not posted. |
 | `reviews.maxComments`                | `15`       | The most inline comments in one review.                                             |
 | `reviews.approve`                    | `true`     | Approve pull requests without blocking findings.                                    |
@@ -95,6 +95,21 @@ branch, so changes take effect once they are merged. Every field is optional:
 | `instructions`                       | `""`       | Extra review instructions for the repository.                                       |
 | `pathInstructions`                   | `[]`       | Instructions for files matching a glob.                                             |
 | `language`                           | `en`       | Language for review comments.                                                       |
+
+### Review profiles
+
+- `chill` flags only bugs it can confirm in the code.
+- `balanced` also flags risky patterns: unintended behavior changes, realistic races, missing
+  error handling, and clear performance problems. It also flags missing or ineffective tests,
+  tests coupled to implementation details, documentation examples that would not work, and
+  broken build or CI configuration.
+- `strict` holds the pull request to a demanding senior reviewer's bar. On top of `balanced`, it
+  flags maintainability problems such as misleading names and duplicated logic.
+
+Every profile reports changed code that breaks a concrete rule from the guideline files,
+`instructions`, `pathInstructions`, or a remembered team preference. `strict` also counts naming
+and style rules; only formatting is left to linters. Broken rules, test gaps, and broken examples
+are `minor`. To block on them, set `requestChanges` to `minor`.
 
 ### Verdicts and tiers
 

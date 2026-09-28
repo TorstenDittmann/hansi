@@ -153,6 +153,67 @@ export async function fetchJson(url: string, options: FetchOptions = {}): Promis
 }
 `;
 
+const guidelines = `# Project guidelines
+
+## Conventions
+
+- TypeScript with tabs. Keep functions small.
+- Do not add regular expressions. Use string functions (startsWith, endsWith, includes, split) instead; regex is hard to review and easy to get subtly wrong.
+
+## Tests
+
+- Tests live next to the code as *.test.ts and assert observable behavior.
+`;
+
+const slugAfter = `export function isReservedSlug(value: string): boolean {
+	return /^(admin|api)$/.test(value);
+}
+
+export function slug(title: string): string {
+	const value = title.trim().toLowerCase().split(' ').filter(Boolean).join('-');
+	if (isReservedSlug(value)) throw new Error(\`"\${value}" is a reserved slug\`);
+	return value;
+}
+`;
+
+const retryBefore = `/** Calls fn until it succeeds. */
+export async function retry<T>(fn: () => Promise<T>): Promise<T> {
+	for (;;) {
+		try {
+			return await fn();
+		} catch {
+			// try again
+		}
+	}
+}
+`;
+
+const retryAfter = `/** Calls fn until it succeeds, at most \`attempts\` times; then rethrows the last error. */
+export async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await fn();
+		} catch (error) {
+			if (attempt >= attempts) throw error;
+		}
+	}
+}
+`;
+
+const retryTest = `import { expect, test } from 'bun:test';
+import { retry } from './retry';
+
+test('gives up after three attempts', async () => {
+	let calls = 0;
+	const result = await retry(async () => {
+		calls++;
+		return 'ok';
+	});
+	expect(result).toBe('ok');
+	expect(calls).toBe(1);
+});
+`;
+
 const detector = `export type Adapter = 'static' | 'ssr';
 
 /**
@@ -619,6 +680,83 @@ test('an empty cart costs nothing', () => {
 		},
 		pullRequest: { title: 'Add tests for total()' },
 		expected: []
+	},
+	{
+		name: 'ts-guideline-regex',
+		description:
+			'AGENTS.md bans regular expressions; the change adds one where a string check works.',
+		base: {
+			'AGENTS.md': guidelines,
+			'src/slug.ts': `export function slug(title: string): string {
+	return title.trim().toLowerCase().split(' ').filter(Boolean).join('-');
+}
+`
+		},
+		head: {
+			'src/slug.ts': slugAfter,
+			'src/slug.test.ts': `import { expect, test } from 'bun:test';
+import { slug } from './slug';
+
+test('rejects reserved slugs', () => {
+	expect(() => slug('Admin')).toThrow('reserved');
+	expect(() => slug(' API ')).toThrow('reserved');
+});
+
+test('allows other slugs, including longer ones', () => {
+	expect(slug('My Blog')).toBe('my-blog');
+	expect(slug('admins')).toBe('admins');
+});
+`
+		},
+		pullRequest: { title: 'Reject reserved slugs' },
+		expected: [
+			{
+				path: 'src/slug.ts',
+				lines: lineOf(slugAfter, '/^(admin|api)'),
+				description:
+					'AGENTS.md forbids regular expressions; a startsWith or equality check does the same.'
+			}
+		]
+	},
+	{
+		name: 'strict-clean-tests',
+		description: 'Adds straightforward tests under the strict profile. Any comment is noise.',
+		base: { 'AGENTS.md': guidelines, 'src/price.ts': priceAfter },
+		head: {
+			'src/price.test.ts': `import { expect, test } from 'bun:test';
+import { total } from './price';
+
+test('sums prices and applies tax', () => {
+	expect(total([10, 20], 0.1)).toBeCloseTo(33);
+});
+
+test('an empty cart costs nothing', () => {
+	expect(total([], 0.2)).toBe(0);
+});
+`
+		},
+		pullRequest: { title: 'Add tests for total()' },
+		config: { reviews: { profile: 'strict' } },
+		expected: []
+	},
+	{
+		name: 'ts-test-cannot-fail',
+		description:
+			'Retries now give up after three attempts, but the new test never fails, so it cannot catch a broken limit.',
+		base: { 'src/retry.ts': retryBefore },
+		head: { 'src/retry.ts': retryAfter, 'src/retry.test.ts': retryTest },
+		pullRequest: { title: 'Give up after three attempts' },
+		expected: [
+			{
+				path: 'src/retry.test.ts',
+				lines: [
+					lineOf(retryTest, "test('gives up after three attempts'")[0],
+					lineOf(retryTest, 'expect(calls).toBe(1)')[0]
+				],
+				description:
+					'The fake succeeds on the first call, so the test never reaches the retry limit it names.'
+			}
+		]
 	},
 	{
 		name: 'ts-adjacent-config-match',
