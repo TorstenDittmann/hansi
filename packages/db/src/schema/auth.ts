@@ -99,7 +99,8 @@ export const member = sqliteTable(
 	},
 	(t) => [
 		index('member_organization_id_idx').on(t.organizationId),
-		index('member_user_id_idx').on(t.userId)
+		index('member_user_id_idx').on(t.userId),
+		uniqueIndex('member_organization_user_idx').on(t.organizationId, t.userId)
 	]
 );
 

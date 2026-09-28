@@ -72,6 +72,19 @@ test('accept joins a new user and a second visit does not duplicate membership',
 	expect(members[0]?.role).toBe('member');
 });
 
+test('concurrent accepts create a single membership', async () => {
+	const db = await setup();
+	const link = await createInviteLink(db, 'org-1', 'user-a');
+	await Promise.all([
+		acceptInviteLink(db, 'user-b', link.token),
+		acceptInviteLink(db, 'user-b', link.token)
+	]);
+
+	const members = await db.select().from(schema.member).where(eq(schema.member.userId, 'user-b'));
+	expect(members).toHaveLength(1);
+	expect(members[0]?.role).toBe('member');
+});
+
 test('accept leaves an existing role unchanged', async () => {
 	const db = await setup();
 	const now = new Date();

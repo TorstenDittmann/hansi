@@ -108,21 +108,17 @@ export async function acceptInviteLink(db: Database, userId: string, token: stri
 	const link = await findActiveInviteLink(db, token);
 	if (!link) return null;
 
-	const [existing] = await db
-		.select({ id: schema.member.id })
-		.from(schema.member)
-		.where(
-			and(eq(schema.member.organizationId, link.organizationId), eq(schema.member.userId, userId))
-		)
-		.limit(1);
-	if (!existing) {
-		await db.insert(schema.member).values({
+	// One statement, ignored when this user is already in the organization, so two requests
+	// cannot insert two memberships. An existing role is left as it is.
+	await db
+		.insert(schema.member)
+		.values({
 			id: crypto.randomUUID(),
 			organizationId: link.organizationId,
 			userId,
 			role: 'member',
 			createdAt: new Date()
-		});
-	}
+		})
+		.onConflictDoNothing({ target: [schema.member.organizationId, schema.member.userId] });
 	return link;
 }
