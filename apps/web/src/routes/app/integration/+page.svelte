@@ -1,3 +1,17 @@
+<script lang="ts">
+	import claude from '$lib/assets/providers/claude.svg';
+	import codex from '$lib/assets/providers/codex.svg';
+	import cursor from '$lib/assets/providers/cursor.svg';
+</script>
+
+{#snippet mark(src: string)}
+	<span
+		class="size-6 shrink-0 bg-current [mask-image:var(--logo)] [mask-size:contain] [mask-position:center] [mask-repeat:no-repeat] [-webkit-mask-image:var(--logo)] [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:contain]"
+		style="--logo: url({JSON.stringify(src)})"
+		aria-hidden="true"
+	></span>
+{/snippet}
+
 <div class="space-y-8">
 	<header>
 		<h1 class="text-2xl font-semibold">Integration</h1>
@@ -9,7 +23,10 @@
 	</header>
 
 	<section class="card space-y-3 p-5">
-		<h2 class="text-lg font-semibold">Cursor</h2>
+		<h2 class="flex items-center gap-2.5 text-lg font-semibold">
+			{@render mark(cursor)}
+			Cursor
+		</h2>
 		<p>
 			Install <strong>hansi.codes</strong> from the
 			<a class="underline" href="https://cursor.com/marketplace">Cursor Marketplace</a>. Then run
@@ -19,7 +36,10 @@
 	</section>
 
 	<section class="card space-y-3 p-5">
-		<h2 class="text-lg font-semibold">Claude Code</h2>
+		<h2 class="flex items-center gap-2.5 text-lg font-semibold">
+			{@render mark(claude)}
+			Claude Code
+		</h2>
 		<p>
 			Add this repository as a marketplace, then install the plugin. The same short commands work.
 			Claude also registers <code>/hansi.codes:hansi-status</code> and the same prefix on the other skills.
@@ -31,7 +51,10 @@ claude plugin install hansi.codes@hansi.codes`}</pre>
 	</section>
 
 	<section class="card space-y-3 p-5">
-		<h2 class="text-lg font-semibold">Codex</h2>
+		<h2 class="flex items-center gap-2.5 text-lg font-semibold">
+			{@render mark(codex)}
+			Codex
+		</h2>
 		<p>
 			Add this repository as a marketplace, then install <strong>hansi-codes</strong>. Run
 			<code>/hansi-status</code>, <code>/hansi-learn</code>, <code>/hansi-setup</code>, or
