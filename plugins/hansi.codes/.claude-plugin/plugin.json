@@ -6,7 +6,6 @@
 	"author": {
 		"name": "Torsten Dittmann"
 	},
-	"publisher": "hansi.codes",
 	"homepage": "https://hansi.codes",
 	"repository": "https://github.com/TorstenDittmann/hansi",
 	"license": "MIT",
@@ -21,8 +20,5 @@
 		"github",
 		"pull-request"
 	],
-	"category": "developer-tools",
-	"tags": ["code-review", "github", "pull-request"],
-	"skills": "./skills/",
-	"rules": "./rules/"
+	"skills": "./skills/"
 }

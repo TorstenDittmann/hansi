@@ -137,15 +137,37 @@ and with no open findings the tier is **S**.
 The `Hansi` check run follows the verdict (success, failure, or neutral), so you can make it a
 required check.
 
-## Cursor plugin
+## Plugins
 
-The [hansi.codes](plugins/hansi.codes/README.md) plugin adds four agent skills. Install it from the
-[Cursor Marketplace](https://cursor.com/marketplace), or install one skill with the
+The [hansi.codes](plugins/hansi.codes/README.md) plugin adds four agent skills. Install it for
+[Cursor](https://cursor.com/marketplace), Claude Code, or Codex, or install one skill with the
 [skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add TorstenDittmann/hansi --skill hansi-loop
 ```
+
+From the [Cursor Marketplace](https://cursor.com/marketplace), install **hansi.codes**.
+
+Claude Code:
+
+```sh
+claude plugin marketplace add TorstenDittmann/hansi
+claude plugin install hansi.codes@hansi.codes
+```
+
+Claude also registers `/hansi.codes:hansi-status` and the same prefix on the other skills. That alias
+cannot be turned off. `/hansi-status`, `/hansi-learn`, `/hansi-setup`, and `/hansi-loop` still work.
+
+Codex:
+
+```sh
+codex plugin marketplace add TorstenDittmann/hansi
+codex plugin install hansi-codes --source hansi-codes
+```
+
+Listing the plugin in Anthropic's directory or the OpenAI plugin directory is a separate submission.
+This repository is the git marketplace those commands install from.
 
 | Skill                                                              | What it does                                                                    |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
@@ -157,7 +179,8 @@ npx skills add TorstenDittmann/hansi --skill hansi-loop
 The examples use [git](https://git-scm.com) and the [GitHub CLI](https://cli.github.com). Another client is fine when that is what the environment has. The Hansi GitHub App must be installed on the repository. Pass a pull request number to review that one; otherwise the skill uses
 the pull request for the current branch. A rule in the plugin tells the agent not to resolve Hansi
 threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses
-the finding.
+the finding. On Claude Code and Codex that instruction is the `hansi-threads` skill, which is not a
+slash command.
 
 ## Development
 

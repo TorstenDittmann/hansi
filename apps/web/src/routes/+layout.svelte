@@ -69,6 +69,11 @@
 			match: (path: string) => path.startsWith('/app/settings/learnings')
 		},
 		{
+			name: 'Integration',
+			href: resolve('/app/integration'),
+			match: (path: string) => path.startsWith('/app/integration')
+		},
+		{
 			name: 'Members',
 			href: resolve('/app/settings/members'),
 			match: (path: string) => path.startsWith('/app/settings/members')
