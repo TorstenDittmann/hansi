@@ -109,7 +109,7 @@
 			{/if}
 		</div>
 	{:else}
-		<ReviewsTable reviews={data.reviews} showTrigger />
+		<ReviewsTable reviews={data.reviews} />
 		{#if data.pages > 1}
 			<nav class="flex flex-wrap items-center justify-between gap-3" aria-label="Pagination">
 				<p class="muted">Page {data.page} of {data.pages}</p>

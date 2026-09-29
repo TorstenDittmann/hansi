@@ -11,7 +11,6 @@
 		repository: string;
 		pullNumber: number;
 		status: string;
-		trigger: string;
 		verdict: Verdict | null;
 		tier: string | null;
 		costUsd: number;
@@ -19,14 +18,7 @@
 		posted: number;
 	};
 
-	let { reviews, showTrigger = false }: { reviews: ReviewRow[]; showTrigger?: boolean } = $props();
-
-	const triggerLabel: Record<string, string> = {
-		opened: 'Opened',
-		synchronize: 'New commits',
-		mention: 'Mention',
-		manual: 'Manual'
-	};
+	let { reviews }: { reviews: ReviewRow[] } = $props();
 </script>
 
 <div class="card overflow-x-auto">
@@ -34,7 +26,6 @@
 		<thead class="border-b border-stone-200 text-stone-500 dark:border-stone-800">
 			<tr>
 				<th class="px-4 py-2 font-medium">Pull request</th>
-				{#if showTrigger}<th class="px-4 py-2 font-medium">Trigger</th>{/if}
 				<th class="px-4 py-2 font-medium">Tier</th>
 				<th class="px-4 py-2 font-medium">Status</th>
 				<th class="px-4 py-2 font-medium">Comments</th>
@@ -53,9 +44,6 @@
 							{review.repository}#{review.pullNumber}
 						</a>
 					</td>
-					{#if showTrigger}
-						<td class="px-4 py-2">{triggerLabel[review.trigger] ?? review.trigger}</td>
-					{/if}
 					<td class="px-4 py-2"><TierBadge tier={review.tier} /></td>
 					<td class="px-4 py-2">
 						{#if review.status === 'completed' && review.verdict}
