@@ -166,6 +166,8 @@ codex plugin marketplace add TorstenDittmann/hansi
 codex plugin install hansi-codes --source hansi-codes
 ```
 
+In Codex, run `$hansi-status`, `$hansi-learn`, `$hansi-setup`, or `$hansi-loop`.
+
 Listing the plugin in Anthropic's directory or the OpenAI plugin directory is a separate submission.
 This repository is the git marketplace those commands install from.
 

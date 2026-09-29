@@ -31,6 +31,8 @@ codex plugin marketplace add TorstenDittmann/hansi
 codex plugin install hansi-codes --source hansi-codes
 ```
 
+In Codex, run `$hansi-status`, `$hansi-learn`, `$hansi-setup`, or `$hansi-loop`.
+
 Or install one skill with the [skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh

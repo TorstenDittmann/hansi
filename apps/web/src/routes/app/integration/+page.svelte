@@ -57,8 +57,8 @@ claude plugin install hansi.codes@hansi.codes`}</pre>
 		</h2>
 		<p>
 			Add this repository as a marketplace, then install <strong>hansi-codes</strong>. Run
-			<code>/hansi-status</code>, <code>/hansi-learn</code>, <code>/hansi-setup</code>, or
-			<code>/hansi-loop</code>.
+			<code>$hansi-status</code>, <code>$hansi-learn</code>, <code>$hansi-setup</code>, or
+			<code>$hansi-loop</code>.
 		</p>
 		<pre
 			class="overflow-x-auto rounded-md bg-stone-100 p-3 font-mono text-sm dark:bg-stone-950">{`codex plugin marketplace add TorstenDittmann/hansi
