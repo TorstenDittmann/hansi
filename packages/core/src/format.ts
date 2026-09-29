@@ -180,13 +180,16 @@ export function formatReviewBody(input: {
 	tier: Tier;
 	verdict: Verdict;
 	blocking: number;
+	/** Inline comments on this review. A Tier S review with none still says it is ready. */
+	comments?: number;
 	summaryUrl?: string;
 }): string {
 	const link = input.summaryUrl ? ` [Summary](${input.summaryUrl})` : '';
+	const readyWithoutComments = input.tier === 'S' && input.comments === 0;
 	const headline =
 		input.verdict === 'request_changes'
 			? `${plural(input.blocking, 'blocking finding')} to address.`
-			: input.verdict === 'approve'
+			: input.verdict === 'approve' || readyWithoutComments
 				? 'Looks good to merge.'
 				: 'See the inline comments.';
 	return `${tierIcon[input.tier]} **Tier ${input.tier}** · ${headline}${link}`;
