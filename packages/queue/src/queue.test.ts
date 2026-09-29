@@ -40,6 +40,23 @@ describe('Queue', () => {
 		expect((await q.claim('review'))?.payload).toEqual({ sha: 'b' });
 	});
 
+	test('replacing a queued singleton job starts its attempts over', async () => {
+		const q = queue();
+		const id = await q.send('review', { sha: 'a' }, { singletonKey: 'repo:1' });
+		await q.fail((await q.claim('review'))!, new Error('transient'));
+		clock += 5_000;
+
+		expect(await q.send('review', { sha: 'b' }, { singletonKey: 'repo:1' })).toBe(id);
+		const [row] = await db.select().from(schema.jobs).where(eq(schema.jobs.id, id));
+		expect(row?.attempts).toBe(0);
+		expect(row?.lastError).toBeNull();
+		expect(row?.payload).toEqual({ sha: 'b' });
+
+		const claimed = await q.claim('review');
+		expect(claimed?.attempts).toBe(1);
+		expect(claimed?.payload).toEqual({ sha: 'b' });
+	});
+
 	test('singleton key holds queued jobs while one is active', async () => {
 		const q = queue();
 		await q.send('review', { sha: 'a' }, { singletonKey: 'repo:1' });
