@@ -54,8 +54,11 @@ codex plugin install hansi-codes --source hansi-codes`}</pre>
 	<section class="card space-y-3 p-5">
 		<h2 class="text-lg font-semibold">Others</h2>
 		<p>
-			The <a class="underline" href="https://hansi.codes">Hansi GitHub App</a> must be installed on the
-			repository. To install one skill without a marketplace:
+			The <a class="underline" href="https://hansi.codes">Hansi GitHub App</a> must be installed on
+			the repository. The skills use
+			<a class="underline" href="https://git-scm.com">git</a> and the
+			<a class="underline" href="https://cli.github.com">GitHub CLI</a>. Another client is fine when
+			that is what the environment has. To install one skill without a marketplace:
 		</p>
 		<pre
 			class="overflow-x-auto rounded-md bg-stone-100 p-3 font-mono text-sm dark:bg-stone-950">npx skills add TorstenDittmann/hansi --skill hansi-loop</pre>
