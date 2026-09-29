@@ -40,6 +40,7 @@ import {
 import type { Job, ReviewJobPayload } from '@hans/queue';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
+import { REVIEW_FAILURE_SUMMARY } from './public-failure';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -378,7 +379,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 		await completeCheckRun(octokit, ref, checkRunId, {
 			conclusion: 'neutral',
 			title: 'Review failed',
-			summary: error instanceof Error ? error.message : String(error)
+			summary: REVIEW_FAILURE_SUMMARY
 		}).catch((e) => log.warn({ err: e }, 'failed to complete check run'));
 		throw error;
 	}
