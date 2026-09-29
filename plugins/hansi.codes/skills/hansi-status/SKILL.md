@@ -99,7 +99,7 @@ query($cursor: String) {
 }'
 ```
 
-Page with `endCursor` while `hasNextPage` is true. Keep unresolved threads whose first comment is from `<slug>[bot]`. A finding comment starts with a bold title, then the explanation, sometimes a `suggestion` block, a collapsed **Prompt To Fix With AI** block, and a footer like `Major · bug`.
+Page with `endCursor` while `hasNextPage` is true. Keep unresolved threads whose first comment is from `<slug>[bot]`. A finding comment starts with a bold title, then the explanation, sometimes a `suggestion` block, and a footer like `Major · bug`.
 
 Also read the latest Hansi review body. If GitHub rejected the inline comments, the findings are in that body instead of threads. Treat those as open too.
 

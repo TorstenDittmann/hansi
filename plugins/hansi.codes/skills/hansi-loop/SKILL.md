@@ -159,7 +159,7 @@ query($cursor: String) {
 }'
 ```
 
-Page with `endCursor` while `hasNextPage` is true. A finding comment starts with a bold title, then the explanation, sometimes a `suggestion` block, a collapsed **Prompt To Fix With AI** block, and a footer like `Major · bug`. The summary has a collapsed **Fix with agent prompt** block listing every open finding.
+Page with `endCursor` while `hasNextPage` is true. A finding comment starts with a bold title, then the explanation, sometimes a `suggestion` block, and a footer like `Major · bug`.
 
 Also read the latest Hansi review body. If GitHub rejected the inline comments, the findings are in that body instead of threads. Treat those as open too.
 
@@ -179,7 +179,7 @@ Also stop when the fifth iteration finishes. Report whatever is left.
 
 For each unresolved Hansi finding:
 
-1. Read the file, the diff hunk, and the comment. Follow the collapsed **Prompt To Fix With AI** block on that comment, or the summary's **Fix with agent prompt** when you are fixing every open finding at once.
+1. Read the file, the diff hunk, and the comment.
 2. Fix it in the code when it describes a real bug. Apply a suggestion block only when it actually fixes that bug.
 3. When the comment does not apply, reply on **that thread** with a short reason. A reply to a finding is enough; you do not need to mention Hansi again. Hansi answers, and dismisses the finding when it agrees.
 
