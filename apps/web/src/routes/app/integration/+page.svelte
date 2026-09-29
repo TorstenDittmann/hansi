@@ -28,11 +28,13 @@
 			Cursor
 		</h2>
 		<p>
-			Install <strong>hansi.codes</strong> from the
-			<a class="underline" href="https://cursor.com/marketplace">Cursor Marketplace</a>. Then run
+			Add this GitHub repository as a marketplace, then install <strong>hansi.codes</strong>. In
+			Cursor, open Plugins, choose Add Marketplace, and import the URL. Then run
 			<code>/hansi-status</code>, <code>/hansi-learn</code>, <code>/hansi-setup</code>, or
 			<code>/hansi-loop</code>.
 		</p>
+		<pre
+			class="overflow-x-auto rounded-md bg-stone-100 p-3 font-mono text-sm dark:bg-stone-950">https://github.com/TorstenDittmann/hansi</pre>
 	</section>
 
 	<section class="card space-y-3 p-5">

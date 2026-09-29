@@ -13,7 +13,11 @@ The rule tells the agent not to resolve Hansi threads in GitHub. Hansi clears a 
 
 ## Install
 
-From the [Cursor Marketplace](https://cursor.com/marketplace), install **hansi.codes**.
+In Cursor, open Plugins, choose Add Marketplace, and import this repository. Then install **hansi.codes**.
+
+```text
+https://github.com/TorstenDittmann/hansi
+```
 
 Claude Code:
 

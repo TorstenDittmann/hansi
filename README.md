@@ -141,15 +141,20 @@ required check.
 
 ## Plugins
 
-The [hansi.codes](plugins/hansi.codes/README.md) plugin adds four agent skills. Install it for
-[Cursor](https://cursor.com/marketplace), Claude Code, or Codex, or install one skill with the
+The [hansi.codes](plugins/hansi.codes/README.md) plugin adds four agent skills. Install it in
+Cursor, Claude Code, or Codex, or install one skill with the
 [skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add TorstenDittmann/hansi --skill hansi-loop
 ```
 
-From the [Cursor Marketplace](https://cursor.com/marketplace), install **hansi.codes**.
+In Cursor, open Plugins, choose Add Marketplace, and import this repository. Then install
+**hansi.codes**.
+
+```text
+https://github.com/TorstenDittmann/hansi
+```
 
 Claude Code:
 
