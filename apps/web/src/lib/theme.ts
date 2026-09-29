@@ -18,6 +18,38 @@ export function readStoredTheme(storage: Pick<Storage, 'getItem'>): Theme {
 	}
 }
 
+/** Reads the saved theme. Accessing storage itself can throw before `getItem` runs. */
+export function readStoredThemeFrom(getStorage: () => Pick<Storage, 'getItem'>): Theme {
+	try {
+		return readStoredTheme(getStorage());
+	} catch {
+		return 'system';
+	}
+}
+
+export function writeStoredTheme(
+	theme: Theme,
+	getStorage: () => Pick<Storage, 'setItem'> = () => localStorage
+) {
+	try {
+		getStorage().setItem(THEME_STORAGE_KEY, theme);
+	} catch {
+		// The choice still applies for this visit when storage is blocked.
+	}
+}
+
+export function systemPrefersDark(match: () => boolean = matchSystemDark): boolean {
+	try {
+		return match();
+	} catch {
+		return false;
+	}
+}
+
+function matchSystemDark() {
+	return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 export function resolveDark(theme: Theme, systemPrefersDark: boolean): boolean {
 	if (theme === 'dark') return true;
 	if (theme === 'light') return false;

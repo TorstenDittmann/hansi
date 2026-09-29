@@ -1,63 +1,21 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { onMount } from 'svelte';
-	import {
-		THEME_STORAGE_KEY,
-		applyTheme,
-		nextTheme,
-		parseTheme,
-		readStoredTheme,
-		themeName,
-		type Theme
-	} from '$lib/theme';
+	import { cycleTheme, themePreference } from '$lib/theme-client.svelte';
+	import { nextTheme, themeName } from '$lib/theme';
 
-	// Icons follow `data-theme` on <html>, set before paint by the boot script in app.html.
-	// This row only renders once the account menu is open, so it is never in the server HTML.
-	let theme = $state<Theme>(browser ? readStoredTheme(localStorage) : 'system');
-	let systemDark = $state(
-		browser ? window.matchMedia('(prefers-color-scheme: dark)').matches : false
-	);
-	const upcoming = $derived(nextTheme(theme, systemDark));
+	// Icons follow `data-theme` on <html>. The layout keeps that in sync for the whole visit;
+	// this row only exists while the account menu is open.
+	const theme = $derived(themePreference.theme);
+	const upcoming = $derived(nextTheme(theme, themePreference.systemDark));
 	const label = $derived(
 		`${themeName(theme)} theme. Switch to ${themeName(upcoming).toLowerCase()} theme.`
 	);
-
-	$effect(() => {
-		if (!browser) return;
-		applyTheme(document.documentElement, theme, systemDark);
-	});
-
-	onMount(() => {
-		const media = window.matchMedia('(prefers-color-scheme: dark)');
-		const onMedia = (event: MediaQueryListEvent) => {
-			systemDark = event.matches;
-		};
-		const onStorage = (event: StorageEvent) => {
-			if (event.key === THEME_STORAGE_KEY) theme = parseTheme(event.newValue);
-		};
-		media.addEventListener('change', onMedia);
-		window.addEventListener('storage', onStorage);
-		return () => {
-			media.removeEventListener('change', onMedia);
-			window.removeEventListener('storage', onStorage);
-		};
-	});
-
-	function cycle() {
-		theme = nextTheme(theme, systemDark);
-		try {
-			localStorage.setItem(THEME_STORAGE_KEY, theme);
-		} catch {
-			// The choice still applies for this visit when storage is blocked.
-		}
-	}
 </script>
 
 <button
 	type="button"
 	class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-stone-100 dark:hover:bg-stone-800"
 	aria-label={label}
-	onclick={cycle}
+	onclick={cycleTheme}
 >
 	<svg
 		viewBox="0 0 16 16"

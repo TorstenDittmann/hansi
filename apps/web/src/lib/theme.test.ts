@@ -6,8 +6,11 @@ import {
 	nextTheme,
 	parseTheme,
 	readStoredTheme,
+	readStoredThemeFrom,
 	resolveDark,
+	systemPrefersDark,
 	themeName,
+	writeStoredTheme,
 	type Theme
 } from './theme';
 
@@ -31,6 +34,34 @@ test('reads the saved theme and falls back when storage throws', () => {
 			}
 		})
 	).toBe('system');
+});
+
+test('falls back when reaching storage or the system preference throws', () => {
+	expect(readStoredThemeFrom(() => ({ getItem: () => 'light' }))).toBe('light');
+	expect(
+		readStoredThemeFrom(() => {
+			throw new Error('blocked');
+		})
+	).toBe('system');
+	expect(systemPrefersDark(() => true)).toBe(true);
+	expect(
+		systemPrefersDark(() => {
+			throw new Error('blocked');
+		})
+	).toBe(false);
+
+	let saved: string | undefined;
+	writeStoredTheme('dark', () => ({
+		setItem(_key, value) {
+			saved = value;
+		}
+	}));
+	expect(saved).toBe('dark');
+	expect(() =>
+		writeStoredTheme('light', () => {
+			throw new Error('blocked');
+		})
+	).not.toThrow();
 });
 
 test('resolves system from the operating system and pins an explicit choice', () => {
