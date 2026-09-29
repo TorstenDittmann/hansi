@@ -163,17 +163,12 @@ claude plugin marketplace add TorstenDittmann/hansi
 claude plugin install hansi.codes@hansi.codes
 ```
 
-Claude also registers `/hansi.codes:hansi-status` and the same prefix on the other skills. That alias
-cannot be turned off. `/hansi-status`, `/hansi-learn`, `/hansi-setup`, and `/hansi-loop` still work.
-
 Codex:
 
 ```sh
 codex plugin marketplace add TorstenDittmann/hansi
 codex plugin install hansi-codes --source hansi-codes
 ```
-
-In Codex, run `$hansi-status`, `$hansi-learn`, `$hansi-setup`, or `$hansi-loop`.
 
 Listing the plugin in Anthropic's directory or the OpenAI plugin directory is a separate submission.
 This repository is the git marketplace those commands install from.
@@ -188,8 +183,7 @@ This repository is the git marketplace those commands install from.
 The examples use [git](https://git-scm.com) and the [GitHub CLI](https://cli.github.com). Another client is fine when that is what the environment has. The Hansi GitHub App must be installed on the repository. Pass a pull request number to review that one; otherwise the skill uses
 the pull request for the current branch. A rule in the plugin tells the agent not to resolve Hansi
 threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses
-the finding. On Claude Code and Codex that instruction is the `hansi-threads` skill, which is not a
-slash command.
+the finding.
 
 ## Development
 

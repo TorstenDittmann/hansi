@@ -9,7 +9,7 @@
 | `/hansi-setup`  | Write `.hansi.json` and open a pull request onto the base branch.                         |
 | `/hansi-loop`   | Fix the pull request until Hansi grades it **Tier S** and no comments are left open.      |
 
-The rule tells the agent not to resolve Hansi threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses the finding. On Claude Code and Codex that instruction is the `hansi-threads` skill. It is not a slash command.
+The rule tells the agent not to resolve Hansi threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses the finding.
 
 ## Install
 
@@ -26,16 +26,12 @@ claude plugin marketplace add TorstenDittmann/hansi
 claude plugin install hansi.codes@hansi.codes
 ```
 
-Claude also registers `/hansi.codes:hansi-status` and the same prefix on the other skills. That alias cannot be turned off. The short names above still work.
-
 Codex:
 
 ```sh
 codex plugin marketplace add TorstenDittmann/hansi
 codex plugin install hansi-codes --source hansi-codes
 ```
-
-In Codex, run `$hansi-status`, `$hansi-learn`, `$hansi-setup`, or `$hansi-loop`.
 
 Or install one skill with the [skills CLI](https://github.com/vercel-labs/skills):
 
