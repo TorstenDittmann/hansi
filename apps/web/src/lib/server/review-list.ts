@@ -50,7 +50,6 @@ export async function queryReviewList(
 			repository: schema.repositories.fullName,
 			pullNumber: schema.reviews.pullNumber,
 			status: schema.reviews.status,
-			trigger: schema.reviews.trigger,
 			verdict: schema.reviews.verdict,
 			tier: schema.reviews.tier,
 			costUsd: schema.reviews.costUsd,
