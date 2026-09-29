@@ -1,0 +1,20 @@
+{
+	"name": "hansi-codes",
+	"interface": {
+		"displayName": "hansi.codes"
+	},
+	"plugins": [
+		{
+			"name": "hansi-codes",
+			"source": {
+				"source": "local",
+				"path": "./plugins/hansi.codes"
+			},
+			"policy": {
+				"installation": "AVAILABLE",
+				"authentication": "ON_INSTALL"
+			},
+			"category": "Developer Tools"
+		}
+	]
+}

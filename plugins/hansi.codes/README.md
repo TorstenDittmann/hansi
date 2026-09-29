@@ -9,11 +9,29 @@
 | `/hansi-setup`  | Write `.hansi.json` and open a pull request onto the base branch.                         |
 | `/hansi-loop`   | Fix the pull request until Hansi grades it **Tier S** and no comments are left open.      |
 
-The rule tells the agent not to resolve Hansi threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses the finding.
+The rule tells the agent not to resolve Hansi threads in GitHub. Hansi clears a thread after a later review sees the fix, or after it dismisses the finding. On Claude Code and Codex that instruction is the `hansi-threads` skill. It is not a slash command.
 
 ## Install
 
 From the [Cursor Marketplace](https://cursor.com/marketplace), install **hansi.codes**.
+
+Claude Code:
+
+```sh
+claude plugin marketplace add TorstenDittmann/hansi
+claude plugin install hansi.codes@hansi.codes
+```
+
+Claude also registers `/hansi.codes:hansi-status` and the same prefix on the other skills. That alias cannot be turned off. The short names above still work.
+
+Codex:
+
+```sh
+codex plugin marketplace add TorstenDittmann/hansi
+codex plugin install hansi-codes --source hansi-codes
+```
+
+In Codex, run `$hansi-status`, `$hansi-learn`, `$hansi-setup`, or `$hansi-loop`.
 
 Or install one skill with the [skills CLI](https://github.com/vercel-labs/skills):
 
@@ -22,6 +40,8 @@ npx skills add TorstenDittmann/hansi --skill hansi-loop
 ```
 
 Replace `hansi-loop` with `hansi-status`, `hansi-learn`, or `hansi-setup`.
+
+Listing the plugin in Anthropic's directory or the OpenAI plugin directory is a separate submission. This repository is the git marketplace the commands above install from.
 
 ## Requirements
 
