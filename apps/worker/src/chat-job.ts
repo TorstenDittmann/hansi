@@ -14,6 +14,7 @@ import {
 } from '@hans/github';
 import type { ChatJobPayload, Job } from '@hans/queue';
 import { and, eq } from 'drizzle-orm';
+import { chatFailureReply } from './public-failure';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -164,11 +165,10 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		}
 		log.info('chat reply posted');
 	} catch (error) {
-		// Tell the person instead of leaving them waiting, but only once retries are exhausted.
-		if (job.attempts >= job.maxAttempts) {
-			const message = error instanceof Error ? error.message : String(error);
-			await reply(`Sorry, I couldn't answer that: ${message.slice(0, 300)}`).catch(() => {});
-		}
+		// Tell the person the answer failed, once retries are exhausted. The reply is fixed:
+		// the error can name a provider or include request details, and it stays in the logs.
+		const notice = chatFailureReply(job);
+		if (notice) await reply(notice).catch(() => {});
 		throw error;
 	}
 }

@@ -113,68 +113,66 @@
 		{/if}
 	</section>
 
-	<div class="grid gap-6 lg:grid-cols-2">
-		<section class="card overflow-hidden">
-			<h2 class="border-b border-stone-200 px-4 py-3 font-semibold dark:border-stone-800">
-				By model <span class="muted font-normal">· 30 days</span>
-			</h2>
-			{#if costs.byModel.length === 0}
-				<p class="muted px-4 py-6">No model calls yet.</p>
-			{:else}
-				<table class="w-full text-sm">
-					<thead class="text-left text-stone-500 dark:text-stone-400">
+	<section class="card overflow-hidden">
+		<h2 class="border-b border-stone-200 px-4 py-3 font-semibold dark:border-stone-800">
+			By model <span class="muted font-normal">· 30 days</span>
+		</h2>
+		{#if costs.byModel.length === 0}
+			<p class="muted px-4 py-6">No model calls yet.</p>
+		{:else}
+			<table class="w-full text-sm">
+				<thead class="text-left text-stone-500 dark:text-stone-400">
+					<tr>
+						<th class="px-4 py-2 font-medium">Model</th>
+						<th class="px-4 py-2 text-right font-medium">Tokens</th>
+						<th class="px-4 py-2 text-right font-medium">Cost</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
+					{#each costs.byModel as row (`${row.provider}/${row.model}`)}
 						<tr>
-							<th class="px-4 py-2 font-medium">Model</th>
-							<th class="px-4 py-2 text-right font-medium">Tokens</th>
-							<th class="px-4 py-2 text-right font-medium">Cost</th>
+							<td class="px-4 py-2">
+								<span class="flex min-w-0 items-center gap-2">
+									<ProviderLogo provider={row.provider} class="size-4" />
+									<span class="truncate font-mono">{row.model}</span>
+								</span>
+							</td>
+							<td class="px-4 py-2 text-right tabular-nums">{compact.format(row.tokens)}</td>
+							<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
 						</tr>
-					</thead>
-					<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
-						{#each costs.byModel as row (`${row.provider}/${row.model}`)}
-							<tr>
-								<td class="px-4 py-2">
-									<span class="flex min-w-0 items-center gap-2">
-										<ProviderLogo provider={row.provider} class="size-4" />
-										<span class="truncate font-mono">{row.model}</span>
-									</span>
-								</td>
-								<td class="px-4 py-2 text-right tabular-nums">{compact.format(row.tokens)}</td>
-								<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</section>
+					{/each}
+				</tbody>
+			</table>
+		{/if}
+	</section>
 
-		<section class="card overflow-hidden">
-			<h2 class="border-b border-stone-200 px-4 py-3 font-semibold dark:border-stone-800">
-				By repository <span class="muted font-normal">· 30 days</span>
-			</h2>
-			{#if costs.byRepository.length === 0}
-				<p class="muted px-4 py-6">No reviews yet.</p>
-			{:else}
-				<table class="w-full text-sm">
-					<thead class="text-left text-stone-500 dark:text-stone-400">
+	<section class="card overflow-hidden">
+		<h2 class="border-b border-stone-200 px-4 py-3 font-semibold dark:border-stone-800">
+			By repository <span class="muted font-normal">· 30 days</span>
+		</h2>
+		{#if costs.byRepository.length === 0}
+			<p class="muted px-4 py-6">No reviews yet.</p>
+		{:else}
+			<table class="w-full text-sm">
+				<thead class="text-left text-stone-500 dark:text-stone-400">
+					<tr>
+						<th class="px-4 py-2 font-medium">Repository</th>
+						<th class="px-4 py-2 text-right font-medium">Reviews</th>
+						<th class="px-4 py-2 text-right font-medium">Cost</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
+					{#each costs.byRepository as row (row.repository)}
 						<tr>
-							<th class="px-4 py-2 font-medium">Repository</th>
-							<th class="px-4 py-2 text-right font-medium">Reviews</th>
-							<th class="px-4 py-2 text-right font-medium">Cost</th>
+							<td class="max-w-0 truncate px-4 py-2 font-mono">{row.repository}</td>
+							<td class="px-4 py-2 text-right tabular-nums">{row.reviews}</td>
+							<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
 						</tr>
-					</thead>
-					<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
-						{#each costs.byRepository as row (row.repository)}
-							<tr>
-								<td class="max-w-0 truncate px-4 py-2 font-mono">{row.repository}</td>
-								<td class="px-4 py-2 text-right tabular-nums">{row.reviews}</td>
-								<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</section>
-	</div>
+					{/each}
+				</tbody>
+			</table>
+		{/if}
+	</section>
 
 	<section>
 		<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">

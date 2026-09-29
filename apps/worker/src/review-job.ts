@@ -40,6 +40,7 @@ import {
 import type { Job, ReviewJobPayload } from '@hans/queue';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
+import { REVIEW_FAILURE_SUMMARY } from './public-failure';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -49,6 +50,7 @@ import {
 	type RepositoryConnection,
 	type WorkerContext
 } from './shared';
+import { shouldSubmitReview } from './submit-review';
 
 type Review = typeof schema.reviews.$inferSelect;
 type Outcome = Pick<
@@ -308,12 +310,17 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 			);
 
 			// Submit a GitHub review when there are inline comments, the approve/request-changes
-			// state changes, or someone explicitly asked for a re-review (so the ask is answered
-			// visibly, not only by editing the summary).
-			const stateChanged =
-				result.verdict !== 'comment' && result.verdict !== history.lastDecisiveVerdict;
-			const shouldPostReview =
-				result.posted.length > 0 || stateChanged || review.trigger === 'mention';
+			// state changes, the pull request reaches Tier S, or someone explicitly asked for a
+			// re-review. A clean Tier S used to only edit the summary, so the timeline never
+			// showed the review the earlier grades left.
+			const shouldPostReview = shouldSubmitReview({
+				posted: result.posted.length,
+				verdict: result.verdict,
+				tier: result.tier,
+				previousTier: history.previousTier,
+				lastDecisiveVerdict: history.lastDecisiveVerdict,
+				trigger: review.trigger
+			});
 			const commentIds = shouldPostReview
 				? await postReview(
 						connection,
@@ -324,6 +331,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 								verdict: result.verdict,
 								blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
 									.length,
+								comments: result.posted.length,
 								summaryUrl: summary.url
 							}),
 							event: reviewEvents[result.verdict]
@@ -371,7 +379,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 		await completeCheckRun(octokit, ref, checkRunId, {
 			conclusion: 'neutral',
 			title: 'Review failed',
-			summary: error instanceof Error ? error.message : String(error)
+			summary: REVIEW_FAILURE_SUMMARY
 		}).catch((e) => log.warn({ err: e }, 'failed to complete check run'));
 		throw error;
 	}
@@ -489,7 +497,8 @@ async function loadReviewHistory(db: Database, review: Review) {
 		.select({
 			headSha: schema.reviews.headSha,
 			summary: schema.reviews.summary,
-			walkthrough: schema.reviews.walkthrough
+			walkthrough: schema.reviews.walkthrough,
+			tier: schema.reviews.tier
 		})
 		.from(schema.reviews)
 		.where(samePullRequest)
@@ -525,6 +534,7 @@ async function loadReviewHistory(db: Database, review: Review) {
 	const findings = rows.filter((f) => f.status !== 'resolved');
 	return {
 		lastHeadSha: last?.headSha || undefined,
+		previousTier: last?.tier,
 		previousSummary:
 			last?.summary && last.walkthrough
 				? { summary: last.summary, walkthrough: last.walkthrough }
