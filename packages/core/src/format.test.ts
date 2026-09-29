@@ -138,6 +138,7 @@ describe('agent fix prompts', () => {
 					endLine: 9,
 					title: 'Stale cache',
 					body: 'The cache is never invalidated.',
+					suggestion: 'cache.invalidate();\n',
 					severity: 'minor'
 				}
 			]
@@ -147,7 +148,7 @@ describe('agent fix prompts', () => {
 			'### Issue 1\nsrc/paginate.ts:3-4\n**Off by one | skips the first page**\n\nb\n\n```suggestion\nstart = 0;\n```'
 		);
 		expect(prompt).toContain(
-			'### Issue 2\nsrc/old.ts:8-9\n**Stale cache**\n\nThe cache is never invalidated.'
+			'### Issue 2\nsrc/old.ts:8-9\n**Stale cache**\n\nThe cache is never invalidated.\n\n```suggestion\ncache.invalidate();\n```'
 		);
 		expect(prompt).toContain(
 			'For each issue above, determine whether it is valid and should be fixed. If so, fix it directly.'

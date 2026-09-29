@@ -137,13 +137,14 @@ export interface SummaryInput {
 	posted: Finding[];
 	/** Earlier findings the new commits fixed. */
 	resolved: { path: string; startLine: number; title: string }[];
-	/** Earlier findings that are still open. Body and end line are included when known. */
+	/** Earlier findings that are still open. Body, end line, and suggestion are included when known. */
 	stillOpen: {
 		path: string;
 		startLine: number;
 		endLine?: number;
 		title: string;
 		body?: string;
+		suggestion?: string | null;
 		severity: Severity;
 	}[];
 	dropped: DroppedFinding[];
@@ -201,7 +202,8 @@ export function formatSummaryComment(input: SummaryInput): string {
 			startLine: finding.startLine,
 			endLine: finding.endLine,
 			title: finding.title,
-			body: finding.body
+			body: finding.body,
+			...(finding.suggestion ? { suggestion: finding.suggestion } : {})
 		}))
 	];
 	if (openIssues.length) {
