@@ -171,7 +171,9 @@ export function summaryAfterSettlement(
 		.map((f) => ({
 			path: f.path,
 			startLine: f.startLine,
+			endLine: f.endLine,
 			title: f.title,
+			body: f.body,
 			severity: f.severity as Severity
 		}));
 	const resolved = input.findings

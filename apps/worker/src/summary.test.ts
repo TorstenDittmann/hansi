@@ -56,7 +56,9 @@ describe('summaryAfterSettlement', () => {
 			{
 				path: earlierFinding.path,
 				startLine: 112,
+				endLine: 112,
 				title: earlierFinding.title,
+				body: earlierFinding.body,
 				severity: 'minor'
 			}
 		]);
