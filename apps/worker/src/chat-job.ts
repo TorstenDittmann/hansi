@@ -55,7 +55,8 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 
 	try {
 		const pr = await getPullRequest(octokit, ref, payload.pullNumber);
-		// Settings and guidelines come from the base branch, which the PR author cannot change.
+		// Product settings come from the base branch, which the PR author cannot change.
+		// Instruction files (AGENTS.md and the rest) are read from the PR-head checkout.
 		const { config } = parseRepoConfig(
 			await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.baseSha)
 		);

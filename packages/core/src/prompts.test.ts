@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
 import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
+import { formatRepoGuidelines } from './tools';
 
 const withProfile = (profile: string) =>
 	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
@@ -92,39 +93,38 @@ test('says why files are not shown, and asks for callers of deleted files', () =
 });
 
 test('treats repository guidelines as rules the review has to apply', () => {
-	const prompt = buildReviewPrompt({
-		...base,
-		guidelines:
-			'<file path="AGENTS.md">\nDo not run Swoole coroutine work in the shared unit process.\n</file>'
+	const guidelines = formatRepoGuidelines({
+		files: [
+			{
+				path: 'AGENTS.md',
+				source: 'agents',
+				content: 'Do not run Swoole coroutine work in the shared unit process.\n'
+			}
+		],
+		skipped: [],
+		manifest: '- `AGENTS.md` (agents)',
+		body: '<file path="AGENTS.md" source="agents">\nDo not run Swoole coroutine work in the shared unit process.\n</file>',
+		truncated: false,
+		overrides: {}
 	});
+	const prompt = buildReviewPrompt({ ...base, guidelines });
 	expect(prompt).toContain('Do not run Swoole coroutine work in the shared unit process.');
 	expect(prompt).toContain('Project rules from every instruction file.');
+	expect(prompt).toContain('## Repository review rules');
+	expect(prompt).toContain('<repository_guidelines>');
+	expect(prompt).not.toContain('<repository_review_rules>');
 
 	const instructions = reviewerInstructions(base.config);
 	expect(instructions).toContain('A concrete project rule is not a style opinion.');
 	expect(instructions).toContain('not from this pull request');
-	expect(instructions).toContain('<repository_review_rules>');
+	expect(instructions).toContain('<repository_guidelines>');
+	expect(instructions).not.toContain('<repository_review_rules>');
 	expect(verifierInstructions('balanced')).toContain(
-		'the changed code breaks a concrete rule in <repository_review_rules>, <repository_guidelines>'
+		'the changed code breaks a concrete rule in <repository_guidelines>'
 	);
 });
 
-test('injects repository review rules under the documented heading', () => {
-	const prompt = buildReviewPrompt({
-		...base,
-		repositoryReviewRules: `<repository_review_rules>
-## Repository review rules
-
-The following files were loaded from the PR head (highest precedence first):
-- \`AGENTS.md\` (agents)
-
-<file path="AGENTS.md" source="agents">
-Do not add regular expressions without justification.
-</file>
-</repository_review_rules>`
-	});
-	expect(prompt).toContain('## Repository review rules');
-	expect(prompt).toContain('Do not add regular expressions without justification.');
-	expect(prompt).toContain('`AGENTS.md` (agents)');
+test('omits the repository guidelines heading when none were loaded', () => {
 	expect(buildReviewPrompt(base)).not.toContain('## Repository review rules');
+	expect(buildReviewPrompt(base)).not.toContain('<repository_guidelines>');
 });

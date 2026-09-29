@@ -8,7 +8,7 @@ export interface CaseRepository {
 	dir: string;
 	/** Diff of the pull request: merge base → head, as GitHub shows it. */
 	diff: string;
-	/** The base branch, as a production review gets it for guidelines and `read_file`. */
+	/** The base branch, as a production review gets it for `read_file`. */
 	baseRef: string;
 	cleanup: () => Promise<void>;
 }

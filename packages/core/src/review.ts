@@ -32,16 +32,12 @@ import { checkSuggestion } from './suggestions';
 import { decideVerdict, type Verdict } from './verdict';
 import {
 	createRepoTools,
+	formatRepoGuidelines,
 	loadRepoGuidelines,
 	resolveRepoPath,
 	type EmitEvent,
 	type TrustedSource
 } from './tools';
-import {
-	formatRepositoryReviewRules,
-	loadRepositoryReviewRules,
-	RULES_INJECTION_GUIDELINE_OVERLAP
-} from './rules';
 
 export interface ReviewModel {
 	model: LanguageModel;
@@ -67,13 +63,8 @@ export interface ReviewInput {
 	openFindings?: OpenFinding[];
 	/** Team preferences from earlier conversations (see `remember` in chat). */
 	learnings?: string[];
-	/** Where to read repository guidelines from; defaults to the (untrusted) PR checkout. */
+	/** Where to read pre-PR file contents from; defaults to the (untrusted) PR checkout. */
 	trustedSource?: TrustedSource;
-	/**
-	 * Load AGENTS.md / CLAUDE.md / .hansi* from the PR-head checkout and inject them as review
-	 * rules. Defaults to `config.reviews.rulesInjection` (off).
-	 */
-	rulesInjection?: boolean;
 	/** When set, Hansi may not approve, for this reason (e.g. an outside contributor). */
 	withholdApproval?: string;
 	/**
@@ -241,32 +232,29 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		token: input.trustedSource?.token,
 		baseRef: input.trustedSource?.ref
 	});
-	const rulesInjection = input.rulesInjection ?? config.reviews.rulesInjection;
-	const loadedRules = rulesInjection ? await loadRepositoryReviewRules(input.repoDir) : null;
-	if (loadedRules) {
+	const loadedGuidelines = await loadRepoGuidelines(input.repoDir);
+	if (
+		loadedGuidelines.files.length ||
+		loadedGuidelines.skipped.length ||
+		loadedGuidelines.truncated
+	) {
 		emit({
-			type: 'rules.loaded',
+			type: 'guidelines.loaded',
 			data: {
-				files: loadedRules.files.map((file) => file.path),
-				sources: loadedRules.files.map((file) => file.source),
-				skipped: loadedRules.skipped,
-				truncated: loadedRules.truncated,
-				overrides: loadedRules.overrides
+				files: loadedGuidelines.files.map((file) => file.path),
+				sources: loadedGuidelines.files.map((file) => file.source ?? null),
+				skipped: loadedGuidelines.skipped,
+				truncated: loadedGuidelines.truncated,
+				overrides: loadedGuidelines.overrides
 			}
 		});
 	}
-	const repositoryReviewRules = loadedRules ? formatRepositoryReviewRules(loadedRules) : '';
-	const guidelines = await loadRepoGuidelines(
-		input.repoDir,
-		input.trustedSource,
-		loadedRules ? RULES_INJECTION_GUIDELINE_OVERLAP : []
-	);
+	const guidelines = formatRepoGuidelines(loadedGuidelines);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
 		linkedIssues: input.linkedIssues,
 		failedChecks: input.failedChecks,
 		guidelines,
-		repositoryReviewRules,
 		config,
 		pathInstructions,
 		diff: shown.map(renderFileDiff).join('\n\n'),
@@ -360,7 +348,6 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	//    two of them may now sit on the same lines: check for duplicates again.
 	const rules = reviewRules({
 		guidelines,
-		repositoryReviewRules,
 		learnings: input.learnings,
 		instructions: config.instructions,
 		pathInstructions

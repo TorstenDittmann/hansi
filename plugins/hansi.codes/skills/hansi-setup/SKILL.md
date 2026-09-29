@@ -68,29 +68,28 @@ Read `.hansi.json` from `<BASE_REPO>`:
 gh api "repos/<BASE_REPO>/contents/.hansi.json?ref=<BASE>" --jq .content | base64 -d
 ```
 
-A 404 means there is no file yet. Also list which guideline files exist on that same ref. Hansi includes each of these in full when it is present: `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`. Do not copy them into `instructions`.
+A 404 means there is no file yet. Instruction files (`AGENTS.md`, `CLAUDE.md`, `.hansi*`, `.cursorrules`, `.github/copilot-instructions.md`, `CONTRIBUTING.md`) are loaded from the pull request head, not this base ref. Do not copy them into `instructions`.
 
 ### 2. Decide the edits
 
 Every field is optional. Omit a field when it would only restate the default. Keep unknown keys that are already in the file.
 
-| Field                                | Default    | Write it when                                                             |
-| ------------------------------------ | ---------- | ------------------------------------------------------------------------- |
-| `reviews.enabled`                    | `true`     | The user wants reviews off in this repo.                                  |
-| `reviews.auto`                       | `true`     | The user wants mentions only.                                             |
-| `reviews.drafts`                     | `false`    | The user wants drafts reviewed.                                           |
-| `reviews.baseBranches`               | `[]` (all) | The user names branches to review into.                                   |
-| `reviews.pathFilters`                | `[]`       | The user wants extra excludes, or an allowlist.                           |
-| `reviews.profile`                    | `balanced` | The user wants `chill` or `strict`.                                       |
-| `reviews.minSeverity`                | `minor`    | The user sets `info`, `minor`, `major`, or `critical`.                    |
-| `reviews.maxComments`                | `15`       | The user sets a cap from 0 to 100.                                        |
-| `reviews.approve`                    | `true`     | The user does not want automatic approval.                                |
-| `reviews.requestChanges`             | `major`    | The user sets `info`, `minor`, `major`, `critical`, or `never`.           |
-| `reviews.approveOutsideContributors` | `false`    | The user explicitly wants fork authors approved.                          |
-| `reviews.rulesInjection`             | `false`    | The user wants AGENTS.md / CLAUDE.md / `.hansi*` loaded from the PR head. |
-| `instructions`                       | `""`       | A repo-wide rule that is not already in a guideline file.                 |
-| `pathInstructions`                   | `[]`       | A rule for one glob, such as `migrations/**`.                             |
-| `language`                           | `en`       | The user wants comments in another language.                              |
+| Field                                | Default    | Write it when                                                   |
+| ------------------------------------ | ---------- | --------------------------------------------------------------- |
+| `reviews.enabled`                    | `true`     | The user wants reviews off in this repo.                        |
+| `reviews.auto`                       | `true`     | The user wants mentions only.                                   |
+| `reviews.drafts`                     | `false`    | The user wants drafts reviewed.                                 |
+| `reviews.baseBranches`               | `[]` (all) | The user names branches to review into.                         |
+| `reviews.pathFilters`                | `[]`       | The user wants extra excludes, or an allowlist.                 |
+| `reviews.profile`                    | `balanced` | The user wants `chill` or `strict`.                             |
+| `reviews.minSeverity`                | `minor`    | The user sets `info`, `minor`, `major`, or `critical`.          |
+| `reviews.maxComments`                | `15`       | The user sets a cap from 0 to 100.                              |
+| `reviews.approve`                    | `true`     | The user does not want automatic approval.                      |
+| `reviews.requestChanges`             | `major`    | The user sets `info`, `minor`, `major`, `critical`, or `never`. |
+| `reviews.approveOutsideContributors` | `false`    | The user explicitly wants fork authors approved.                |
+| `instructions`                       | `""`       | A repo-wide rule that is not already in a guideline file.       |
+| `pathInstructions`                   | `[]`       | A rule for one glob, such as `migrations/**`.                   |
+| `language`                           | `en`       | The user wants comments in another language.                    |
 
 `profile`: `chill` flags confirmed bugs only. `balanced` also flags risky patterns, weak or missing tests, and broken documentation examples. `strict` also counts naming, style, and maintainability.
 

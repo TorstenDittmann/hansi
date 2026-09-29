@@ -3,13 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-	formatRepositoryReviewRules,
+	formatRepoGuidelines,
+	GUIDELINE_LIMIT_BYTES,
 	includeOnlyTargets,
-	loadRepositoryReviewRules,
+	loadRepoGuidelines,
 	parseAllowRegex,
-	ruleSourceForPath,
-	RULES_INJECTION_LIMIT_BYTES
-} from './rules';
+	ruleSourceForPath
+} from './tools';
 
 let root: string;
 
@@ -30,15 +30,15 @@ async function fixture(name: string, files: Record<string, string>) {
 	return dir;
 }
 
-describe('loadRepositoryReviewRules', () => {
+describe('loadRepoGuidelines', () => {
 	test('skips missing files silently and returns an empty payload', async () => {
 		const dir = await fixture('empty', { 'src/a.ts': 'export const a = 1;\n' });
-		const rules = await loadRepositoryReviewRules(dir);
+		const rules = await loadRepoGuidelines(dir);
 		expect(rules.files).toEqual([]);
 		expect(rules.body).toBe('');
 		expect(rules.truncated).toBe(false);
 		expect(rules.manifest).toBe('- (none)');
-		expect(formatRepositoryReviewRules(rules)).toBe('');
+		expect(formatRepoGuidelines(rules)).toBe('');
 	});
 
 	test('loads AGENTS.md, CLAUDE.md, and Hansi-native files from the checkout (PR head)', async () => {
@@ -49,7 +49,7 @@ describe('loadRepositoryReviewRules', () => {
 			'.hansi/rules.md': 'Flag implementation-coupled tests.\n',
 			'.github/hansi/extra.md': 'Prefer existing validators over new regex.\n'
 		});
-		const rules = await loadRepositoryReviewRules(dir);
+		const rules = await loadRepoGuidelines(dir);
 		expect(rules.files.map((file) => [file.path, file.source])).toEqual([
 			['.hansi.md', 'hansi-config'],
 			['.hansi/rules.md', 'hansi-config'],
@@ -70,7 +70,7 @@ describe('loadRepositoryReviewRules', () => {
 			'.hansi/rules.md': 'No unit tests for workers.\n',
 			'AGENTS.md': 'Unit tests cover local src libraries only.\n'
 		});
-		const rules = await loadRepositoryReviewRules(dir);
+		const rules = await loadRepoGuidelines(dir);
 		expect(rules.files.map((file) => file.path)).toEqual(['.hansi/rules.md', 'AGENTS.md']);
 		expect(rules.body).toContain('No unit tests for workers.');
 	});
@@ -80,7 +80,7 @@ describe('loadRepositoryReviewRules', () => {
 			'AGENTS.md': 'Do not run Swoole coroutine work in the shared unit process.\n',
 			'CLAUDE.md': '@AGENTS.md\n'
 		});
-		const rules = await loadRepositoryReviewRules(dir);
+		const rules = await loadRepoGuidelines(dir);
 		expect(rules.files.map((file) => file.path)).toEqual(['AGENTS.md']);
 		expect(rules.skipped).toEqual([
 			{ path: 'CLAUDE.md', source: 'claude', reason: 'include of AGENTS.md' }
@@ -97,7 +97,7 @@ describe('loadRepositoryReviewRules', () => {
 			'.github/AGENTS.md': same,
 			'CLAUDE.md': same
 		});
-		const rules = await loadRepositoryReviewRules(dir);
+		const rules = await loadRepoGuidelines(dir);
 		expect(rules.files.map((file) => file.path)).toEqual(['AGENTS.md']);
 		expect(rules.skipped.map((file) => file.reason)).toEqual([
 			'duplicate content',
@@ -111,25 +111,25 @@ describe('loadRepositoryReviewRules', () => {
 			'AGENTS.md': `${'A'.repeat(80)}\n`,
 			'CLAUDE.md': `${'C'.repeat(80)}\n`
 		});
-		const rules = await loadRepositoryReviewRules(dir, { maxBytes: 180 });
+		const rules = await loadRepoGuidelines(dir, { maxBytes: 180 });
 		expect(rules.truncated).toBe(true);
 		expect(rules.files[0]?.path).toBe('.hansi');
 		expect(rules.body).toContain('hansi-high-precedence');
 		expect(rules.body).toContain('[rules truncated]');
-		const prompt = formatRepositoryReviewRules(rules);
+		const prompt = formatRepoGuidelines(rules);
 		expect(prompt).toContain('## Repository review rules');
 		expect(prompt).toContain('[rules truncated]');
-		expect(prompt.startsWith('<repository_review_rules>')).toBe(true);
+		expect(prompt.startsWith('<repository_guidelines>')).toBe(true);
 	});
 
 	test('uses the 24 KB default cap', async () => {
-		expect(RULES_INJECTION_LIMIT_BYTES).toBe(24 * 1024);
+		expect(GUIDELINE_LIMIT_BYTES).toBe(24 * 1024);
 		const dir = await fixture('cap-default', {
 			'AGENTS.md': `${'Keep this rule.\n'.repeat(20)}`
 		});
-		const rules = await loadRepositoryReviewRules(dir);
+		const rules = await loadRepoGuidelines(dir);
 		expect(rules.truncated).toBe(false);
-		expect(Buffer.byteLength(rules.body, 'utf8')).toBeLessThanOrEqual(RULES_INJECTION_LIMIT_BYTES);
+		expect(Buffer.byteLength(rules.body, 'utf8')).toBeLessThanOrEqual(GUIDELINE_LIMIT_BYTES);
 	});
 
 	test('records allow_regex: true from .hansi in the manifest', async () => {
@@ -137,10 +137,28 @@ describe('loadRepositoryReviewRules', () => {
 			'.hansi': 'allow_regex: true\n',
 			'AGENTS.md': 'Do not add regular expressions.\n'
 		});
-		const rules = await loadRepositoryReviewRules(dir);
+		const rules = await loadRepoGuidelines(dir);
 		expect(rules.overrides.allowRegex).toBe(true);
 		expect(rules.manifest).toContain('overrides: allow_regex=true');
-		expect(formatRepositoryReviewRules(rules)).toContain('allow_regex=true');
+		expect(formatRepoGuidelines(rules)).toContain('allow_regex=true');
+	});
+
+	test('still loads extra instruction files at lowest precedence', async () => {
+		const dir = await fixture('extras', {
+			'AGENTS.md': 'Agents rule.\n',
+			'.cursorrules': 'Cursor rule.\n',
+			'.github/copilot-instructions.md': 'Copilot rule.\n',
+			'CONTRIBUTING.md': 'Keep the contributing notes.\n'
+		});
+		const rules = await loadRepoGuidelines(dir);
+		expect(rules.files.map((file) => file.path)).toEqual([
+			'AGENTS.md',
+			'.cursorrules',
+			'.github/copilot-instructions.md',
+			'CONTRIBUTING.md'
+		]);
+		expect(rules.body).toContain('<file path=".cursorrules">');
+		expect(rules.body).toContain('Keep the contributing notes.');
 	});
 });
 

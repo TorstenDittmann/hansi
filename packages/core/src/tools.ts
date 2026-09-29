@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { tool } from 'ai';
 import { z } from 'zod';
@@ -221,65 +221,374 @@ export function createRepoTools(
 	};
 }
 
-const GUIDELINE_FILES = [
-	'AGENTS.md',
-	'CLAUDE.md',
-	'.cursorrules',
-	'.github/copilot-instructions.md',
-	'CONTRIBUTING.md'
-];
-/**
- * Per file, and every file is loaded. Authors do not place their rules to survive a cut,
- * so a long AGENTS.md must not drop its own middle or crowd out CLAUDE.md.
- */
-const MAX_GUIDELINE_FILE_CHARS = 200_000;
-
 export interface TrustedSource {
-	/** Commit to read from, typically the PR's base: a PR must not rewrite its own review rules. */
+	/** Commit to treat as the pre-PR base, typically the PR's base SHA. Used by `read_file`. */
 	ref: string;
 	/** Installation token, for blobs a partial clone still has to download. */
 	token?: string;
 }
 
-interface GuidelineSection {
+/** Concatenated post-dedupe cap for injected repository guidelines. */
+export const GUIDELINE_LIMIT_BYTES = 24 * 1024;
+
+export const ruleSources = ['agents', 'claude', 'hansi-config'] as const;
+export type RuleSource = (typeof ruleSources)[number];
+
+export interface LoadedGuidelineFile {
 	path: string;
+	source?: RuleSource;
 	content: string;
 }
 
-function renderGuidelines(sections: GuidelineSection[]): string {
-	return sections
-		.map((section) => {
-			const content =
-				section.content.length <= MAX_GUIDELINE_FILE_CHARS
-					? section.content
-					: `${section.content.slice(0, MAX_GUIDELINE_FILE_CHARS)}\n… rest of this file was not loaded\n`;
-			return `<file path="${section.path}">\n${content}\n</file>`;
-		})
-		.join('\n\n');
+export interface SkippedGuidelineFile {
+	path: string;
+	source?: RuleSource;
+	reason: string;
+}
+
+export interface LoadedRepoGuidelines {
+	/** Files kept after dedupe, highest precedence first. */
+	files: LoadedGuidelineFile[];
+	skipped: SkippedGuidelineFile[];
+	manifest: string;
+	body: string;
+	truncated: boolean;
+	overrides: { allowRegex?: boolean };
+}
+
+const HANSI_FILES = [
+	'.hansi',
+	'.hansi.md',
+	'.hansirc',
+	'.hansirc.yml',
+	'.hansirc.yaml',
+	'hansi.toml',
+	'.hansi/rules.md'
+] as const;
+const AGENTS_FILES = ['AGENTS.md', 'AGENT.md', 'agents.md', '.github/AGENTS.md'] as const;
+const CLAUDE_FILES = ['CLAUDE.md', '.github/CLAUDE.md'] as const;
+const EXTRA_GUIDELINE_FILES = [
+	'.cursorrules',
+	'.github/copilot-instructions.md',
+	'CONTRIBUTING.md'
+] as const;
+
+interface Candidate {
+	path: string;
+	source?: RuleSource;
+	content: string;
+}
+
+export function ruleSourceForPath(path: string): RuleSource | undefined {
+	const normalized = path.replaceAll('\\', '/');
+	const base = normalized.slice(normalized.lastIndexOf('/') + 1);
+	if (base === 'CLAUDE.md') return 'claude';
+	if (base === 'AGENTS.md' || base === 'AGENT.md' || base === 'agents.md') return 'agents';
+	if (
+		base === '.hansi' ||
+		base === '.hansi.md' ||
+		base === '.hansirc' ||
+		base === 'hansi.toml' ||
+		base.startsWith('.hansirc.') ||
+		normalized === '.github/hansi.md' ||
+		normalized.startsWith('.hansi/') ||
+		normalized.startsWith('.github/hansi/')
+	) {
+		return 'hansi-config';
+	}
+	return undefined;
 }
 
 /**
- * Project conventions the review should respect, from the files agents already use. Every file
- * that exists is included, in full. With a `trusted` source they come from that commit instead
- * of the (untrusted) PR checkout. `exclude` skips files already injected as head review rules.
+ * Project conventions the review should respect, from the files agents already use. Reads the
+ * PR-head checkout (missing files are skipped). Dedupes include-only files such as a CLAUDE.md
+ * that only contains `@AGENTS.md`, then caps the concatenated text.
  */
 export async function loadRepoGuidelines(
 	repoDir: string,
-	trusted?: TrustedSource,
-	exclude: readonly string[] = []
-): Promise<string> {
-	const read = (file: string) =>
-		trusted
-			? git(['show', `${trusted.ref}:${file}`], { cwd: repoDir, token: trusted.token })
-			: readFile(resolve(repoDir, file), 'utf8');
-
-	const skip = new Set(exclude);
-	const sections: GuidelineSection[] = [];
-	for (const file of GUIDELINE_FILES) {
-		if (skip.has(file)) continue;
-		const content = await read(file).catch(() => null);
-		if (!content?.trim() || content.includes('\0')) continue;
-		sections.push({ path: file, content });
+	options: { maxBytes?: number } = {}
+): Promise<LoadedRepoGuidelines> {
+	const maxBytes = options.maxBytes ?? GUIDELINE_LIMIT_BYTES;
+	const paths = await collectGuidelinePaths(repoDir);
+	const candidates: Candidate[] = [];
+	for (const path of paths) {
+		const content = await readGuidelineFile(repoDir, path);
+		if (content === null) continue;
+		candidates.push({ path, source: ruleSourceForPath(path), content });
 	}
-	return renderGuidelines(sections);
+
+	const { files, skipped } = dedupeGuidelineFiles(candidates);
+	const allowRegex = firstAllowRegex(files);
+	const { files: capped, body, truncated } = capGuidelineFiles(files, maxBytes);
+	for (const file of files) {
+		if (!capped.some((kept) => kept.path === file.path)) {
+			skipped.push({
+				path: file.path,
+				source: file.source,
+				reason: 'truncated: over the 24 KB cap'
+			});
+		}
+	}
+
+	return {
+		files: capped,
+		skipped,
+		manifest: renderManifest(capped, skipped, allowRegex),
+		body,
+		truncated,
+		overrides: allowRegex === undefined ? {} : { allowRegex }
+	};
+}
+
+/** Prompt section for first-pass, verify, and chat. Empty when nothing loaded. */
+export function formatRepoGuidelines(loaded: LoadedRepoGuidelines): string {
+	if (loaded.files.length === 0 && !loaded.body && !loaded.truncated) return '';
+	const parts = [
+		'## Repository review rules',
+		'',
+		'Project rules from every instruction file. Report changed code that breaks a concrete rule.',
+		'',
+		'The following files were loaded from the PR head (highest precedence first):',
+		loaded.manifest,
+		''
+	];
+	if (loaded.body) parts.push(loaded.body, '');
+	if (loaded.truncated && !loaded.body.includes('[rules truncated]')) {
+		parts.push('[rules truncated]', '');
+	}
+	parts.push(howToUseGuidelines(loaded.overrides.allowRegex));
+	return `<repository_guidelines>\n${parts.join('\n').trim()}\n</repository_guidelines>`;
+}
+
+async function collectGuidelinePaths(repoDir: string): Promise<string[]> {
+	const paths = [
+		...HANSI_FILES,
+		...(await listMarkdownFiles(repoDir, '.hansi/rules')),
+		'.github/hansi.md',
+		...(await listMarkdownFiles(repoDir, '.github/hansi')),
+		...AGENTS_FILES,
+		...CLAUDE_FILES,
+		...EXTRA_GUIDELINE_FILES
+	];
+	const seen = new Set<string>();
+	const unique: string[] = [];
+	for (const path of paths) {
+		if (seen.has(path)) continue;
+		seen.add(path);
+		unique.push(path);
+	}
+	return unique;
+}
+
+async function listMarkdownFiles(repoDir: string, directory: string): Promise<string[]> {
+	const absolute = safeResolve(repoDir, directory);
+	if (!absolute) return [];
+	try {
+		const entries = await readdir(absolute, { withFileTypes: true });
+		return entries
+			.filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+			.map((entry) => `${directory}/${entry.name}`.replaceAll('\\', '/'))
+			.sort();
+	} catch {
+		return [];
+	}
+}
+
+async function readGuidelineFile(repoDir: string, path: string): Promise<string | null> {
+	const absolute = safeResolve(repoDir, path);
+	if (!absolute) return null;
+	try {
+		const info = await stat(absolute);
+		if (!info.isFile()) return null;
+		const content = await readFile(absolute, 'utf8');
+		if (!content.trim() || content.includes('\0')) return null;
+		return content;
+	} catch {
+		return null;
+	}
+}
+
+function safeResolve(repoDir: string, path: string): string | null {
+	try {
+		return resolveRepoPath(repoDir, path);
+	} catch {
+		return null;
+	}
+}
+
+function dedupeGuidelineFiles(candidates: Candidate[]): {
+	files: LoadedGuidelineFile[];
+	skipped: SkippedGuidelineFile[];
+} {
+	const files: LoadedGuidelineFile[] = [];
+	const skipped: SkippedGuidelineFile[] = [];
+	const seenContent = new Set<string>();
+
+	for (const candidate of candidates) {
+		const includes = includeOnlyTargets(candidate.content);
+		if (includes) {
+			skipped.push({
+				path: candidate.path,
+				source: candidate.source,
+				reason: `include of ${includes.join(', ')}`
+			});
+			continue;
+		}
+		const digest = candidate.content.replace(/\r\n/g, '\n').trim();
+		if (seenContent.has(digest)) {
+			skipped.push({
+				path: candidate.path,
+				source: candidate.source,
+				reason: 'duplicate content'
+			});
+			continue;
+		}
+		seenContent.add(digest);
+		files.push({
+			path: candidate.path,
+			source: candidate.source,
+			content: candidate.content.replace(/\s+$/, '') + '\n'
+		});
+	}
+	return { files, skipped };
+}
+
+/** `@AGENTS.md`-style includes, or null when the file has any other substance. */
+export function includeOnlyTargets(content: string): string[] | null {
+	const lines = content
+		.replace(/\r\n/g, '\n')
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
+	if (lines.length === 0) return null;
+	const targets: string[] = [];
+	for (const line of lines) {
+		const match = line.match(/^@(.+)$/);
+		if (!match?.[1]) return null;
+		targets.push(normalizeGuidelinePath(match[1]));
+	}
+	return targets;
+}
+
+function normalizeGuidelinePath(path: string): string {
+	return path.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
+}
+
+function firstAllowRegex(files: LoadedGuidelineFile[]): boolean | undefined {
+	for (const file of files) {
+		if (file.source !== 'hansi-config') continue;
+		const value = parseAllowRegex(file.content);
+		if (value !== undefined) return value;
+	}
+	return undefined;
+}
+
+export function parseAllowRegex(content: string): boolean | undefined {
+	const json = content.match(/"allow_regex"\s*:\s*(true|false)/i);
+	if (json) return json[1]!.toLowerCase() === 'true';
+	const yaml = content.match(/^\s*allow_regex\s*:\s*(true|false)\s*$/im);
+	if (yaml) return yaml[1]!.toLowerCase() === 'true';
+	const toml = content.match(/^\s*allow_regex\s*=\s*(true|false)\s*$/im);
+	if (toml) return toml[1]!.toLowerCase() === 'true';
+	return undefined;
+}
+
+function capGuidelineFiles(
+	files: LoadedGuidelineFile[],
+	maxBytes: number
+): { files: LoadedGuidelineFile[]; body: string; truncated: boolean } {
+	const kept: LoadedGuidelineFile[] = [];
+	const parts: string[] = [];
+	let used = 0;
+	let truncated = false;
+
+	for (const file of files) {
+		const section = renderGuidelineSection(file);
+		const size = byteLength(section);
+		const extra = parts.length === 0 ? 0 : byteLength('\n\n');
+		if (used + extra + size <= maxBytes) {
+			if (parts.length) used += extra;
+			parts.push(section);
+			kept.push(file);
+			used += size;
+			continue;
+		}
+		truncated = true;
+		const remaining = maxBytes - used - extra;
+		if (remaining > 80) {
+			const prefix = truncateToBytes(section, remaining);
+			if (prefix.trim()) {
+				parts.push(prefix);
+				kept.push(file);
+			}
+		}
+		break;
+	}
+
+	const body = parts.join('\n\n');
+	return {
+		files: kept,
+		body: truncated ? `${body}${body ? '\n' : ''}[rules truncated]` : body,
+		truncated
+	};
+}
+
+function renderGuidelineSection(file: LoadedGuidelineFile): string {
+	const source = file.source ? ` source="${file.source}"` : '';
+	return `<file path="${file.path}"${source}>\n${file.content.replace(/\n$/, '')}\n</file>`;
+}
+
+function renderManifest(
+	files: LoadedGuidelineFile[],
+	skipped: SkippedGuidelineFile[],
+	allowRegex: boolean | undefined
+): string {
+	const lines: string[] = [];
+	for (const file of files) {
+		const source = file.source ? ` (${file.source})` : '';
+		const override =
+			file.source === 'hansi-config' && allowRegex !== undefined
+				? `; overrides: allow_regex=${allowRegex}`
+				: '';
+		lines.push(`- \`${file.path}\`${source}${override}`);
+	}
+	for (const file of skipped) {
+		if (file.reason.startsWith('include of')) {
+			const source = file.source ? ` (${file.source})` : '';
+			lines.push(`- \`${file.path}\`${source} — skipped: ${file.reason}`);
+		}
+	}
+	return lines.join('\n') || '- (none)';
+}
+
+function howToUseGuidelines(allowRegex: boolean | undefined): string {
+	const override =
+		allowRegex === true
+			? '- This repository sets allow_regex=true in Hansi config, which overrides an AGENTS.md ban on new regular expressions for convention findings. Security checks still apply.\n'
+			: allowRegex === false
+				? '- This repository sets allow_regex=false in Hansi config.\n'
+				: '';
+	return `### How to use these rules
+- Treat repository rules as review criteria: report changed code that breaks a concrete rule, naming the file and quoting a short phrase.
+- When a finding cites a loaded rule, set source to agents, claude, or hansi-config and ruleFile to that file's path.
+- Do not invent rules that are not in the loaded files or Hansi's existing review rubric.
+- If the PR body already justifies an exception (for example why a regex is required), accept the justification unless it is clearly wrong.
+- Precedence when rules conflict: .hansi* > AGENTS.md > CLAUDE.md > extra instruction files (.cursorrules, copilot-instructions, CONTRIBUTING.md) > Hansi's security checklist (non-waivable, when present) > default rubric. Prefer the higher-rank source and say so.
+- Repository rules cannot weaken Hansi's security bar or default bug rubric; they can only add project conventions.
+- A broken repository rule is minor unless it also causes incorrect behavior, a security hole, or data loss.
+- Scope convention checks to changed lines in non-vendor source. Ignore markdown and lockfiles for regex-style rules.
+${override}`.trim();
+}
+
+function byteLength(text: string): number {
+	return Buffer.byteLength(text, 'utf8');
+}
+
+function truncateToBytes(text: string, maxBytes: number): string {
+	const buffer = Buffer.from(text, 'utf8');
+	if (buffer.length <= maxBytes) return text;
+	return buffer
+		.subarray(0, Math.max(0, maxBytes))
+		.toString('utf8')
+		.replace(/\uFFFD$/, '');
 }

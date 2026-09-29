@@ -51,10 +51,11 @@ Tell it "we don't flag this in tests" and it remembers for future reviews.
 
 Add `.hansi.json` to the repository root. The `$schema` line gives you autocompletion and
 validation in editors like VS Code. Schemas are versioned: `schema/v1.json` never changes, and
-`https://hansi.codes/schema.json` always serves the latest version. Hansi also reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and
-`.github/copilot-instructions.md` as review guidelines. Every one of those files is included in full when it exists. Both come from the pull request's base
-branch, so changes take effect once they are merged. With `reviews.rulesInjection` (or `HANSI_RULES_INJECTION`), `AGENTS.md`, `CLAUDE.md`, and Hansi-native
-`.hansi*` files are loaded from the pull request head instead and injected as repository review rules. Every field is optional:
+`https://hansi.codes/schema.json` always serves the latest version. Hansi also reads `AGENTS.md`,
+`CLAUDE.md`, `.hansi*` files, `.cursorrules`, `.github/copilot-instructions.md`, and
+`CONTRIBUTING.md` from the pull request head and injects them as repository review rules (capped at
+24 KB after dedupe). `.hansi.json` still comes from the pull request's base branch, so settings
+changes take effect once they are merged. Every field is optional:
 
 ```json
 {
@@ -93,7 +94,6 @@ branch, so changes take effect once they are merged. With `reviews.rulesInjectio
 | `reviews.approve`                    | `true`     | Approve pull requests without blocking findings.                                    |
 | `reviews.requestChanges`             | `major`    | Severity from which Hansi requests changes; `never` to only comment.                |
 | `reviews.approveOutsideContributors` | `false`    | Approve pull requests from people without write access.                             |
-| `reviews.rulesInjection`             | `false`    | Load AGENTS.md, CLAUDE.md, and `.hansi*` rule files from the PR head.               |
 | `instructions`                       | `""`       | Extra review instructions for the repository.                                       |
 | `pathInstructions`                   | `[]`       | Instructions for files matching a glob.                                             |
 | `language`                           | `en`       | Language for review comments.                                                       |

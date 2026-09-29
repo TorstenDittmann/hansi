@@ -1,6 +1,5 @@
 import {
 	blockingSeverity,
-	isRulesInjectionEnabled,
 	parseRepoConfig,
 	REPO_CONFIG_FILE,
 	severityAtLeast,
@@ -241,11 +240,6 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				previousSummary: history.previousSummary,
 				learnings,
 				trustedSource: { ref: pr.baseSha, token },
-				rulesInjection: isRulesInjectionEnabled({
-					env,
-					config,
-					repositoryFullName: connection.repository.fullName
-				}),
 				withholdApproval: await approvalRestriction(connection, pr, config),
 				pullRequest: pr,
 				linkedIssues,

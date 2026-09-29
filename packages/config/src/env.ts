@@ -55,29 +55,7 @@ export const envSchema = z.object({
 
 	WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
 	/** Directory for temporary repository checkouts. */
-	WORKER_WORKDIR: optional,
-
-	/**
-	 * Load AGENTS.md / CLAUDE.md / .hansi* from the PR head and inject them as review rules.
-	 * Off by default. Accepts 1/true/yes/on.
-	 */
-	HANSI_RULES_INJECTION: z
-		.string()
-		.optional()
-		.transform((value) => ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase())),
-	/**
-	 * Comma-separated `owner/repo` names that enable `rules_injection` even when the instance
-	 * flag is off, e.g. `appwrite/appwrite`.
-	 */
-	HANSI_RULES_INJECTION_REPOS: z
-		.string()
-		.default('')
-		.transform((value) =>
-			value
-				.split(',')
-				.map((name) => name.trim())
-				.filter(Boolean)
-		)
+	WORKER_WORKDIR: optional
 });
 
 export type Env = z.infer<typeof envSchema>;
