@@ -11,19 +11,15 @@
 		type Theme
 	} from '$lib/theme';
 
-	// Icons are selected with CSS from `data-theme` on <html>, which the boot script in
-	// app.html sets before paint. The label stays generic until after hydration so the
-	// server and client render the same text.
+	// Icons follow `data-theme` on <html>, set before paint by the boot script in app.html.
+	// This row only renders once the account menu is open, so it is never in the server HTML.
 	let theme = $state<Theme>(browser ? readStoredTheme(localStorage) : 'system');
 	let systemDark = $state(
 		browser ? window.matchMedia('(prefers-color-scheme: dark)').matches : false
 	);
-	let announced = $state(false);
 	const upcoming = $derived(nextTheme(theme, systemDark));
 	const label = $derived(
-		announced
-			? `${themeName(theme)} theme. Switch to ${themeName(upcoming).toLowerCase()} theme.`
-			: 'Toggle color theme'
+		`${themeName(theme)} theme. Switch to ${themeName(upcoming).toLowerCase()} theme.`
 	);
 
 	$effect(() => {
@@ -32,7 +28,6 @@
 	});
 
 	onMount(() => {
-		announced = true;
 		const media = window.matchMedia('(prefers-color-scheme: dark)');
 		const onMedia = (event: MediaQueryListEvent) => {
 			systemDark = event.matches;
@@ -60,9 +55,8 @@
 
 <button
 	type="button"
-	class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-400 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+	class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-stone-100 dark:hover:bg-stone-800"
 	aria-label={label}
-	title={announced ? `${themeName(theme)} theme` : undefined}
 	onclick={cycle}
 >
 	<svg
@@ -103,4 +97,6 @@
 		<rect x="1.75" y="2.25" width="12.5" height="8.5" rx="1.25" />
 		<path d="M5.5 13.75h5M8 10.75v3" />
 	</svg>
+	<span class="flex-1">Theme</span>
+	<span class="text-stone-500 dark:text-stone-400">{themeName(theme)}</span>
 </button>

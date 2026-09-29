@@ -9,7 +9,6 @@
 	import xaiLogo from '$lib/assets/providers/xai.svg';
 	import AsciiHansi from '$lib/components/AsciiHansi.svelte';
 	import Logo from '$lib/components/Logo.svelte';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let { data } = $props();
 
@@ -124,10 +123,7 @@
 			<a href="#pricing" class="hidden sm:inline {navLink}">Pricing</a>
 			<a href="#faq" class="hidden sm:inline {navLink}">FAQ</a>
 			<a href={start} class="hidden sm:inline {navLink}">Sign in</a>
-			<div class="flex items-center gap-3">
-				<ThemeToggle />
-				<a href={start} class="px-4 py-2 text-sm {button}">Get started</a>
-			</div>
+			<a href={start} class="px-4 py-2 text-sm {button}">Get started</a>
 		</nav>
 	</header>
 
