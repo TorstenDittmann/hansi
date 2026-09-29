@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 
+/* `dark:` follows the class on <html>, so the theme toggle can override the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
 	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
@@ -9,6 +12,12 @@
 }
 
 @layer base {
+	:root {
+		color-scheme: light;
+	}
+	:root.dark {
+		color-scheme: dark;
+	}
 	body {
 		@apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
 	}
@@ -38,5 +47,15 @@
 	}
 	.badge {
 		@apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+	}
+	/* One icon per saved theme. The boot script sets data-theme before paint. */
+	.theme-mark {
+		display: none;
+	}
+	:root[data-theme='light'] .theme-mark-light,
+	:root[data-theme='dark'] .theme-mark-dark,
+	:root[data-theme='system'] .theme-mark-system,
+	:root:not([data-theme]) .theme-mark-system {
+		display: block;
 	}
 }

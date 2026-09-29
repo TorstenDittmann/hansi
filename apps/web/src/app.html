@@ -2,6 +2,24 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<!-- Apply the saved theme before paint. Keep in sync with $lib/theme.ts. -->
+		<script>
+			(() => {
+				try {
+					const stored = localStorage.getItem('theme');
+					const theme =
+						stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+					const dark =
+						theme === 'dark' ||
+						(theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+					const root = document.documentElement;
+					root.classList.toggle('dark', dark);
+					root.dataset.theme = theme;
+				} catch {
+					/* Storage or matchMedia unavailable; leave the light theme. */
+				}
+			})();
+		</script>
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		%sveltekit.head%

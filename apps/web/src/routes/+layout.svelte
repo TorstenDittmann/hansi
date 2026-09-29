@@ -7,6 +7,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import Menu from '$lib/components/Menu.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { identifyAnalyticsUser, resetAnalyticsIdentity, startAnalytics } from '$lib/analytics';
 	import { authClient } from '$lib/auth-client';
 	import {
@@ -219,46 +220,49 @@
 						{/if}
 					</div>
 
-					{#if data.user}
-						<Menu
-							label="Account"
-							align="right"
-							class="rounded-full ring-offset-2 ring-offset-white hover:ring-2 hover:ring-stone-300 dark:ring-offset-stone-950 dark:hover:ring-stone-700"
-						>
-							{#snippet trigger()}
-								<Avatar name={data.user!.name} image={data.user!.image} class="size-8 text-sm" />
-							{/snippet}
-							<div class="flex items-center gap-3 px-3 py-2">
-								<Avatar name={data.user.name} image={data.user.image} class="size-9 text-sm" />
-								<div class="min-w-0">
-									<p class="truncate font-medium">{data.user.name}</p>
-									<p class="truncate text-xs text-stone-500 dark:text-stone-400">
-										{data.user.login ? `@${data.user.login}` : data.user.email}
-									</p>
+					<div class="flex shrink-0 items-center gap-2">
+						<ThemeToggle />
+						{#if data.user}
+							<Menu
+								label="Account"
+								align="right"
+								class="rounded-full ring-offset-2 ring-offset-white hover:ring-2 hover:ring-stone-300 dark:ring-offset-stone-950 dark:hover:ring-stone-700"
+							>
+								{#snippet trigger()}
+									<Avatar name={data.user!.name} image={data.user!.image} class="size-8 text-sm" />
+								{/snippet}
+								<div class="flex items-center gap-3 px-3 py-2">
+									<Avatar name={data.user.name} image={data.user.image} class="size-9 text-sm" />
+									<div class="min-w-0">
+										<p class="truncate font-medium">{data.user.name}</p>
+										<p class="truncate text-xs text-stone-500 dark:text-stone-400">
+											{data.user.login ? `@${data.user.login}` : data.user.email}
+										</p>
+									</div>
 								</div>
-							</div>
-							<div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
-							<a href={resolve('/app/account')} class={menuItem}>Account settings</a>
-							{#if appSlug}
-								<a
-									href="https://github.com/apps/{appSlug}/installations/new"
-									class={menuItem}
-									target="_blank"
-									rel="noreferrer">Add repositories</a
-								>
-							{/if}
-							{#if data.user.login}
-								<a
-									href="https://github.com/{data.user.login}"
-									class={menuItem}
-									target="_blank"
-									rel="noreferrer">GitHub profile</a
-								>
-							{/if}
-							<div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
-							<button type="button" class={menuItem} onclick={signOut}>Sign out</button>
-						</Menu>
-					{/if}
+								<div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
+								<a href={resolve('/app/account')} class={menuItem}>Account settings</a>
+								{#if appSlug}
+									<a
+										href="https://github.com/apps/{appSlug}/installations/new"
+										class={menuItem}
+										target="_blank"
+										rel="noreferrer">Add repositories</a
+									>
+								{/if}
+								{#if data.user.login}
+									<a
+										href="https://github.com/{data.user.login}"
+										class={menuItem}
+										target="_blank"
+										rel="noreferrer">GitHub profile</a
+									>
+								{/if}
+								<div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
+								<button type="button" class={menuItem} onclick={signOut}>Sign out</button>
+							</Menu>
+						{/if}
+					</div>
 				</div>
 
 				{#if data.user && activeOrganization}
