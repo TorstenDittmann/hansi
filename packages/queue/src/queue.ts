@@ -14,8 +14,9 @@ export type Job<T = unknown> = {
 
 export interface SendOptions {
 	/**
-	 * At most one queued job exists per key: sending again replaces the queued job's payload.
-	 * A queued job is not claimed while another job with the same key is active.
+	 * At most one queued job exists per key: sending again replaces the queued job's payload
+	 * and starts its attempt count over. A queued job is not claimed while another job with
+	 * the same key is active.
 	 */
 	singletonKey?: string;
 	runAt?: number;
@@ -81,7 +82,14 @@ export class Queue {
 			.onConflictDoUpdate({
 				target: [jobs.queue, jobs.singletonKey],
 				targetWhere: sql`${jobs.status} = 'queued' and ${jobs.singletonKey} is not null`,
-				set: { payload: sql`excluded.payload`, runAt: sql`excluded.run_at` }
+				// The previous payload's failures belong to that payload. The replacement is new work.
+				set: {
+					payload: sql`excluded.payload`,
+					runAt: sql`excluded.run_at`,
+					maxAttempts: sql`excluded.max_attempts`,
+					attempts: 0,
+					lastError: null
+				}
 			})
 			.returning({ id: jobs.id });
 		return row!.id;

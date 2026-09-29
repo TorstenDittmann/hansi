@@ -109,6 +109,36 @@ test('retry replaces a review already waiting for the same pull request', async 
 	expect(jobs[0]?.payload).toEqual({ reviewId: result.reviewId });
 });
 
+test('retry starts over when the waiting job already used attempts', async () => {
+	const db = await setup();
+	const queue = new Queue(db);
+	await addReview(db, { id: 'failed-1', status: 'failed' });
+	await addReview(db, { id: 'waiting', status: 'queued' });
+	await db.insert(schema.jobs).values({
+		queue: 'review',
+		payload: { reviewId: 'waiting' },
+		status: 'queued',
+		singletonKey: '10:7',
+		attempts: 2,
+		maxAttempts: 3,
+		lastError: 'Bedrock is unable to process your request.',
+		runAt: now.getTime(),
+		createdAt: now.getTime()
+	});
+
+	const result = await retryFailedReview(db, queue, 'org-a', 'failed-1');
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+
+	const [job] = await db.select().from(schema.jobs).where(eq(schema.jobs.status, 'queued'));
+	expect(job).toMatchObject({
+		attempts: 0,
+		maxAttempts: 3,
+		lastError: null,
+		payload: { reviewId: result.reviewId }
+	});
+});
+
 test('retry refuses a review that is not failed, and one from another organization', async () => {
 	const db = await setup();
 	const queue = new Queue(db);
