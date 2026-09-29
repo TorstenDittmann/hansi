@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import RetryReviewButton from '$lib/components/RetryReviewButton.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
 	import {
@@ -13,7 +14,7 @@
 	import { isLiveReviewStatus, pendingReviewMessage } from '$lib/live';
 	import Stream from './stream.svelte';
 
-	let { data } = $props();
+	let { data, form } = $props();
 	let visible = $state(true);
 	let cached = $state<typeof data.review | null>(null);
 	let previousId = '';
@@ -79,11 +80,26 @@
 		</dl>
 	</header>
 
-	{#if review.error}
+	{#if review.status === 'failed'}
+		<div
+			class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-300 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950"
+		>
+			<p class="text-sm text-red-800 dark:text-red-300">{review.error ?? 'This review failed.'}</p>
+			<RetryReviewButton reviewId={review.id} primary />
+		</div>
+	{:else if review.error}
 		<div
 			class="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
 		>
 			{review.error}
+		</div>
+	{/if}
+
+	{#if form?.error}
+		<div
+			class="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+		>
+			{form.error}
 		</div>
 	{/if}
 

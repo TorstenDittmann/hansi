@@ -40,3 +40,38 @@ export async function enqueueReview(db: Database, queue: Queue, input: EnqueueRe
 export async function enqueueChat(queue: Queue, payload: ChatJobPayload) {
 	await queue.send<ChatJobPayload>(queues.chat, payload, { maxAttempts: 2 });
 }
+
+export type RetryReviewResult =
+	{ ok: true; reviewId: string } | { ok: false; reason: 'not-found' | 'not-failed' };
+
+/**
+ * Queues another review of the same pull request. The failed row stays as the record of that
+ * attempt; a worker picks up the new one with a fresh set of attempts.
+ */
+export async function retryFailedReview(
+	db: Database,
+	queue: Queue,
+	organizationId: string,
+	reviewId: string
+): Promise<RetryReviewResult> {
+	const [existing] = await db
+		.select({
+			repositoryId: schema.reviews.repositoryId,
+			pullNumber: schema.reviews.pullNumber,
+			headSha: schema.reviews.headSha,
+			status: schema.reviews.status
+		})
+		.from(schema.reviews)
+		.where(and(eq(schema.reviews.id, reviewId), eq(schema.reviews.organizationId, organizationId)));
+	if (!existing) return { ok: false, reason: 'not-found' };
+	if (existing.status !== 'failed') return { ok: false, reason: 'not-failed' };
+
+	const review = await enqueueReview(db, queue, {
+		organizationId,
+		repositoryId: existing.repositoryId,
+		pullNumber: existing.pullNumber,
+		headSha: existing.headSha,
+		trigger: 'manual'
+	});
+	return { ok: true, reviewId: review.id };
+}

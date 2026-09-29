@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { Verdict } from '@hans/config';
+	import RetryReviewButton from '$lib/components/RetryReviewButton.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
 	import { formatCost, formatDate, verdictLabel } from '$lib/format';
@@ -60,7 +61,12 @@
 						{#if review.status === 'completed' && review.verdict}
 							{verdictLabel[review.verdict]}
 						{:else}
-							<StatusBadge status={review.status} />
+							<span class="inline-flex items-center gap-2">
+								<StatusBadge status={review.status} />
+								{#if review.status === 'failed'}
+									<RetryReviewButton reviewId={review.id} />
+								{/if}
+							</span>
 						{/if}
 					</td>
 					<td class="px-4 py-2">{review.posted}</td>
