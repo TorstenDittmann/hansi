@@ -23,7 +23,9 @@ Amazon Bedrock, Google, xAI, OpenRouter, or any OpenAI-compatible endpoint.
    checks that already failed on the commit, so it knows what the change is meant to do and what
    CI found.
 3. A second, skeptical pass double-checks every finding. Only the ones that hold up are posted, as
-   inline comments with a suggested fix when there is one.
+   inline comments with a suggested fix when there is one. Each comment includes a collapsed
+   prompt an agent can follow to fix that issue, and the summary includes one prompt for every
+   open finding.
 4. Hansi submits a real review, **Approve** or **Request changes**, and grades the pull request
    from **S** (ready to merge) to **F** (do not merge) in one summary comment that it keeps up to
    date.

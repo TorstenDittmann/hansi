@@ -521,6 +521,7 @@ async function loadReviewHistory(db: Database, review: Review) {
 			category: schema.reviewFindings.category,
 			title: schema.reviewFindings.title,
 			body: schema.reviewFindings.body,
+			suggestion: schema.reviewFindings.suggestion,
 			status: schema.reviewFindings.status
 		})
 		.from(schema.reviewFindings)

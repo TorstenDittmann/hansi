@@ -20,6 +20,7 @@ type FindingRow = {
 	category: string;
 	title: string;
 	body: string;
+	suggestion: string | null;
 	status: string;
 	dropReason: string | null;
 };
@@ -91,6 +92,7 @@ export async function refreshSummaryAfterSettlement(input: {
 			category: schema.reviewFindings.category,
 			title: schema.reviewFindings.title,
 			body: schema.reviewFindings.body,
+			suggestion: schema.reviewFindings.suggestion,
 			status: schema.reviewFindings.status,
 			dropReason: schema.reviewFindings.dropReason
 		})
@@ -159,7 +161,8 @@ export function summaryAfterSettlement(
 		severity: row.severity as Severity,
 		category: row.category as Finding['category'],
 		title: row.title,
-		body: row.body
+		body: row.body,
+		...(row.suggestion ? { suggestion: row.suggestion } : {})
 	});
 
 	const shortSha = input.headSha.slice(0, 7);
@@ -171,7 +174,10 @@ export function summaryAfterSettlement(
 		.map((f) => ({
 			path: f.path,
 			startLine: f.startLine,
+			endLine: f.endLine,
 			title: f.title,
+			body: f.body,
+			...(f.suggestion ? { suggestion: f.suggestion } : {}),
 			severity: f.severity as Severity
 		}));
 	const resolved = input.findings

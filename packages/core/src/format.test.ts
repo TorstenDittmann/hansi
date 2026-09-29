@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
 	SUMMARY_MARKER,
@@ -86,6 +87,78 @@ describe('formatSummaryComment', () => {
 	test('ends with how to interact', () => {
 		expect(body).toContain('Reviewed <code>abcdef1</code>');
 		expect(body).toContain('<code>@hans-review review</code> to re-run');
+	});
+});
+
+describe('agent fix prompts', () => {
+	test('an inline comment carries a self-contained prompt and keeps the suggestion applicable', () => {
+		const comment = formatFindingComment({
+			path: 'src/db.ts',
+			startLine: 10,
+			endLine: 12,
+			severity: 'major',
+			category: 'bug',
+			title: 'Query is not parameterized',
+			body: 'The id is interpolated into SQL.',
+			suggestion: 'db.query(sql, [id]);\n'
+		});
+		const suggestion = comment.indexOf('```suggestion\ndb.query(sql, [id]);\n```');
+		const prompt = comment.indexOf('<details><summary>Prompt To Fix With AI</summary>');
+		expect(suggestion).toBeGreaterThan(-1);
+		expect(prompt).toBeGreaterThan(suggestion);
+		expect(comment.slice(prompt)).toContain('Path: src/db.ts\nLine: 10-12');
+		expect(comment).toContain(
+			'For each issue above, determine whether it is valid and should be fixed. If so, fix it directly.'
+		);
+		expect(comment).toContain('<sub>🟠 Major · bug');
+	});
+
+	test('lengthens the prompt fence when the finding contains five backticks', () => {
+		const comment = formatFindingComment({
+			path: 'a.ts',
+			startLine: 4,
+			endLine: 4,
+			severity: 'minor',
+			category: 'testing',
+			title: 'Fence',
+			body: 'Keep `````this````` inside the prompt.'
+		});
+		expect(comment).toContain('``````markdown\n');
+		expect(comment).toContain('Line: 4\n');
+	});
+
+	test('the summary prompt lists new findings and earlier ones that are still open', () => {
+		const body = formatSummaryComment({
+			...base,
+			posted: [{ ...base.posted[0]!, suggestion: 'start = 0;\n' }],
+			stillOpen: [
+				{
+					path: 'src/old.ts',
+					startLine: 8,
+					endLine: 9,
+					title: 'Stale cache',
+					body: 'The cache is never invalidated.',
+					suggestion: 'cache.invalidate();\n',
+					severity: 'minor'
+				}
+			]
+		});
+		const prompt = body.slice(body.indexOf('<details><summary>Fix with agent prompt</summary>'));
+		expect(prompt).toContain(
+			'### Issue 1\nsrc/paginate.ts:3-4\n**Off by one | skips the first page**\n\nb\n\n```suggestion\nstart = 0;\n```'
+		);
+		expect(prompt).toContain(
+			'### Issue 2\nsrc/old.ts:8-9\n**Stale cache**\n\nThe cache is never invalidated.\n\n```suggestion\ncache.invalidate();\n```'
+		);
+		expect(prompt).toContain(
+			'For each issue above, determine whether it is valid and should be fixed. If so, fix it directly.'
+		);
+	});
+
+	test('omits the summary prompt when nothing is open', () => {
+		const body = formatSummaryComment({ ...base, posted: [] });
+		expect(body).not.toContain('Fix with agent prompt');
+		expect(body).not.toContain('Prompt To Fix With AI');
 	});
 });
 

@@ -41,16 +41,90 @@ function cell(text: string) {
 	return text.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
 }
 
-/** An inline review comment: title first, the explanation, an optional suggestion, then metadata. */
-export function formatFindingComment(finding: Finding): string {
-	const parts = [`**${finding.title}**`, finding.body];
-	if (finding.suggestion !== undefined) {
-		parts.push('```suggestion\n' + finding.suggestion.replace(/\n$/, '') + '\n```');
-	}
-	parts.push(
-		`<sub>${severityIcon[finding.severity]} ${severityName[finding.severity]} · ${finding.category} · Reply if this doesn't apply.</sub>`
-	);
+/**
+ * The instruction Greptile-style agents already follow. Kept verbatim so a copied prompt is
+ * enough to fix the finding without any Hansi-specific skill.
+ */
+const agentFixInstruction =
+	'For each issue above, determine whether it is valid and should be fixed. If so, fix it directly.';
+
+/** `34` for one line, `143-145` for a range. */
+function lineRef(start: number, end = start) {
+	return end === start ? `${start}` : `${start}-${end}`;
+}
+
+/** A markdown fence long enough that backticks inside `content` cannot close it. */
+function fencedMarkdown(content: string) {
+	const runs = content.match(/`+/g);
+	const longest = runs ? Math.max(...runs.map((run) => run.length)) : 0;
+	const fence = '`'.repeat(Math.max(5, longest + 1));
+	return `${fence}markdown\n${content.replace(/\n$/, '')}\n${fence}`;
+}
+
+/** A collapsed block an agent can copy and follow. */
+function agentPromptBlock(summary: string, prompt: string) {
+	return `<details><summary>${summary}</summary>\n\n${fencedMarkdown(prompt)}\n\n</details>`;
+}
+
+function suggestionFence(suggestion: string) {
+	return '```suggestion\n' + suggestion.replace(/\n$/, '') + '\n```';
+}
+
+/** Title, explanation, and the GitHub suggestion, in the order a reader sees them. */
+function findingText(finding: Pick<Finding, 'title' | 'body' | 'suggestion'>): string {
+	const parts = [`**${finding.title}**`];
+	if (finding.body) parts.push(finding.body);
+	if (finding.suggestion !== undefined) parts.push(suggestionFence(finding.suggestion));
 	return parts.join('\n\n');
+}
+
+/** One finding, as a self-contained prompt for an agent that only sees this comment. */
+function inlineAgentPrompt(finding: Finding): string {
+	return [
+		'This is a comment left during a code review.',
+		`Path: ${finding.path}`,
+		`Line: ${lineRef(finding.startLine, finding.endLine)}`,
+		'',
+		'Comment:',
+		findingText(finding),
+		'',
+		'---',
+		'',
+		agentFixInstruction
+	].join('\n');
+}
+
+interface AgentIssue {
+	path: string;
+	startLine: number;
+	endLine?: number;
+	title: string;
+	body?: string;
+	suggestion?: string;
+}
+
+/** Every open finding, as one prompt an agent can use to fix the pull request. */
+function summaryAgentPrompt(issues: AgentIssue[]): string {
+	const blocks = issues.map((issue, index) => {
+		const lines = [
+			`### Issue ${index + 1}`,
+			`${issue.path}:${lineRef(issue.startLine, issue.endLine ?? issue.startLine)}`,
+			`**${issue.title}**`
+		];
+		if (issue.body) lines.push('', issue.body);
+		if (issue.suggestion !== undefined) lines.push('', suggestionFence(issue.suggestion));
+		return lines.join('\n');
+	});
+	return [...blocks, `---\n\n${agentFixInstruction}`].join('\n\n');
+}
+
+/** An inline review comment: title, explanation, optional suggestion, an agent prompt, then metadata. */
+export function formatFindingComment(finding: Finding): string {
+	return [
+		findingText(finding),
+		agentPromptBlock('Prompt To Fix With AI', inlineAgentPrompt(finding)),
+		`<sub>${severityIcon[finding.severity]} ${severityName[finding.severity]} · ${finding.category} · Reply if this doesn't apply.</sub>`
+	].join('\n\n');
 }
 
 export interface SummaryInput {
@@ -63,8 +137,16 @@ export interface SummaryInput {
 	posted: Finding[];
 	/** Earlier findings the new commits fixed. */
 	resolved: { path: string; startLine: number; title: string }[];
-	/** Earlier findings that are still open. */
-	stillOpen: { path: string; startLine: number; title: string; severity: Severity }[];
+	/** Earlier findings that are still open. Body, end line, and suggestion are included when known. */
+	stillOpen: {
+		path: string;
+		startLine: number;
+		endLine?: number;
+		title: string;
+		body?: string;
+		suggestion?: string | null;
+		severity: Severity;
+	}[];
 	dropped: DroppedFinding[];
 	walkthrough: { path: string; change: string }[];
 	/** Incremental reviews: what the newest commits changed. */
@@ -111,6 +193,21 @@ export function formatSummaryComment(input: SummaryInput): string {
 				)
 			].join('\n')
 		);
+	}
+
+	const openIssues: AgentIssue[] = [
+		...input.posted,
+		...input.stillOpen.map((finding) => ({
+			path: finding.path,
+			startLine: finding.startLine,
+			endLine: finding.endLine,
+			title: finding.title,
+			body: finding.body,
+			...(finding.suggestion ? { suggestion: finding.suggestion } : {})
+		}))
+	];
+	if (openIssues.length) {
+		parts.push(agentPromptBlock('Fix with agent prompt', summaryAgentPrompt(openIssues)));
 	}
 
 	const section = (title: string, count: number, body: string) =>

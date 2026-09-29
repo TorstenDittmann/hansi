@@ -22,6 +22,7 @@ const earlierFinding = {
 	category: 'bug',
 	title: '/api responses bypass this robots meta tag',
 	body: 'API responses never see the layout meta tag.',
+	suggestion: null,
 	status: 'posted',
 	dropReason: null
 };
@@ -56,7 +57,9 @@ describe('summaryAfterSettlement', () => {
 			{
 				path: earlierFinding.path,
 				startLine: 112,
+				endLine: 112,
 				title: earlierFinding.title,
+				body: earlierFinding.body,
 				severity: 'minor'
 			}
 		]);
@@ -64,6 +67,15 @@ describe('summaryAfterSettlement', () => {
 		const body = formatSummaryComment(input);
 		expect(body).toContain('Still open from earlier reviews');
 		expect(body).toContain('/api responses bypass this robots meta tag');
+	});
+
+	test('keeps a stored suggestion in the rebuilt prompt for an earlier finding', () => {
+		const input = summaryAfterSettlement({
+			...base,
+			findings: [{ ...earlierFinding, suggestion: 'addRobotsMeta();\n' }]
+		});
+		expect(input.stillOpen[0]?.suggestion).toBe('addRobotsMeta();\n');
+		expect(formatSummaryComment(input)).toContain('```suggestion\naddRobotsMeta();\n```');
 	});
 
 	test('findings from the latest review stay under new comments, not still open', () => {
