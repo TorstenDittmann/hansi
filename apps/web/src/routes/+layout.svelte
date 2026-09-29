@@ -7,7 +7,9 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import Menu from '$lib/components/Menu.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { identifyAnalyticsUser, resetAnalyticsIdentity, startAnalytics } from '$lib/analytics';
+	import { startThemeSync } from '$lib/theme-client.svelte';
 	import { authClient } from '$lib/auth-client';
 	import {
 		DEFAULT_DESCRIPTION,
@@ -85,6 +87,7 @@
 	let posthog: PostHog | null = null;
 	let analyticsReady = $state(false);
 	let signedIn = false;
+	onMount(() => startThemeSync());
 	onMount(() => {
 		// The user the client is bootstrapped with, even if they sign out before it loads.
 		const user = data.user;
@@ -256,6 +259,7 @@
 								>
 							{/if}
 							<div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
+							<ThemeToggle />
 							<button type="button" class={menuItem} onclick={signOut}>Sign out</button>
 						</Menu>
 					{/if}
