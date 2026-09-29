@@ -101,4 +101,22 @@ test('the review body is one line that points to the summary', () => {
 	expect(formatReviewBody({ tier: 'S', verdict: 'approve', blocking: 0 })).toBe(
 		'🟢 **Tier S** · Looks good to merge.'
 	);
+	expect(
+		formatReviewBody({
+			tier: 'S',
+			verdict: 'comment',
+			blocking: 0,
+			comments: 0,
+			summaryUrl: 'https://x'
+		})
+	).toBe('🟢 **Tier S** · Looks good to merge. [Summary](https://x)');
+	expect(
+		formatReviewBody({
+			tier: 'A',
+			verdict: 'comment',
+			blocking: 0,
+			comments: 1,
+			summaryUrl: 'https://x'
+		})
+	).toBe('🔵 **Tier A** · See the inline comments. [Summary](https://x)');
 });
