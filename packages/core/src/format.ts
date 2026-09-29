@@ -47,8 +47,9 @@ export function formatFindingComment(finding: Finding): string {
 	if (finding.suggestion !== undefined) {
 		parts.push('```suggestion\n' + finding.suggestion.replace(/\n$/, '') + '\n```');
 	}
+	const cite = finding.ruleFile ? ` · ${finding.ruleFile}` : '';
 	parts.push(
-		`<sub>${severityIcon[finding.severity]} ${severityName[finding.severity]} · ${finding.category} · Reply if this doesn't apply.</sub>`
+		`<sub>${severityIcon[finding.severity]} ${severityName[finding.severity]} · ${finding.category}${cite} · Reply if this doesn't apply.</sub>`
 	);
 	return parts.join('\n\n');
 }

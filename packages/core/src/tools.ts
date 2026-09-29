@@ -261,19 +261,22 @@ function renderGuidelines(sections: GuidelineSection[]): string {
 /**
  * Project conventions the review should respect, from the files agents already use. Every file
  * that exists is included, in full. With a `trusted` source they come from that commit instead
- * of the (untrusted) PR checkout.
+ * of the (untrusted) PR checkout. `exclude` skips files already injected as head review rules.
  */
 export async function loadRepoGuidelines(
 	repoDir: string,
-	trusted?: TrustedSource
+	trusted?: TrustedSource,
+	exclude: readonly string[] = []
 ): Promise<string> {
 	const read = (file: string) =>
 		trusted
 			? git(['show', `${trusted.ref}:${file}`], { cwd: repoDir, token: trusted.token })
 			: readFile(resolve(repoDir, file), 'utf8');
 
+	const skip = new Set(exclude);
 	const sections: GuidelineSection[] = [];
 	for (const file of GUIDELINE_FILES) {
+		if (skip.has(file)) continue;
 		const content = await read(file).catch(() => null);
 		if (!content?.trim() || content.includes('\0')) continue;
 		sections.push({ path: file, content });

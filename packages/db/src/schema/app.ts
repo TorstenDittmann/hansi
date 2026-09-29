@@ -176,6 +176,10 @@ export const reviewFindings = sqliteTable(
 		title: text('title').notNull(),
 		body: text('body').notNull(),
 		suggestion: text('suggestion'),
+		/** agents | claude | hansi-config when the finding cites a loaded repository rule. */
+		source: text('source'),
+		/** Path of the cited rule file, e.g. AGENTS.md. */
+		ruleFile: text('rule_file'),
 		status: text('status', { enum: findingStatuses }).notNull(),
 		dropReason: text('drop_reason'),
 		githubCommentId: integer('github_comment_id'),

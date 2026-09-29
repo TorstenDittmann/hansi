@@ -47,6 +47,7 @@ test('severityAtLeast', () => {
 test('verdict settings default to approving and requesting changes on major findings', () => {
 	expect(defaultRepoConfig.reviews.approve).toBe(true);
 	expect(defaultRepoConfig.reviews.requestChanges).toBe('major');
+	expect(defaultRepoConfig.reviews.rulesInjection).toBe(false);
 	const commentOnly = parseRepoConfig(
 		'{ "reviews": { "requestChanges": "never", "approve": false } }'
 	);

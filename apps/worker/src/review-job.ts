@@ -1,5 +1,6 @@
 import {
 	blockingSeverity,
+	isRulesInjectionEnabled,
 	parseRepoConfig,
 	REPO_CONFIG_FILE,
 	severityAtLeast,
@@ -139,8 +140,8 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	const pr = await getPullRequest(octokit, ref, review.pullNumber);
 	if (pr.state !== 'open') return { status: 'skipped', summary: 'Pull request is closed' };
 
-	// Configuration comes from the base branch: a pull request must not rewrite its own review
-	// rules. Changes to .hansi.json apply once they are merged.
+	// Product configuration comes from the base branch: a pull request must not rewrite its own
+	// review settings. Changes to .hansi.json apply once they are merged.
 	const { config, ...configResult } = parseRepoConfig(
 		await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.baseSha)
 	);
@@ -240,6 +241,11 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				previousSummary: history.previousSummary,
 				learnings,
 				trustedSource: { ref: pr.baseSha, token },
+				rulesInjection: isRulesInjectionEnabled({
+					env,
+					config,
+					repositoryFullName: connection.repository.fullName
+				}),
 				withholdApproval: await approvalRestriction(connection, pr, config),
 				pullRequest: pr,
 				linkedIssues,
@@ -345,9 +351,11 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					githubCommentId: commentIds[i] ?? null
 				})),
 				...result.dropped.map((f) => ({ ...f, status: 'dropped' as const }))
-			].map(({ suggestion, ...f }) => ({
+			].map(({ suggestion, source, ruleFile, ...f }) => ({
 				...f,
 				suggestion: suggestion ?? null,
+				source: source ?? null,
+				ruleFile: ruleFile ?? null,
 				reviewId: review.id
 			}));
 			if (findingRows.length) await db.insert(schema.reviewFindings).values(findingRows);

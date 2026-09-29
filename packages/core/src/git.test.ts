@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkoutPullRequest, diffSince, git } from './git';
+import { loadRepositoryReviewRules } from './rules';
 import { createRepoTools, loadRepoGuidelines } from './tools';
 
 // A local "GitHub": a repository with a base branch and a pull request ref (refs/pull/1/head).
@@ -213,6 +214,36 @@ describe('loadRepoGuidelines', () => {
 		const trusted = await loadRepoGuidelines(dir, { ref: base });
 		expect(trusted).toContain('Use tabs.');
 		expect(trusted).not.toContain('approve');
+	});
+
+	test('loadRepositoryReviewRules reads the checked-out head, not the base', async () => {
+		const dir = join(root, 'checkout-head-rules');
+		await git(['checkout', '--quiet', 'main'], { cwd: origin });
+		await writeFile(join(origin, 'AGENTS.md'), 'Use tabs from the base branch.\n');
+		await git(['add', '.'], { cwd: origin });
+		await git(['commit', '--quiet', '-m', 'base rules'], { cwd: origin });
+		const base = (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
+		await git(['checkout', '--quiet', '-b', 'head-rules'], { cwd: origin });
+		await writeFile(
+			join(origin, 'AGENTS.md'),
+			'Do not add regular expressions without justification.\n'
+		);
+		await git(['add', '.'], { cwd: origin });
+		await git(['commit', '--quiet', '-m', 'head rules'], { cwd: origin });
+		const head = (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
+		await git(['update-ref', 'refs/pull/4/head', head], { cwd: origin });
+
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 4,
+			baseSha: base,
+			headSha: head
+		});
+		const rules = await loadRepositoryReviewRules(dir);
+		expect(rules.files.map((file) => file.path)).toEqual(['AGENTS.md']);
+		expect(rules.body).toContain('Do not add regular expressions without justification.');
+		expect(rules.body).not.toContain('Use tabs from the base branch.');
 	});
 });
 

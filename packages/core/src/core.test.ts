@@ -131,6 +131,21 @@ test('formatFindingComment renders a suggestion block', () => {
 	expect(comment).toContain('<sub>🔴 Critical · security');
 });
 
+test('formatFindingComment cites the rule file when present', () => {
+	const comment = formatFindingComment({
+		path: 'src/a.php',
+		startLine: 1,
+		endLine: 1,
+		severity: 'minor',
+		category: 'testing',
+		title: 'New regex without justification',
+		body: 'Violates AGENTS.md.',
+		source: 'agents',
+		ruleFile: 'AGENTS.md'
+	});
+	expect(comment).toContain('<sub>🟡 Minor · testing · AGENTS.md');
+});
+
 describe('runReview', () => {
 	let repoDir: string;
 
@@ -370,6 +385,106 @@ describe('runReview', () => {
 		expect(verifyPrompt).toContain('Do not flag division by zero in src/math.ts.');
 		expect(verifyPrompt).toContain('We validate inputs at the API boundary.');
 		expect(verifyPrompt).toContain('For files matching src/**: Numbers are never zero here.');
+	});
+
+	test('injects repository review rules from the checkout when the flag is on', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'hans-rules-on-'));
+		await mkdir(join(dir, 'src'));
+		await writeFile(
+			join(dir, 'src/math.ts'),
+			'export function divide(a: number, b: number) {\n  const result = a / b;\n  return result;\n}\n'
+		);
+		await writeFile(
+			join(dir, 'AGENTS.md'),
+			'Do not add regular expressions without justification.\n'
+		);
+		await writeFile(join(dir, 'CLAUDE.md'), '@AGENTS.md\n');
+		try {
+			const events: { type: string; data?: Record<string, unknown> }[] = [];
+			const model = new MockLanguageModelV4({
+				doGenerate: [
+					toolCall('submit_review', {
+						summary: 'Refactors divide.',
+						findings: [
+							{
+								...finding(2, 'New regex without justification', 'minor'),
+								category: 'testing',
+								source: 'agents',
+								ruleFile: 'AGENTS.md'
+							}
+						]
+					}),
+					toolCall('submit_verdicts', {
+						verdicts: [{ id: 'F1', keep: true, reason: 'violates AGENTS.md' }]
+					})
+				]
+			});
+			const result = await runReview({
+				repoDir: dir,
+				diff,
+				pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+				config: parseRepoConfig('').config,
+				rulesInjection: true,
+				models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+				onEvent: (event) => void events.push(event)
+			});
+			expect(result.status).toBe('completed');
+			if (result.status !== 'completed') return;
+			expect(result.posted).toMatchObject([
+				{ title: 'New regex without justification', source: 'agents', ruleFile: 'AGENTS.md' }
+			]);
+			const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+			expect(prompt).toContain('## Repository review rules');
+			expect(prompt).toContain('Do not add regular expressions without justification.');
+			expect(prompt).toContain('`AGENTS.md` (agents)');
+			expect(prompt).toContain('skipped: include of AGENTS.md');
+			expect(prompt).not.toContain('<file path=\\"AGENTS.md\\">\\nDo not add regular expressions');
+			expect(events.some((event) => event.type === 'rules.loaded')).toBe(true);
+			const loaded = events.find((event) => event.type === 'rules.loaded');
+			expect(loaded?.data?.files).toEqual(['AGENTS.md']);
+			expect(loaded?.data?.truncated).toBe(false);
+			const verifyPrompt = JSON.stringify(model.doGenerateCalls[1]?.prompt);
+			expect(verifyPrompt).toContain('## Repository review rules');
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('does not inject repository review rules when the flag is off', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'hans-rules-off-'));
+		await mkdir(join(dir, 'src'));
+		await writeFile(
+			join(dir, 'src/math.ts'),
+			'export function divide(a: number, b: number) {\n  const result = a / b;\n  return result;\n}\n'
+		);
+		await writeFile(
+			join(dir, 'AGENTS.md'),
+			'Do not add regular expressions without justification.\n'
+		);
+		try {
+			const events: { type: string }[] = [];
+			const model = new MockLanguageModelV4({
+				doGenerate: [toolCall('submit_review', { summary: 'Refactors divide.', findings: [] })]
+			});
+			await runReview({
+				repoDir: dir,
+				diff,
+				pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+				config: parseRepoConfig('').config,
+				rulesInjection: false,
+				models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+				onEvent: (event) => void events.push(event)
+			});
+			const user = model.doGenerateCalls[0]?.prompt.find((message) => message.role === 'user');
+			const prompt = JSON.stringify(user);
+			expect(prompt).not.toContain('## Repository review rules');
+			expect(prompt).not.toContain('<repository_review_rules>');
+			expect(events.some((event) => event.type === 'rules.loaded')).toBe(false);
+			// Existing base-guideline loading still includes AGENTS.md when the flag is off.
+			expect(prompt).toContain('Do not add regular expressions without justification.');
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
 	});
 
 	test('posts one comment per problem, keeping the most severe copy', async () => {

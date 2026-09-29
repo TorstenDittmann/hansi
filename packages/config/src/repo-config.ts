@@ -78,6 +78,12 @@ export const repoConfigSchema = z
 					.default(false)
 					.describe(
 						'Approve pull requests from people without write access, e.g. from forks. Off by default: their changes could try to talk the model into approving.'
+					),
+				rulesInjection: z
+					.boolean()
+					.default(false)
+					.describe(
+						'Load AGENTS.md, CLAUDE.md, and Hansi-native rule files from the pull request head and inject them as review rules. Off by default.'
 					)
 			})
 			.prefault({})

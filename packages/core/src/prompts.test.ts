@@ -103,7 +103,28 @@ test('treats repository guidelines as rules the review has to apply', () => {
 	const instructions = reviewerInstructions(base.config);
 	expect(instructions).toContain('A concrete project rule is not a style opinion.');
 	expect(instructions).toContain('not from this pull request');
+	expect(instructions).toContain('<repository_review_rules>');
 	expect(verifierInstructions('balanced')).toContain(
-		'the changed code breaks a concrete rule in <repository_guidelines>'
+		'the changed code breaks a concrete rule in <repository_review_rules>, <repository_guidelines>'
 	);
+});
+
+test('injects repository review rules under the documented heading', () => {
+	const prompt = buildReviewPrompt({
+		...base,
+		repositoryReviewRules: `<repository_review_rules>
+## Repository review rules
+
+The following files were loaded from the PR head (highest precedence first):
+- \`AGENTS.md\` (agents)
+
+<file path="AGENTS.md" source="agents">
+Do not add regular expressions without justification.
+</file>
+</repository_review_rules>`
+	});
+	expect(prompt).toContain('## Repository review rules');
+	expect(prompt).toContain('Do not add regular expressions without justification.');
+	expect(prompt).toContain('`AGENTS.md` (agents)');
+	expect(buildReviewPrompt(base)).not.toContain('## Repository review rules');
 });

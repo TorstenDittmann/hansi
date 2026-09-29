@@ -57,6 +57,13 @@
       "when": 1790596499191,
       "tag": "0007_member_organization_user",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790674586550,
+      "tag": "0008_finding_rule_source",
+      "breakpoints": true
     }
   ]
 }

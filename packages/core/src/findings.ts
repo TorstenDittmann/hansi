@@ -39,6 +39,12 @@ export const findingSchema = z.object({
 		.describe('Why this is a problem and what happens at runtime. Markdown, no headings.'),
 	suggestion: omittable(z.string()).describe(
 		'Code only, never prose. GitHub replaces lines startLine..endLine verbatim with this text when the author clicks "Apply", so it must be the complete, correctly indented replacement for exactly those lines and keep the code compiling (every block it opens must close). No code fences, no comments explaining the fix. Omit unless the fix is small, local, and certain; explain larger fixes in the body instead.'
+	),
+	source: omittable(z.enum(['agents', 'claude', 'hansi-config'])).describe(
+		'When this finding cites a loaded repository rule: agents (AGENTS.md), claude (CLAUDE.md), or hansi-config (.hansi*)'
+	),
+	ruleFile: omittable(z.string()).describe(
+		'Path of the loaded repository rule file being cited, e.g. AGENTS.md or .hansi'
 	)
 });
 
