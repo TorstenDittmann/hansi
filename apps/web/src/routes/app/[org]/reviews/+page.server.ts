@@ -4,7 +4,7 @@ import { countReviews, listReviewedRepositories, listReviews } from '$lib/server
 import { REVIEW_PAGE_SIZE, clampReviewPage, parseReviewFilters, reviewSearch } from '$lib/reviews';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ parent, url }) => {
+export const load: PageServerLoad = async ({ params, parent, url }) => {
 	const { organization } = await parent();
 	const parsed = parseReviewFilters(
 		{
@@ -28,7 +28,7 @@ export const load: PageServerLoad = async ({ parent, url }) => {
 	const search = reviewSearch({ ...parsed, page });
 	const canonicalPage = page > 1 ? String(page) : '';
 	if (parsed.filtersDirty || (url.searchParams.get('page') ?? '') !== canonicalPage) {
-		redirect(303, `/app/reviews${search}`);
+		redirect(303, `/app/${params.org}/reviews${search}`);
 	}
 
 	const reviews = await listReviews(organization.id, {

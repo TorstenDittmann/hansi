@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import ProviderLogo from '$lib/components/ProviderLogo.svelte';
 	import ReviewsTable from '$lib/components/ReviewsTable.svelte';
 	import { formatCost, formatDay } from '$lib/format';
@@ -177,7 +178,10 @@
 	<section>
 		<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
 			<h2 class="text-lg font-semibold">Recent reviews</h2>
-			<a href={resolve('/app/reviews')} class="muted hover:underline">All reviews</a>
+			<a
+				href={resolve('/app/[org]/reviews', { org: page.data.organization?.slug ?? '' })}
+				class="muted hover:underline">All reviews</a
+			>
 		</div>
 		{#if data.reviews.length === 0}
 			<p class="muted mt-2">

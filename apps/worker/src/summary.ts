@@ -9,7 +9,7 @@ import { schema, type Database } from '@hans/db';
 import { getMarkedComment, upsertMarkedComment } from '@hans/github';
 import type { Severity, Verdict } from '@hans/config';
 import { and, desc, eq, ne } from 'drizzle-orm';
-import type { RepositoryConnection } from './shared';
+import { reviewDetailsUrlFor, type RepositoryConnection } from './shared';
 
 type FindingRow = {
 	reviewId: string;
@@ -119,7 +119,7 @@ export async function refreshSummaryAfterSettlement(input: {
 		walkthrough: last.walkthrough ?? [],
 		latestReviewId: last.id,
 		findings: rows,
-		detailsUrl: `${env.APP_URL.replace(/\/+$/, '')}/app/reviews/${last.id}`,
+		detailsUrl: await reviewDetailsUrlFor(db, env.APP_URL, organizationId, last.id),
 		mention,
 		...extras
 	});
@@ -150,7 +150,7 @@ export function summaryAfterSettlement(
 		walkthrough: { path: string; change: string }[];
 		latestReviewId: string;
 		findings: FindingRow[];
-		detailsUrl: string;
+		detailsUrl?: string;
 		mention: string;
 	} & SummaryExtras
 ): SummaryInput {

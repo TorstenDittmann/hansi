@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import type { Analytics } from '@hans/analytics';
 import { createTestDatabase, schema } from '@hans/db';
-import { createUsageRecorder } from './shared';
+import { createUsageRecorder, reviewDetailsUrl, reviewDetailsUrlFor } from './shared';
 
 const realFetch = globalThis.fetch;
 beforeAll(() => {
@@ -100,4 +100,20 @@ test('a failed model call is reported to LLM analytics as an error and not store
 			}
 		}
 	]);
+});
+
+test('review links include the organization slug', async () => {
+	expect(reviewDetailsUrl('https://hans.example/', 'acme', 'review-1')).toBe(
+		'https://hans.example/app/acme/reviews/review-1'
+	);
+	const { db } = await createTestDatabase();
+	await db
+		.insert(schema.organization)
+		.values({ id: 'org-1', name: 'Acme', slug: 'acme', createdAt: new Date() });
+	expect(await reviewDetailsUrlFor(db, 'https://hans.example', 'org-1', 'review-1')).toBe(
+		'https://hans.example/app/acme/reviews/review-1'
+	);
+	expect(
+		await reviewDetailsUrlFor(db, 'https://hans.example', 'missing', 'review-1')
+	).toBeUndefined();
 });

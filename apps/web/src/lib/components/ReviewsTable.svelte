@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { Verdict } from '@hans/config';
 	import RetryReviewButton from '$lib/components/RetryReviewButton.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -19,6 +20,7 @@
 	};
 
 	let { reviews }: { reviews: ReviewRow[] } = $props();
+	const org = $derived(page.data.organization?.slug ?? '');
 </script>
 
 <div class="card overflow-x-auto">
@@ -39,7 +41,7 @@
 					<td class="px-4 py-2">
 						<a
 							class="font-mono hover:underline"
-							href={resolve('/app/reviews/[id]', { id: review.id })}
+							href={resolve('/app/[org]/reviews/[id]', { org, id: review.id })}
 						>
 							{review.repository}#{review.pullNumber}
 						</a>

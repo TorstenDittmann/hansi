@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import './layout.css';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -28,13 +29,11 @@
 	// The landing page brings its own full-width layout.
 	const bare = $derived(page.url.pathname === '/');
 	// Present on /app pages (from the app layout's data).
-	const organizations = $derived(
-		(page.data.organizations as { id: string; name: string }[] | undefined) ?? []
-	);
-	const activeOrganization = $derived(
-		page.data.organization as { id: string; name: string } | undefined
-	);
-	const appSlug = $derived(page.data.appSlug as string | null | undefined);
+	const organizations = $derived(page.data.organizations ?? []);
+	const activeOrganization = $derived(page.data.organization);
+	const appSlug = $derived(page.data.appSlug);
+	// The organization in the URL, or the active one on pages that are not org-scoped.
+	const org = $derived(page.params.org ?? activeOrganization?.slug ?? '');
 	// Pages override title/description by returning them from `load` (see $lib/seo).
 	const title = $derived(page.data.title ?? SITE_NAME);
 	const description = $derived(page.data.description ?? DEFAULT_DESCRIPTION);
@@ -42,48 +41,96 @@
 	const ogImage = $derived(`${SITE_ORIGIN}${OG_IMAGE_PATH}`);
 	const indexable = $derived(isIndexablePath(page.url.pathname));
 
-	const tabs = [
-		{
-			name: 'Overview',
-			href: resolve('/app'),
-			match: (path: string) => path === '/app'
-		},
-		{
-			name: 'Reviews',
-			href: resolve('/app/reviews'),
-			match: (path: string) => path === '/app/reviews' || path.startsWith('/app/reviews/')
-		},
-		{
-			name: 'Repositories',
-			href: resolve('/app/repositories'),
-			match: (path: string) => path.startsWith('/app/repositories')
-		},
-		{
-			name: 'Models',
-			href: resolve('/app/settings/models'),
-			match: (path: string) => path.startsWith('/app/settings/models')
-		},
-		{
-			name: 'Learnings',
-			href: resolve('/app/settings/learnings'),
-			match: (path: string) => path.startsWith('/app/settings/learnings')
-		},
-		{
-			name: 'Integration',
-			href: resolve('/app/integration'),
-			match: (path: string) => path.startsWith('/app/integration')
-		},
-		{
-			name: 'Members',
-			href: resolve('/app/settings/members'),
-			match: (path: string) => path.startsWith('/app/settings/members')
-		},
-		{
-			name: 'Settings',
-			href: resolve('/app/settings/organization'),
-			match: (path: string) => path.startsWith('/app/settings/organization')
+	const tabs = $derived(
+		org
+			? [
+					{
+						name: 'Overview',
+						href: resolve('/app/[org]', { org }),
+						match: (path: string) => sectionMatches(path, org, '')
+					},
+					{
+						name: 'Reviews',
+						href: resolve('/app/[org]/reviews', { org }),
+						match: (path: string) => sectionMatches(path, org, 'reviews')
+					},
+					{
+						name: 'Repositories',
+						href: resolve('/app/[org]/repositories', { org }),
+						match: (path: string) => sectionMatches(path, org, 'repositories')
+					},
+					{
+						name: 'Models',
+						href: resolve('/app/[org]/settings/models', { org }),
+						match: (path: string) => sectionMatches(path, org, 'settings/models')
+					},
+					{
+						name: 'Learnings',
+						href: resolve('/app/[org]/settings/learnings', { org }),
+						match: (path: string) => sectionMatches(path, org, 'settings/learnings')
+					},
+					{
+						name: 'Integration',
+						href: resolve('/app/[org]/integration', { org }),
+						match: (path: string) => sectionMatches(path, org, 'integration')
+					},
+					{
+						name: 'Members',
+						href: resolve('/app/[org]/settings/members', { org }),
+						match: (path: string) => sectionMatches(path, org, 'settings/members')
+					},
+					{
+						name: 'Settings',
+						href: resolve('/app/[org]/settings/organization', { org }),
+						match: (path: string) => sectionMatches(path, org, 'settings/organization')
+					}
+				]
+			: []
+	);
+
+	/** The path after `/app/<slug>/`, or `''` on the organization overview. */
+	function organizationSection(path: string, slug: string) {
+		for (const prefix of [`/app/${encodeURIComponent(slug)}`, `/app/${slug}`]) {
+			if (path === prefix) return '';
+			if (path.startsWith(`${prefix}/`)) return path.slice(prefix.length + 1);
 		}
-	];
+		return null;
+	}
+
+	function sectionMatches(path: string, slug: string, section: string) {
+		const rest = organizationSection(path, slug);
+		if (rest === null) return false;
+		if (!section) return rest === '';
+		return rest === section || rest.startsWith(`${section}/`);
+	}
+
+	/** The same page under another organization, or that organization's overview. */
+	function hrefInOrganization(slug: string): ResolvedPathname {
+		const search = page.url.search;
+		const keep = (path: ResolvedPathname) =>
+			(search ? `${path}${search}` : path) as ResolvedPathname;
+		const reviewId = page.params.id ?? '';
+		switch (page.route.id) {
+			case '/app/[org]/reviews':
+				return keep(resolve('/app/[org]/reviews', { org: slug }));
+			case '/app/[org]/reviews/[id]':
+				return keep(resolve('/app/[org]/reviews/[id]', { org: slug, id: reviewId }));
+			case '/app/[org]/repositories':
+				return keep(resolve('/app/[org]/repositories', { org: slug }));
+			case '/app/[org]/settings/models':
+				return keep(resolve('/app/[org]/settings/models', { org: slug }));
+			case '/app/[org]/settings/learnings':
+				return keep(resolve('/app/[org]/settings/learnings', { org: slug }));
+			case '/app/[org]/settings/members':
+				return keep(resolve('/app/[org]/settings/members', { org: slug }));
+			case '/app/[org]/settings/organization':
+				return keep(resolve('/app/[org]/settings/organization', { org: slug }));
+			case '/app/[org]/integration':
+				return keep(resolve('/app/[org]/integration', { org: slug }));
+			default:
+				return resolve('/app/[org]', { org: slug });
+		}
+	}
 	const menuItem =
 		'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-stone-100 dark:hover:bg-stone-800';
 
@@ -160,7 +207,7 @@
 				<div class="flex h-14 items-center justify-between gap-4">
 					<div class="flex min-w-0 items-center gap-2">
 						<a
-							href={data.user ? resolve('/app') : resolve('/')}
+							href={data.user && org ? resolve('/app/[org]', { org }) : resolve('/')}
 							class="flex shrink-0 items-center gap-2 text-lg font-bold tracking-tight"
 							aria-label="Hansi"
 						>
@@ -195,24 +242,22 @@
 								<p class="px-3 pt-2 pb-1 text-xs text-stone-500 dark:text-stone-400">
 									Organizations
 								</p>
-								<form method="post" action="/app/organizations/switch">
-									{#each organizations as organization (organization.id)}
-										<button name="organizationId" value={organization.id} class={menuItem}>
-											<Avatar name={organization.name} square class="size-5 text-[10px]" />
-											<span class="min-w-0 flex-1 truncate">{organization.name}</span>
-											{#if organization.id === activeOrganization.id}
-												<svg viewBox="0 0 16 16" class="size-4 shrink-0" aria-label="Current">
-													<path
-														d="m3.5 8.5 3 3 6-7"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="1.75"
-													/>
-												</svg>
-											{/if}
-										</button>
-									{/each}
-								</form>
+								{#each organizations as organization (organization.id)}
+									<a href={hrefInOrganization(organization.slug)} class={menuItem}>
+										<Avatar name={organization.name} square class="size-5 text-[10px]" />
+										<span class="min-w-0 flex-1 truncate">{organization.name}</span>
+										{#if organization.id === activeOrganization.id}
+											<svg viewBox="0 0 16 16" class="size-4 shrink-0" aria-label="Current">
+												<path
+													d="m3.5 8.5 3 3 6-7"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="1.75"
+												/>
+											</svg>
+										{/if}
+									</a>
+								{/each}
 								<a href={resolve('/app/organizations/new')} class={menuItem}>
 									<span
 										class="inline-flex size-5 items-center justify-center rounded-md border border-dashed border-stone-300 text-stone-500 dark:border-stone-600"
@@ -221,8 +266,12 @@
 									New organization
 								</a>
 								<div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
-								<a href={resolve('/app/settings/organization')} class={menuItem}>Settings</a>
-								<a href={resolve('/app/settings/members')} class={menuItem}>Members</a>
+								<a href={resolve('/app/[org]/settings/organization', { org })} class={menuItem}
+									>Settings</a
+								>
+								<a href={resolve('/app/[org]/settings/members', { org })} class={menuItem}
+									>Members</a
+								>
 							</Menu>
 						{/if}
 					</div>

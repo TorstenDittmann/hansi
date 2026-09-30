@@ -7,8 +7,8 @@ import { requireOrganization } from '$lib/server/organization';
 import type { RequestHandler } from './$types';
 
 /** The models a stored key can use, for the model picker. */
-export const GET: RequestHandler = async ({ locals, request, url }) => {
-	const organization = await requireOrganization(locals, request.headers);
+export const GET: RequestHandler = async ({ locals, params, request, url }) => {
+	const organization = await requireOrganization(locals, request.headers, params.org);
 	const { db, env } = await getContext();
 	const [credential] = await db
 		.select()

@@ -13,16 +13,20 @@ export function organizationSlug(name: string) {
 }
 
 /**
- * The signed-in user's active organization, and all organizations they belong to. New users get
- * a "Personal" organization on first visit, so there is always somewhere to attach GitHub
- * installations and provider keys.
+ * The organization this request is for. With a slug, that organization must be one the user
+ * belongs to. Without one, it is the session's active organization.
  */
-export async function requireOrganization(locals: App.Locals, headers: Headers) {
-	const { active } = await organizationsFor(locals, headers);
+export async function requireOrganization(locals: App.Locals, headers: Headers, slug?: string) {
+	const { active } = await organizationsFor(locals, headers, slug);
 	return active;
 }
 
-export async function organizationsFor(locals: App.Locals, headers: Headers) {
+/**
+ * The signed-in user's organizations. New users get a "Personal" organization on first visit, so
+ * there is always somewhere to attach GitHub installations and provider keys. Pass `slug` to
+ * select that organization instead of the session's active one.
+ */
+export async function organizationsFor(locals: App.Locals, headers: Headers, slug?: string) {
 	if (!locals.user || !locals.session) error(401, 'Not signed in');
 	const auth = await getAuth();
 
@@ -46,13 +50,17 @@ export async function organizationsFor(locals: App.Locals, headers: Headers) {
 		organizations = await auth.api.listOrganizations({ headers });
 	}
 
-	const active =
-		organizations.find((org) => org.id === locals.session?.activeOrganizationId) ??
-		organizations[0];
-	if (!active) error(500, 'Could not create an organization');
+	const active = slug
+		? organizations.find((org) => org.slug === slug)
+		: (organizations.find((org) => org.id === locals.session?.activeOrganizationId) ??
+			organizations[0]);
+	if (!active) {
+		error(slug ? 404 : 500, slug ? 'Organization not found' : 'Could not create an organization');
+	}
 
 	if (active.id !== locals.session.activeOrganizationId) {
 		await auth.api.setActiveOrganization({ headers, body: { organizationId: active.id } });
+		locals.session.activeOrganizationId = active.id;
 	}
 	return { active, organizations };
 }

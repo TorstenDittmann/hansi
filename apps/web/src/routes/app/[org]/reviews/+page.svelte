@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import ReviewsTable from '$lib/components/ReviewsTable.svelte';
 	import { reviewSearch } from '$lib/reviews';
 
 	let { data } = $props();
+	const org = $derived(page.params.org ?? '');
+	const reviewsHref = $derived(resolve('/app/[org]/reviews', { org }));
 
 	const filtered = $derived(Boolean(data.query || data.repository || data.status));
 	const showFilters = $derived(data.repositories.length > 0 || filtered);
@@ -45,7 +48,7 @@
 		<form
 			class="flex flex-wrap items-center gap-3"
 			method="GET"
-			action={resolve('/app/reviews')}
+			action={reviewsHref}
 			onsubmitcapture={omitBlankFields}
 		>
 			<input
@@ -87,7 +90,7 @@
 			</select>
 			<button class="btn">Search</button>
 			{#if filtered}
-				<a href={resolve('/app/reviews')} class="muted hover:underline">Clear</a>
+				<a href={reviewsHref} class="muted hover:underline">Clear</a>
 			{/if}
 			<p class="muted sm:ml-auto">
 				{data.total} review{data.total === 1 ? '' : 's'}
@@ -121,7 +124,7 @@
 							status: data.status,
 							page: data.page - 1
 						})}
-						<a class="btn" href="{resolve('/app/reviews')}{search}">Previous</a>
+						<a class="btn" href="{reviewsHref}{search}">Previous</a>
 					{:else}
 						<span class="btn pointer-events-none opacity-50" aria-disabled="true">Previous</span>
 					{/if}
@@ -132,7 +135,7 @@
 							status: data.status,
 							page: data.page + 1
 						})}
-						<a class="btn" href="{resolve('/app/reviews')}{search}">Next</a>
+						<a class="btn" href="{reviewsHref}{search}">Next</a>
 					{:else}
 						<span class="btn pointer-events-none opacity-50" aria-disabled="true">Next</span>
 					{/if}

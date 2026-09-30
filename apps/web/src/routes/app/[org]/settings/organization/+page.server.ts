@@ -27,8 +27,8 @@ async function run(action: () => Promise<unknown>) {
 }
 
 export const actions: Actions = {
-	rename: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	rename: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const name = String((await request.formData()).get('name') ?? '').trim();
 		if (!name) return fail(400, { error: 'The name cannot be empty' });
 		if (name.length > 60) return fail(400, { error: 'Keep the name under 60 characters' });
@@ -43,8 +43,8 @@ export const actions: Actions = {
 		);
 	},
 
-	leave: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	leave: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const auth = await getAuth();
 		const failed = await run(() =>
 			auth.api.leaveOrganization({
@@ -56,8 +56,8 @@ export const actions: Actions = {
 		redirect(303, '/app');
 	},
 
-	delete: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	delete: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const confirmation = String((await request.formData()).get('confirm') ?? '').trim();
 		if (confirmation !== organization.name) {
 			return fail(400, { error: `Type "${organization.name}" to confirm` });
