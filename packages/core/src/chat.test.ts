@@ -99,3 +99,20 @@ test('mark_finding is only offered for threads about a finding', async () => {
 	expect(toolNames).toContain('remember');
 	expect(toolNames).not.toContain('mark_finding');
 });
+
+test('sends the chat model its reasoning effort', async () => {
+	const model = new MockLanguageModelV4({
+		doGenerate: [step([{ type: 'text' as const, text: 'It returns 1.' }], 'stop')]
+	});
+	await runChat({
+		repoDir,
+		pullRequest: { title: 'x', body: '', author: 'octocat' },
+		diff: '',
+		thread: [{ author: 'octocat', body: '@hans what does a return?', fromBot: false }],
+		learnings: [],
+		language: 'en',
+		model: { model, provider: 'openai', modelId: 'gpt-5', reasoningEffort: 'minimal' },
+		onRemember: async () => {}
+	});
+	expect(model.doGenerateCalls[0]).toMatchObject({ reasoning: 'minimal' });
+});

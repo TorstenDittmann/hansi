@@ -344,6 +344,43 @@ describe('runReview', () => {
 		expect(cached).toEqual([ephemeral, ephemeral]);
 	});
 
+	test('sends each pass its reasoning effort', async () => {
+		const reviewModel = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] })
+			]
+		});
+		const verifyModel = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: true, reason: 'real' }] })
+			]
+		});
+		await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: {
+				review: {
+					model: reviewModel,
+					provider: 'openai',
+					modelId: 'gpt-5',
+					reasoningEffort: 'high'
+				},
+				verify: {
+					model: verifyModel,
+					provider: 'openrouter',
+					modelId: 'openai/gpt-5',
+					reasoningEffort: 'low'
+				}
+			}
+		});
+		expect(reviewModel.doGenerateCalls[0]).toMatchObject({ reasoning: 'high' });
+		expect(verifyModel.doGenerateCalls[0]).toMatchObject({
+			providerOptions: { openrouter: { reasoning: { effort: 'low' } } }
+		});
+	});
+
 	test("gives the verifier the team's rules", async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [

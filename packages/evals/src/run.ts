@@ -5,11 +5,11 @@
 //
 // Environment: EVAL_PROVIDER, EVAL_MODEL, EVAL_API_KEY (or the provider's usual variable),
 // EVAL_BASE_URL (OpenAI-compatible endpoints), EVAL_REGION (Amazon Bedrock), EVAL_VERIFY_MODEL
-// (optional, same provider).
+// (optional, same provider), EVAL_REASONING_EFFORT (none, minimal, low, medium, high, xhigh).
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { repoConfigSchema } from '@hans/config';
+import { parseReasoningEffort, reasoningEfforts, repoConfigSchema } from '@hans/config';
 import { runReview, type ReviewModel } from '@hans/core';
 import {
 	createLanguageModel,
@@ -58,6 +58,12 @@ if (!apiKey && provider !== 'openai-compatible') {
 	fail(`Set EVAL_API_KEY or ${keyVariables[provider]}`);
 }
 
+const configuredEffort = process.env.EVAL_REASONING_EFFORT;
+const reasoningEffort = parseReasoningEffort(configuredEffort);
+if (configuredEffort != null && !reasoningEffort) {
+	fail(`EVAL_REASONING_EFFORT must be one of: ${reasoningEfforts.join(', ')}`);
+}
+
 const credential = {
 	provider,
 	apiKey,
@@ -67,7 +73,8 @@ const credential = {
 const model = (id: string): ReviewModel => ({
 	model: createLanguageModel(credential, id),
 	provider,
-	modelId: id
+	modelId: id,
+	reasoningEffort
 });
 const models = {
 	review: model(modelId),
@@ -92,7 +99,7 @@ interface Run {
 
 const runs: Run[] = [];
 console.log(
-	`Evaluating ${provider}/${modelId}${models.verify ? ` (verify: ${models.verify.modelId})` : ''} on ${selected.length} case(s) × ${repeat}\n`
+	`Evaluating ${provider}/${modelId}${reasoningEffort ? ` at ${reasoningEffort}` : ''}${models.verify ? ` (verify: ${models.verify.modelId})` : ''} on ${selected.length} case(s) × ${repeat}\n`
 );
 
 for (const evalCase of selected) {

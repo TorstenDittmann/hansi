@@ -1,4 +1,5 @@
 import { fail } from '@sveltejs/kit';
+import { parseReasoningEffort } from '@hans/config';
 import type { ModelRole } from '@hans/db';
 import { listModels, providerIds, providers, type ProviderId } from '@hans/llm';
 import {
@@ -95,8 +96,10 @@ export const actions: Actions = {
 			await clearModelAssignment(organization.id, role);
 			return { assigned: role };
 		}
+		const reasoningEffort = parseReasoningEffort(form.get('reasoningEffort'));
+		if (reasoningEffort === undefined) return fail(400, { error: 'Unknown reasoning effort' });
 		try {
-			await setModelAssignment(organization.id, role, credentialId, modelId);
+			await setModelAssignment(organization.id, role, credentialId, modelId, reasoningEffort);
 		} catch (err) {
 			return fail(400, { error: (err as Error).message });
 		}
@@ -104,7 +107,7 @@ export const actions: Actions = {
 			distinctId: locals.user!.id,
 			event: 'model chosen',
 			organizationId: organization.id,
-			properties: { role, model: modelId },
+			properties: { role, model: modelId, ...(reasoningEffort ? { reasoningEffort } : {}) },
 			person: analyticsPerson(locals.user!)
 		});
 		return { assigned: role };
