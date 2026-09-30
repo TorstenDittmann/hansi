@@ -101,7 +101,8 @@ export async function loadModels({ db, env }: WorkerContext, organizationId: str
 				entry.assignment.modelId
 			),
 			provider: entry.credential.provider,
-			modelId: entry.assignment.modelId
+			modelId: entry.assignment.modelId,
+			reasoningEffort: entry.assignment.reasoningEffort
 		};
 	};
 

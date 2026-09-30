@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test';
 import { APICallError, RetryError } from 'ai';
-import { cachedPrompt, callModel, type ModelCall, type ModelFailure } from './model-call';
+import {
+	cachedPrompt,
+	callModel,
+	reasoningCallOptions,
+	type ModelCall,
+	type ModelFailure
+} from './model-call';
 
 const model = { provider: 'anthropic', modelId: 'claude-sonnet-5' };
 
@@ -45,6 +51,17 @@ test('reports a failure with the provider status, then rethrows', async () => {
 	expect(failures).toMatchObject([
 		{ role: 'verify', provider: 'anthropic', message: 'Rate limit exceeded', status: 429 }
 	]);
+});
+
+test('passes a reasoning effort, and OpenRouter gets it in its own options', () => {
+	expect(reasoningCallOptions({ provider: 'anthropic' })).toEqual({});
+	expect(reasoningCallOptions({ provider: 'anthropic', reasoningEffort: null })).toEqual({});
+	expect(reasoningCallOptions({ provider: 'openai', reasoningEffort: 'high' })).toEqual({
+		reasoning: 'high'
+	});
+	expect(reasoningCallOptions({ provider: 'openrouter', reasoningEffort: 'low' })).toEqual({
+		providerOptions: { openrouter: { reasoning: { effort: 'low' } } }
+	});
 });
 
 test('marks the prompt for caching where the provider needs asking', () => {

@@ -1,0 +1,1 @@
+ALTER TABLE `model_assignments` ADD `reasoning_effort` text;

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { chatInstructions } from './prompts';
-import { callModel, type ModelCall, type ModelFailure } from './model-call';
+import { callModel, reasoningCallOptions, type ModelCall, type ModelFailure } from './model-call';
 import type { ReviewModel } from './review';
 import { createRepoTools, loadRepoGuidelines, type EmitEvent, type TrustedSource } from './tools';
 
@@ -111,6 +111,7 @@ export async function runChat(input: ChatInput): Promise<string> {
 	const result = await callModel('chat', input.model, input, () =>
 		generateText({
 			model: input.model.model,
+			...reasoningCallOptions(input.model),
 			instructions: chatInstructions(input.language, !!input.onMarkFinding),
 			prompt: parts.join('\n\n'),
 			tools,

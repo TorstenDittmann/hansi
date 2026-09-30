@@ -1,5 +1,6 @@
 // Organization-scoped data access for the dashboard. Every query takes `organizationId` and
 // filters by it; SQLite has no row-level security, so this module is the tenancy boundary.
+import type { ReasoningEffort } from '@hans/config';
 import { schema, type ModelRole, type ProviderId } from '@hans/db';
 import { encryptSecret, keyHint } from '@hans/llm';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
@@ -191,7 +192,8 @@ export async function setModelAssignment(
 	organizationId: string,
 	role: ModelRole,
 	credentialId: string,
-	modelId: string
+	modelId: string,
+	reasoningEffort: ReasoningEffort | null
 ) {
 	const { db } = await getContext();
 	const [credential] = await db
@@ -207,10 +209,10 @@ export async function setModelAssignment(
 
 	await db
 		.insert(schema.modelAssignments)
-		.values({ organizationId, role, credentialId, modelId })
+		.values({ organizationId, role, credentialId, modelId, reasoningEffort })
 		.onConflictDoUpdate({
 			target: [schema.modelAssignments.organizationId, schema.modelAssignments.role],
-			set: { credentialId, modelId }
+			set: { credentialId, modelId, reasoningEffort }
 		});
 }
 

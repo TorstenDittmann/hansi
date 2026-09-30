@@ -1,5 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { blockingSeverity, severityAtLeast, type RepoConfig, type Severity } from '@hans/config';
+import {
+	blockingSeverity,
+	severityAtLeast,
+	type ReasoningEffort,
+	type RepoConfig,
+	type Severity
+} from '@hans/config';
 import { generateText, isStepCount, tool, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
@@ -11,7 +17,13 @@ import {
 	type FileDiff
 } from './diff';
 import { filterFiles } from './filters';
-import { cachedPrompt, callModel, type ModelCall, type ModelFailure } from './model-call';
+import {
+	cachedPrompt,
+	callModel,
+	reasoningCallOptions,
+	type ModelCall,
+	type ModelFailure
+} from './model-call';
 import {
 	compareSeverity,
 	findingSchema,
@@ -42,6 +54,8 @@ export interface ReviewModel {
 	model: LanguageModel;
 	provider: string;
 	modelId: string;
+	/** Absent means the provider's default. */
+	reasoningEffort?: ReasoningEffort | null;
 }
 
 export interface ReviewInput {
@@ -260,6 +274,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const review = await callModel('review', input.models.review, input, () =>
 		generateText({
 			model: input.models.review.model,
+			...reasoningCallOptions(input.models.review),
 			instructions: reviewerInstructions(config),
 			prompt: cachedPrompt(input.models.review, prompt),
 			tools: { ...tools, submit_review: submitReview },
@@ -561,6 +576,7 @@ async function verifyFindings(
 	const result = await callModel('verify', verifyModel, input, () =>
 		generateText({
 			model: verifyModel.model,
+			...reasoningCallOptions(verifyModel),
 			instructions: verifierInstructions(input.config.reviews.profile),
 			prompt: cachedPrompt(
 				verifyModel,
