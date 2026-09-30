@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import RetryReviewButton from '$lib/components/RetryReviewButton.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
@@ -58,7 +59,10 @@
 
 <div class="space-y-8">
 	<header>
-		<a href={resolve('/app/reviews')} class="muted hover:underline">← Reviews</a>
+		<a
+			href={resolve('/app/[org]/reviews', { org: page.params.org ?? '' })}
+			class="muted hover:underline">← Reviews</a
+		>
 		<div class="mt-2 flex flex-wrap items-center gap-3">
 			<h1 class="font-mono text-2xl font-semibold">{review.repository}#{review.pullNumber}</h1>
 			<StatusBadge status={review.status} />

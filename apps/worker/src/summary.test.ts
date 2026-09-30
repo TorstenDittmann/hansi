@@ -9,7 +9,7 @@ const base = {
 	verdict: 'approve' as const,
 	walkthrough: [{ path: 'src/paginate.ts', change: 'Switches to 1-based pages.' }],
 	latestReviewId: 'review-2',
-	detailsUrl: 'https://hans.example/app/reviews/review-2',
+	detailsUrl: 'https://hans.example/app/acme/reviews/review-2',
 	mention: '@hansi-codes'
 };
 

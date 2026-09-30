@@ -30,8 +30,8 @@ const roles: ModelRole[] = ['review', 'verify'];
 
 export const actions: Actions = {
 	/** Validates the key against the provider's model list before storing it. */
-	add: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	add: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const provider = String(form.get('provider')) as ProviderId;
 		const apiKey = String(form.get('apiKey') ?? '').trim();
@@ -76,14 +76,14 @@ export const actions: Actions = {
 		return { added: credentialId };
 	},
 
-	delete: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	delete: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		await deleteCredential(organization.id, String(form.get('credentialId')));
 	},
 
-	assign: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	assign: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const role = String(form.get('role')) as ModelRole;
 		const credentialId = String(form.get('credentialId') ?? '');

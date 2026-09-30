@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { organizationHome } from '$lib/org-path';
 import { getAuth } from '$lib/server/auth';
-import { requireOrganization } from '$lib/server/organization';
+import { organizationsFor, requireOrganization } from '$lib/server/organization';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ parent, request }) => {
@@ -27,8 +28,8 @@ async function run(action: () => Promise<unknown>) {
 }
 
 export const actions: Actions = {
-	rename: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	rename: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const name = String((await request.formData()).get('name') ?? '').trim();
 		if (!name) return fail(400, { error: 'The name cannot be empty' });
 		if (name.length > 60) return fail(400, { error: 'Keep the name under 60 characters' });
@@ -43,8 +44,8 @@ export const actions: Actions = {
 		);
 	},
 
-	leave: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	leave: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const auth = await getAuth();
 		const failed = await run(() =>
 			auth.api.leaveOrganization({
@@ -53,11 +54,12 @@ export const actions: Actions = {
 			})
 		);
 		if (failed) return failed;
-		redirect(303, '/app');
+		const { active } = await organizationsFor(locals, request.headers);
+		redirect(303, organizationHome(active.slug));
 	},
 
-	delete: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	delete: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const confirmation = String((await request.formData()).get('confirm') ?? '').trim();
 		if (confirmation !== organization.name) {
 			return fail(400, { error: `Type "${organization.name}" to confirm` });
@@ -70,6 +72,7 @@ export const actions: Actions = {
 			})
 		);
 		if (failed) return failed;
-		redirect(303, '/app');
+		const { active } = await organizationsFor(locals, request.headers);
+		redirect(303, organizationHome(active.slug));
 	}
 };

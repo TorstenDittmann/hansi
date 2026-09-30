@@ -196,6 +196,27 @@ export async function createUsageRecorder(
 	return { record, recordError, totals };
 }
 
+/** Dashboard URL for one review, scoped to the organization that owns it. */
+export function reviewDetailsUrl(appUrl: string, organizationSlug: string, reviewId: string) {
+	const base = appUrl.replace(/\/+$/, '');
+	return `${base}/app/${encodeURIComponent(organizationSlug)}/reviews/${encodeURIComponent(reviewId)}`;
+}
+
+/** Looks up the organization slug, then builds the review URL. Missing org omits the link. */
+export async function reviewDetailsUrlFor(
+	db: Database,
+	appUrl: string,
+	organizationId: string,
+	reviewId: string
+) {
+	const [organization] = await db
+		.select({ slug: schema.organization.slug })
+		.from(schema.organization)
+		.where(eq(schema.organization.id, organizationId));
+	if (!organization) return undefined;
+	return reviewDetailsUrl(appUrl, organization.slug, reviewId);
+}
+
 /** Runs `fn` with a fresh temporary directory that is always removed afterwards. */
 export async function withWorkdir<T>(env: Env, fn: (dir: string) => Promise<T>): Promise<T> {
 	const root = env.WORKER_WORKDIR ?? join(tmpdir(), 'hans');

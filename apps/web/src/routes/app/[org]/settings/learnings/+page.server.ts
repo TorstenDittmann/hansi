@@ -13,8 +13,8 @@ export const load: PageServerLoad = async ({ parent }) => {
 };
 
 export const actions: Actions = {
-	add: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	add: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const body = String(form.get('body') ?? '').trim();
 		const repository = String(form.get('repositoryId') ?? '');
@@ -31,8 +31,8 @@ export const actions: Actions = {
 		}
 	},
 
-	delete: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	delete: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		await deleteLearning(organization.id, String(form.get('learningId')));
 	}

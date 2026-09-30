@@ -11,8 +11,11 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 	if (!locals.user)
 		redirect(303, `/login?redirectTo=${encodeURIComponent(url.pathname + url.search)}`);
 
+	const organization = await requireOrganization(locals, request.headers);
+	const repositories = `/app/${encodeURIComponent(organization.slug)}/repositories`;
+
 	const installationId = Number(url.searchParams.get('installation_id'));
-	if (!Number.isInteger(installationId) || installationId <= 0) redirect(303, '/app/repositories');
+	if (!Number.isInteger(installationId) || installationId <= 0) redirect(303, repositories);
 
 	const credentials = await getGitHubCredentials();
 	if (!credentials) redirect(303, '/setup');
@@ -23,7 +26,6 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 	if (!accessible.includes(installationId))
 		error(403, 'You do not have access to this installation');
 
-	const organization = await requireOrganization(locals, request.headers);
 	const { db } = await getContext();
 	const linked = await syncInstallation(db, credentials, installationId, organization.id);
 	await track({
@@ -33,5 +35,5 @@ export const GET: RequestHandler = async ({ url, locals, request }) => {
 		properties: { linked },
 		person: analyticsPerson(locals.user!)
 	});
-	redirect(303, linked ? '/app/repositories' : '/app/repositories?elsewhere=1');
+	redirect(303, linked ? repositories : `${repositories}?elsewhere=1`);
 };

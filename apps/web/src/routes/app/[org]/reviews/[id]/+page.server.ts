@@ -14,11 +14,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 export const actions: Actions = {
 	retry: async ({ locals, params, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const { db, queue } = await getContext();
 		const result = await retryFailedReview(db, queue, organization.id, params.id);
 		if (!result.ok && result.reason === 'not-found') error(404, 'Review not found');
 		if (!result.ok) return fail(400, { error: 'Only a failed review can be retried' });
-		redirect(303, `/app/reviews/${result.reviewId}`);
+		redirect(303, `/app/${params.org}/reviews/${result.reviewId}`);
 	}
 };

@@ -68,8 +68,8 @@ async function run(action: () => Promise<unknown>) {
 }
 
 export const actions: Actions = {
-	invite: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	invite: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const email = String(form.get('email') ?? '')
 			.trim()
@@ -96,8 +96,8 @@ export const actions: Actions = {
 		);
 	},
 
-	remove: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	remove: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const auth = await getAuth();
 		return run(() =>
@@ -108,8 +108,8 @@ export const actions: Actions = {
 		);
 	},
 
-	updateRole: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	updateRole: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const memberId = String(form.get('memberId') ?? '');
 		const role = String(form.get('role') ?? '');
@@ -143,23 +143,23 @@ export const actions: Actions = {
 		);
 	},
 
-	createLink: async ({ locals, request }) => {
-		const access = await requireInviteManager(locals, request.headers);
+	createLink: async ({ locals, params, request }) => {
+		const access = await requireInviteManager(locals, request.headers, params.org);
 		if (!access) return fail(403, { error: 'Only owners and admins can manage invite links' });
 		const { db } = await getContext();
 		await createInviteLink(db, access.organizationId, access.userId);
 	},
 
-	revokeLink: async ({ locals, request }) => {
-		const access = await requireInviteManager(locals, request.headers);
+	revokeLink: async ({ locals, params, request }) => {
+		const access = await requireInviteManager(locals, request.headers, params.org);
 		if (!access) return fail(403, { error: 'Only owners and admins can manage invite links' });
 		const { db } = await getContext();
 		await revokeInviteLink(db, access.organizationId);
 	}
 };
 
-async function requireInviteManager(locals: App.Locals, headers: Headers) {
-	const organization = await requireOrganization(locals, headers);
+async function requireInviteManager(locals: App.Locals, headers: Headers, slug: string) {
+	const organization = await requireOrganization(locals, headers, slug);
 	const auth = await getAuth();
 	const member = await auth.api.getActiveMember({ headers });
 	if (!locals.user || !canManageInviteLinks(member?.role)) return null;

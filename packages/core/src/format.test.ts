@@ -40,7 +40,7 @@ const base: SummaryInput = {
 		}
 	],
 	walkthrough: [{ path: 'src/paginate.ts', change: 'Switches to 1-based pages.\nAdds pageCount.' }],
-	detailsUrl: 'https://hans.example/app/reviews/1',
+	detailsUrl: 'https://hans.example/app/acme/reviews/1',
 	mention: '@hans-review'
 };
 

@@ -46,6 +46,7 @@ import {
 	createUsageRecorder,
 	loadLearnings,
 	loadModels,
+	reviewDetailsUrlFor,
 	withWorkdir,
 	type RepositoryConnection,
 	type WorkerContext
@@ -167,7 +168,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 		.set({ status: 'running', headSha: pr.headSha, startedAt: new Date(), error: null })
 		.where(eq(schema.reviews.id, review.id));
 
-	const detailsUrl = `${env.APP_URL.replace(/\/+$/, '')}/app/reviews/${review.id}`;
+	const detailsUrl = await reviewDetailsUrlFor(db, env.APP_URL, review.organizationId, review.id);
 	const checkRunId = await startCheckRun(octokit, ref, {
 		headSha: pr.headSha,
 		name: 'Hansi',

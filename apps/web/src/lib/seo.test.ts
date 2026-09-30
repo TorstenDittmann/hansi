@@ -17,6 +17,7 @@ test('login, dashboard, setup, and API routes are not indexable', () => {
 	expect(isIndexablePath('/invite/token')).toBe(false);
 	expect(isIndexablePath('/app')).toBe(false);
 	expect(isIndexablePath('/app/reviews/1')).toBe(false);
+	expect(isIndexablePath('/app/acme/reviews/1')).toBe(false);
 	expect(isIndexablePath('/setup')).toBe(false);
 	expect(isIndexablePath('/setup/github/callback')).toBe(false);
 	expect(isIndexablePath('/api/auth/ok')).toBe(false);

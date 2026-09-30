@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import ProviderLogo from '$lib/components/ProviderLogo.svelte';
 
 	let { data, form } = $props();
@@ -46,7 +48,10 @@
 	async function loadModels(credentialId: string) {
 		if (modelLists[credentialId]?.status === 'ready') return;
 		modelLists[credentialId] = { status: 'loading' };
-		const response = await fetch(`/app/settings/models/list?credential=${credentialId}`);
+		const listUrl = resolve('/app/[org]/settings/models/list', {
+			org: page.data.organization?.slug ?? ''
+		});
+		const response = await fetch(`${listUrl}?credential=${encodeURIComponent(credentialId)}`);
 		modelLists[credentialId] = response.ok
 			? { status: 'ready', models: await response.json() }
 			: {

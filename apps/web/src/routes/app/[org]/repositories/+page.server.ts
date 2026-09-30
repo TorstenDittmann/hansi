@@ -22,8 +22,8 @@ export const load: PageServerLoad = async ({ parent }) => {
 
 export const actions: Actions = {
 	/** Turns reviews on or off for one repository, or several at once (`repositoryId` repeated). */
-	toggle: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	toggle: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const ids = form.getAll('repositoryId').map(Number);
 		if (ids.some((id) => !Number.isInteger(id)))
@@ -35,8 +35,8 @@ export const actions: Actions = {
 	 * Links the installations the signed-in GitHub user can access to this organization, except
 	 * ones another organization already owns.
 	 */
-	sync: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	sync: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const credentials = await getGitHubCredentials();
 		if (!credentials) return fail(400, { message: 'GitHub App is not configured' });
 
@@ -49,8 +49,8 @@ export const actions: Actions = {
 		return { synced: linked, elsewhere: ids.length - linked };
 	},
 
-	disconnect: async ({ locals, request }) => {
-		const organization = await requireOrganization(locals, request.headers);
+	disconnect: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
 		const form = await request.formData();
 		const installationId = Number(form.get('installationId'));
 		if (!Number.isInteger(installationId)) return fail(400, { message: 'Invalid installation' });

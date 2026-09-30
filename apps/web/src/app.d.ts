@@ -12,6 +12,10 @@ declare global {
 			title?: string;
 			/** Meta and Open Graph description. Pages return this from `load` to override the default. */
 			description?: string;
+			/** Set on `/app` pages. The organization in the URL, or the active one on account pages. */
+			organization?: { id: string; name: string; slug: string };
+			organizations?: { id: string; name: string; slug: string }[];
+			appSlug?: string | null;
 		}
 	}
 }

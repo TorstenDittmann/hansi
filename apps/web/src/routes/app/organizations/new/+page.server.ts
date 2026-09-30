@@ -21,6 +21,6 @@ export const actions: Actions = {
 			headers: request.headers,
 			body: { organizationId: created.id }
 		});
-		redirect(303, '/app');
+		redirect(303, `/app/${created.slug}`);
 	}
 };

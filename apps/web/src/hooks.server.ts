@@ -18,7 +18,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	if (event.url.pathname.startsWith('/app') && !event.locals.user) {
-		redirect(303, `/login?redirectTo=${encodeURIComponent(event.url.pathname)}`);
+		redirect(303, `/login?redirectTo=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	return resolve(event);
