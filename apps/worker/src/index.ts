@@ -1,8 +1,10 @@
 import { createAnalytics } from '@hans/analytics';
 import { parseEnv } from '@hans/config';
 import { createDatabase } from '@hans/db';
+import { loadPriceCatalog } from '@hans/llm';
 import { Queue, queues, type ChatJobPayload, type ReviewJobPayload } from '@hans/queue';
 import pino from 'pino';
+import { backfillMissingCosts } from './backfill-costs';
 import { handleChatJob } from './chat-job';
 import { handleReviewJob } from './review-job';
 
@@ -14,6 +16,9 @@ const { db, client, ready } = createDatabase({
 	authToken: env.DATABASE_AUTH_TOKEN
 });
 await ready;
+
+const backfill = await backfillMissingCosts(db, await loadPriceCatalog());
+if (backfill.calls > 0) logger.info(backfill, 'priced model calls that were missing a cost');
 
 const queue = new Queue(db);
 const controller = new AbortController();
