@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { organizationHome } from '$lib/org-path';
 import { getAuth } from '$lib/server/auth';
-import { requireOrganization } from '$lib/server/organization';
+import { organizationsFor, requireOrganization } from '$lib/server/organization';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ parent, request }) => {
@@ -53,7 +54,8 @@ export const actions: Actions = {
 			})
 		);
 		if (failed) return failed;
-		redirect(303, '/app');
+		const { active } = await organizationsFor(locals, request.headers);
+		redirect(303, organizationHome(active.slug));
 	},
 
 	delete: async ({ locals, params, request }) => {
@@ -70,6 +72,7 @@ export const actions: Actions = {
 			})
 		);
 		if (failed) return failed;
-		redirect(303, '/app');
+		const { active } = await organizationsFor(locals, request.headers);
+		redirect(303, organizationHome(active.slug));
 	}
 };

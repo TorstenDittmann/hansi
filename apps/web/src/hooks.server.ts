@@ -1,7 +1,5 @@
 import { redirect, type Handle, type RequestEvent } from '@sveltejs/kit';
-import { legacyAppDestination } from '$lib/org-path';
 import { getAuth } from '$lib/server/auth';
-import { organizationsFor } from '$lib/server/organization';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/ink/')) return proxyPostHog(event);
@@ -20,14 +18,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	if (event.url.pathname.startsWith('/app') && !event.locals.user) {
-		redirect(303, `/login?redirectTo=${encodeURIComponent(event.url.pathname)}`);
-	}
-
-	// `/app` and the old unscoped pages land on the same page under the active organization.
-	if (event.locals.user && legacyAppDestination(event.url.pathname, '', '_')) {
-		const { active } = await organizationsFor(event.locals, event.request.headers);
-		const destination = legacyAppDestination(event.url.pathname, event.url.search, active.slug);
-		if (destination) redirect(303, destination);
+		redirect(303, `/login?redirectTo=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	return resolve(event);

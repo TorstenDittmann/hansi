@@ -2,7 +2,9 @@ import { dev } from '$app/environment';
 import { redirect } from '@sveltejs/kit';
 import { getAuth } from '$lib/server/auth';
 import { getContext } from '$lib/server/context';
+import { organizationHome } from '$lib/org-path';
 import { INVITE_COOKIE, acceptInviteLink, findActiveInviteLink } from '$lib/server/invite-link';
+import { organizationsFor } from '$lib/server/organization';
 import type { PageServerLoad } from './$types';
 
 const cookie = { path: '/', httpOnly: true, sameSite: 'lax' as const, secure: !dev };
@@ -31,6 +33,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies, request })
 		headers: request.headers,
 		body: { organizationId: accepted.organizationId }
 	});
+	if (locals.session) locals.session.activeOrganizationId = accepted.organizationId;
 	cookies.delete(INVITE_COOKIE, cookie);
-	redirect(303, '/app');
+	const { active } = await organizationsFor(locals, request.headers);
+	redirect(303, organizationHome(active.slug));
 };
