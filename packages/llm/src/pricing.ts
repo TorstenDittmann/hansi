@@ -43,6 +43,61 @@ export async function loadPriceCatalog(fetchImpl: typeof fetch = fetch): Promise
 	}
 }
 
+function lookupPrice(
+	prices: Record<string, ModelPrice> | undefined,
+	modelId: string
+): ModelPrice | undefined {
+	if (!prices) return undefined;
+	// Some providers report dated snapshots (`gpt-x-2026-01-01`) that models.dev lists undated.
+	return prices[modelId] ?? prices[modelId.replace(/-\d{4}-?\d{2}-?\d{2}$/, '')];
+}
+
+/** Keeps published per-million rates and drops catalog-only fields such as context tiers. */
+function rates(price: ModelPrice): ModelPrice {
+	return {
+		input: price.input,
+		output: price.output,
+		...(price.cache_read == null ? {} : { cache_read: price.cache_read }),
+		...(price.cache_write == null ? {} : { cache_write: price.cache_write })
+	};
+}
+
+function scaleRates(price: ModelPrice, factor: number): ModelPrice {
+	const scale = (value: number) => Math.round(value * factor * 1_000_000) / 1_000_000;
+	const scaled = rates(price);
+	return {
+		input: scale(scaled.input),
+		output: scale(scaled.output),
+		...(scaled.cache_read == null ? {} : { cache_read: scale(scaled.cache_read) }),
+		...(scaled.cache_write == null ? {} : { cache_write: scale(scaled.cache_write) })
+	};
+}
+
+/**
+ * models.dev lags new Bedrock launches. OpenAI models there are billed at OpenAI Standard rates
+ * on a global inference profile, and at a 10% premium in-region and on geographic profiles.
+ * GovCloud is a different premium, so those ids are left unpriced until models.dev lists them.
+ */
+function bedrockOpenAiPrice(catalog: PriceCatalog, modelId: string): ModelPrice | undefined {
+	const id = modelId.replace(/-\d{4}-?\d{2}-?\d{2}$/, '');
+	if (id.startsWith('us-gov.')) return undefined;
+
+	let regional = true;
+	let rest = id;
+	if (rest.startsWith('global.')) {
+		regional = false;
+		rest = rest.slice('global.'.length);
+	} else {
+		const geo = /^(?:us|eu|apac|jp|au|in|ca)\./.exec(rest);
+		if (geo) rest = rest.slice(geo[0].length);
+	}
+	if (!rest.startsWith('openai.')) return undefined;
+
+	const base = lookupPrice(catalog.openai, rest.slice('openai.'.length));
+	if (!base) return undefined;
+	return regional ? scaleRates(base, 1.1) : rates(base);
+}
+
 export function findPrice(
 	catalog: PriceCatalog,
 	provider: ProviderId,
@@ -50,9 +105,10 @@ export function findPrice(
 ): ModelPrice | undefined {
 	const providerId = providers[provider].modelsDevId;
 	if (!providerId) return undefined;
-	const prices = catalog[providerId];
-	// Some providers report dated snapshots (`gpt-x-2026-01-01`) that models.dev lists undated.
-	return prices?.[modelId] ?? prices?.[modelId.replace(/-\d{4}-?\d{2}-?\d{2}$/, '')];
+	return (
+		lookupPrice(catalog[providerId], modelId) ??
+		(provider === 'amazon-bedrock' ? bedrockOpenAiPrice(catalog, modelId) : undefined)
+	);
 }
 
 /** Cost in USD, or `null` when the model has no known price. */

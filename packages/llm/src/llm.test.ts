@@ -55,6 +55,24 @@ describe('pricing', () => {
 		expect(findPrice(catalog, 'openai', 'gpt-x-2026-01-01')).toEqual({ input: 1, output: 2 });
 		expect(findPrice(catalog, 'openai-compatible', 'gpt-x')).toBeUndefined();
 	});
+
+	test('prices Bedrock OpenAI models that models.dev has not listed yet', () => {
+		const sol = { input: 2, output: 10, cache_read: 0.1, cache_write: 2.5 };
+		const catalog = {
+			openai: { 'gpt-6.1-sol': sol },
+			'amazon-bedrock': { 'global.openai.gpt-6-sol': { input: 9, output: 9 } }
+		};
+		const regional = { input: 2.2, output: 11, cache_read: 0.11, cache_write: 2.75 };
+		expect(findPrice(catalog, 'amazon-bedrock', 'global.openai.gpt-6.1-sol')).toEqual(sol);
+		expect(findPrice(catalog, 'amazon-bedrock', 'us.openai.gpt-6.1-sol')).toEqual(regional);
+		expect(findPrice(catalog, 'amazon-bedrock', 'openai.gpt-6.1-sol')).toEqual(regional);
+		expect(findPrice(catalog, 'amazon-bedrock', 'global.openai.gpt-6-sol')).toEqual({
+			input: 9,
+			output: 9
+		});
+		expect(findPrice(catalog, 'amazon-bedrock', 'us-gov.openai.gpt-6.1-sol')).toBeUndefined();
+		expect(findPrice(catalog, 'amazon-bedrock', 'global.anthropic.claude-x')).toBeUndefined();
+	});
 });
 
 describe('listModels', () => {
