@@ -44,7 +44,7 @@ test('prices stored calls that were missing a cost and updates their reviews', a
 		outputTokens: 1_000_000
 	});
 
-	expect(await backfillMissingCosts(db, catalog)).toEqual({ calls: 2, reviews: 1 });
+	expect(await backfillMissingCosts(db, catalog)).toEqual({ calls: 2, reviews: 1, skipped: 1 });
 
 	const calls = await db.select().from(schema.llmCalls);
 	const cost = (id: string) => calls.find((row) => row.id === id)?.costUsd;
@@ -59,7 +59,7 @@ test('prices stored calls that were missing a cost and updates their reviews', a
 	expect(reviews.find((row) => row.id === 'review-1')?.costUsd).toBeCloseTo(1.5 + 1 + 0.05 + 1);
 	expect(reviews.find((row) => row.id === 'review-2')?.costUsd).toBe(99);
 
-	expect(await backfillMissingCosts(db, catalog)).toEqual({ calls: 0, reviews: 0 });
+	expect(await backfillMissingCosts(db, catalog)).toEqual({ calls: 0, reviews: 0, skipped: 1 });
 });
 
 async function seed() {

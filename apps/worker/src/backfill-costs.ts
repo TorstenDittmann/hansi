@@ -1,7 +1,8 @@
-import { schema, type Database } from '@hans/db';
+import { createDatabase, schema, type Database } from '@hans/db';
 import {
 	estimateCost,
 	findPrice,
+	loadPriceCatalog,
 	providerIds,
 	type PriceCatalog,
 	type ProviderId
@@ -12,11 +13,13 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
  * Fills in `llm_calls.cost_usd` for calls that were stored before a price was known, then
  * recomputes `reviews.cost_usd` for the reviews those calls belong to. Cache writes are not
  * stored on the call, so they are priced as ordinary input.
+ *
+ * Run once, from the repository root: `bun run db:backfill-costs`
  */
 export async function backfillMissingCosts(
 	db: Database,
 	catalog: PriceCatalog
-): Promise<{ calls: number; reviews: number }> {
+): Promise<{ calls: number; reviews: number; skipped: number }> {
 	const missing = await db
 		.select({
 			id: schema.llmCalls.id,
@@ -32,10 +35,14 @@ export async function backfillMissingCosts(
 
 	const reviewIds = new Set<string>();
 	let calls = 0;
+	let skipped = 0;
 	await db.transaction(async (tx) => {
 		for (const call of missing) {
 			const cost = costOfStoredCall(catalog, call);
-			if (cost == null) continue;
+			if (cost == null) {
+				skipped += 1;
+				continue;
+			}
 			const updated = await tx
 				.update(schema.llmCalls)
 				.set({ costUsd: cost })
@@ -58,7 +65,7 @@ export async function backfillMissingCosts(
 		}
 	});
 
-	return { calls, reviews: reviewIds.size };
+	return { calls, reviews: reviewIds.size, skipped };
 }
 
 function costOfStoredCall(
@@ -88,4 +95,17 @@ function costOfStoredCall(
 
 function isProviderId(provider: string): provider is ProviderId {
 	return (providerIds as readonly string[]).includes(provider);
+}
+
+if (import.meta.main) {
+	const { db, client, ready } = createDatabase({
+		url: process.env.DATABASE_URL ?? 'file:./data/hans.db',
+		authToken: process.env.DATABASE_AUTH_TOKEN || undefined
+	});
+	await ready;
+	const { calls, reviews, skipped } = await backfillMissingCosts(db, await loadPriceCatalog());
+	client.close();
+	console.log(
+		`Priced ${calls} model call(s) across ${reviews} review(s). ${skipped} still have no known price.`
+	);
 }
