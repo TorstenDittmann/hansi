@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { tiers, verdicts } from '@hans/config';
+import { reasoningEfforts, tiers, verdicts } from '@hans/config';
 import { organization } from './auth';
 
 const createdAt = integer('created_at', { mode: 'timestamp_ms' })
@@ -107,6 +107,8 @@ export const modelAssignments = sqliteTable(
 			.notNull()
 			.references(() => providerCredentials.id, { onDelete: 'cascade' }),
 		modelId: text('model_id').notNull(),
+		/** How much the model thinks. Null means the provider's default. */
+		reasoningEffort: text('reasoning_effort', { enum: reasoningEfforts }),
 		updatedAt
 	},
 	(t) => [primaryKey({ columns: [t.organizationId, t.role] })]

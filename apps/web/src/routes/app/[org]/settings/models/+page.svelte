@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { reasoningEffortLabel, reasoningEfforts } from '@hans/config';
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -39,6 +40,8 @@
 	/** The role whose model picker is open, and the key it lists models for. */
 	let picking: { role: string; credentialId: string } | null = $state(null);
 	let query = $state('');
+	/** Bumped after saving an effort, so a rejected change snaps back to the stored value. */
+	let effortRevision = $state(0);
 	let modelLists: Record<string, ModelList> = $state({});
 
 	const addingInfo = $derived(data.providers.find((p) => p.id === adding));
@@ -119,6 +122,40 @@
 							<span class="min-w-0 truncate font-mono text-sm">{current.modelId}</span>
 							<span class="muted ml-auto shrink-0">{currentKey.label}</span>
 						</div>
+						<form
+							method="post"
+							action="?/assign"
+							use:enhance={() =>
+								async ({ update }) => {
+									await update();
+									effortRevision += 1;
+								}}
+							class="mt-3 flex flex-wrap items-center gap-2"
+						>
+							<input type="hidden" name="role" value={role.id} />
+							<input type="hidden" name="credentialId" value={current.credentialId} />
+							<input type="hidden" name="modelId" value={current.modelId} />
+							<label class="text-sm font-medium" for="effort-{role.id}">Reasoning effort</label>
+							{#key `${current.reasoningEffort ?? ''}:${effortRevision}`}
+								<select
+									id="effort-{role.id}"
+									name="reasoningEffort"
+									class="input w-auto"
+									aria-describedby="effort-hint-{role.id}"
+									onchange={(event) => event.currentTarget.form?.requestSubmit()}
+								>
+									<option value="" selected={!current.reasoningEffort}>Provider default</option>
+									{#each reasoningEfforts as level (level)}
+										<option value={level} selected={current.reasoningEffort === level}>
+											{reasoningEffortLabel[level]}
+										</option>
+									{/each}
+								</select>
+							{/key}
+						</form>
+						<p id="effort-hint-{role.id}" class="muted mt-1">
+							How much the model thinks before it answers.
+						</p>
 					{:else if !current && !open && role.id === 'verify'}
 						<p class="muted mt-3">Using the review model.</p>
 					{/if}
@@ -167,6 +204,11 @@
 								>
 									<input type="hidden" name="role" value={role.id} />
 									<input type="hidden" name="credentialId" value={picking.credentialId} />
+									<input
+										type="hidden"
+										name="reasoningEffort"
+										value={current?.reasoningEffort ?? ''}
+									/>
 									<ul
 										class="max-h-80 divide-y divide-stone-200 overflow-y-auto rounded-md border border-stone-200 dark:divide-stone-800 dark:border-stone-800"
 									>
@@ -202,6 +244,11 @@
 								<form method="post" action="?/assign" use:enhance class="flex flex-1 gap-2">
 									<input type="hidden" name="role" value={role.id} />
 									<input type="hidden" name="credentialId" value={picking.credentialId} />
+									<input
+										type="hidden"
+										name="reasoningEffort"
+										value={current?.reasoningEffort ?? ''}
+									/>
 									<input
 										name="modelId"
 										class="input font-mono"

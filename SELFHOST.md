@@ -48,7 +48,8 @@ database. Then:
 1. **Sign in** with GitHub. The first person to sign in owns the instance.
 2. **Install the app** on the accounts and repositories you want reviewed.
 3. Under **Models**, connect a provider and choose a model for **Review**. **Verify** is optional
-   and defaults to the review model.
+   and defaults to the review model. Set a reasoning effort when the model supports one; otherwise
+   leave the provider default.
 
 Open a pull request, or comment `@<app-name> review` on one, to see the first review.
 

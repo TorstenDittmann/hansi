@@ -57,6 +57,13 @@
       "when": 1790596499191,
       "tag": "0007_member_organization_user",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790780000000,
+      "tag": "0008_reasoning_effort",
+      "breakpoints": true
     }
   ]
 }

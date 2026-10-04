@@ -1,3 +1,4 @@
+import type { ReasoningEffort } from '@hans/config';
 import {
 	APICallError,
 	RetryError,
@@ -70,6 +71,25 @@ export async function callModel<T extends { usage: LanguageModelUsage }>(
 		durationMs: durationMs()
 	});
 	return result;
+}
+
+/**
+ * Settings for one model call. Official providers take the shared `reasoning` parameter.
+ * OpenRouter only reads the effort from its own options.
+ */
+export function reasoningCallOptions(model: {
+	provider: string;
+	reasoningEffort?: ReasoningEffort | null;
+}): {
+	reasoning?: ReasoningEffort;
+	providerOptions?: { openrouter: { reasoning: { effort: ReasoningEffort } } };
+} {
+	const effort = model.reasoningEffort;
+	if (!effort) return {};
+	if (model.provider === 'openrouter') {
+		return { providerOptions: { openrouter: { reasoning: { effort } } } };
+	}
+	return { reasoning: effort };
 }
 
 /** Bedrock models that support prompt caching; others may reject a cache point. */
