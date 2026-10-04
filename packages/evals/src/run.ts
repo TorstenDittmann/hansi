@@ -58,9 +58,9 @@ if (!apiKey && provider !== 'openai-compatible') {
 	fail(`Set EVAL_API_KEY or ${keyVariables[provider]}`);
 }
 
-const configuredEffort = process.env.EVAL_REASONING_EFFORT;
-const reasoningEffort = parseReasoningEffort(configuredEffort);
-if (configuredEffort != null && !reasoningEffort) {
+const reasoningEffort = parseReasoningEffort(process.env.EVAL_REASONING_EFFORT);
+// null is the provider default, including an empty value. undefined is an unknown level.
+if (reasoningEffort === undefined) {
 	fail(`EVAL_REASONING_EFFORT must be one of: ${reasoningEfforts.join(', ')}`);
 }
 
