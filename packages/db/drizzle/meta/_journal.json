@@ -64,6 +64,13 @@
       "when": 1790780000000,
       "tag": "0008_reasoning_effort",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791156461490,
+      "tag": "0009_call_reasoning",
+      "breakpoints": true
     }
   ]
 }

@@ -213,6 +213,10 @@ export const llmCalls = sqliteTable(
 		inputTokens: integer('input_tokens').notNull().default(0),
 		outputTokens: integer('output_tokens').notNull().default(0),
 		cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
+		/** Output tokens spent thinking, when the provider reports them. Part of `outputTokens`. */
+		reasoningTokens: integer('reasoning_tokens').notNull().default(0),
+		/** The reasoning effort the call was made with. Null means the provider's default. */
+		reasoningEffort: text('reasoning_effort', { enum: reasoningEfforts }),
 		/** Null when pricing for the model is unknown. */
 		costUsd: real('cost_usd'),
 		durationMs: integer('duration_ms').notNull(),

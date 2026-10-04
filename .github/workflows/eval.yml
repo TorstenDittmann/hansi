@@ -2,13 +2,19 @@ name: Evals
 
 # Evals call a real model and cost money, so they only run on demand: manually, or when a pull
 # request is labeled `run-evals`. Configure EVAL_PROVIDER / EVAL_MODEL as repository variables
-# and EVAL_API_KEY as a secret.
+# and EVAL_API_KEY as a secret. EVAL_REASONING_EFFORT is an optional repository variable; a
+# manual run can override it to compare efforts on the same cases.
 on:
   workflow_dispatch:
     inputs:
       repeat:
         description: Runs per case
         default: '1'
+      reasoning_effort:
+        description: Reasoning effort (empty uses the EVAL_REASONING_EFFORT variable, or the provider default)
+        type: choice
+        default: ''
+        options: ['', none, minimal, low, medium, high, xhigh]
   pull_request:
     types: [labeled, synchronize]
 
@@ -26,6 +32,7 @@ jobs:
           EVAL_PROVIDER: ${{ vars.EVAL_PROVIDER }}
           EVAL_MODEL: ${{ vars.EVAL_MODEL }}
           EVAL_VERIFY_MODEL: ${{ vars.EVAL_VERIFY_MODEL }}
+          EVAL_REASONING_EFFORT: ${{ inputs.reasoning_effort || vars.EVAL_REASONING_EFFORT }}
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
       - uses: actions/upload-artifact@v4
         if: always()
