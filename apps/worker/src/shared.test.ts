@@ -34,12 +34,22 @@ test('each model call is stored and reported to LLM analytics without prompts or
 		role: 'review',
 		provider: 'anthropic',
 		modelId: 'claude-sonnet-5',
-		usage: { inputTokens: 1_000_000, outputTokens: 100_000 } as never,
+		reasoningEffort: 'high',
+		usage: {
+			inputTokens: 1_000_000,
+			outputTokens: 100_000,
+			outputTokenDetails: { reasoningTokens: 40_000 }
+		} as never,
 		durationMs: 2_500
 	});
 
 	const [row] = await db.select().from(schema.llmCalls);
-	expect(row).toMatchObject({ model: 'claude-sonnet-5', inputTokens: 1_000_000 });
+	expect(row).toMatchObject({
+		model: 'claude-sonnet-5',
+		inputTokens: 1_000_000,
+		reasoningTokens: 40_000,
+		reasoningEffort: 'high'
+	});
 	expect(captured).toEqual([
 		{
 			distinctId: 'organization:org-1',

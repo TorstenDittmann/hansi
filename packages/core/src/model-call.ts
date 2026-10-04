@@ -12,6 +12,8 @@ export interface ModelCall {
 	role: 'review' | 'verify' | 'chat';
 	provider: string;
 	modelId: string;
+	/** The effort the call was made with; null or absent means the provider's default. */
+	reasoningEffort?: ReasoningEffort | null;
 	usage: LanguageModelUsage;
 	durationMs: number;
 }
@@ -39,7 +41,7 @@ export interface ModelCallHooks {
  */
 export async function callModel<T extends { usage: LanguageModelUsage }>(
 	role: ModelCall['role'],
-	model: { provider: string; modelId: string },
+	model: { provider: string; modelId: string; reasoningEffort?: ReasoningEffort | null },
 	hooks: ModelCallHooks,
 	run: () => Promise<T>
 ): Promise<T> {
@@ -67,6 +69,7 @@ export async function callModel<T extends { usage: LanguageModelUsage }>(
 		role,
 		provider,
 		modelId,
+		reasoningEffort: model.reasoningEffort ?? null,
 		usage: result.usage,
 		durationMs: durationMs()
 	});

@@ -37,8 +37,24 @@ test('reports usage when a call finishes', async () => {
 	);
 	expect(result.text).toBe('ok');
 	expect(calls).toMatchObject([
-		{ role: 'review', modelId: 'claude-sonnet-5', usage: { inputTokens: 10 } }
+		{
+			role: 'review',
+			modelId: 'claude-sonnet-5',
+			reasoningEffort: null,
+			usage: { inputTokens: 10 }
+		}
 	]);
+});
+
+test('reports the reasoning effort the call was made with', async () => {
+	const calls: ModelCall[] = [];
+	await callModel(
+		'verify',
+		{ ...model, reasoningEffort: 'high' },
+		{ onModelCall: (c) => void calls.push(c) },
+		async () => ({ usage: { inputTokens: 1, outputTokens: 1 } as never })
+	);
+	expect(calls).toMatchObject([{ role: 'verify', reasoningEffort: 'high' }]);
 });
 
 test('reports a failure with the provider status, then rethrows', async () => {

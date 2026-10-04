@@ -158,6 +158,8 @@ export async function createUsageRecorder(
 			inputTokens: call.usage.inputTokens ?? 0,
 			outputTokens: call.usage.outputTokens ?? 0,
 			cachedInputTokens: call.usage.inputTokenDetails?.cacheReadTokens ?? 0,
+			reasoningTokens: call.usage.outputTokenDetails?.reasoningTokens ?? 0,
+			reasoningEffort: call.reasoningEffort ?? null,
 			costUsd: cost,
 			durationMs: call.durationMs
 		});

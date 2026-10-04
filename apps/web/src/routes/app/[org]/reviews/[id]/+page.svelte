@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { reasoningEffortLabel } from '@hans/config';
 	import RetryReviewButton from '$lib/components/RetryReviewButton.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
@@ -182,9 +183,11 @@
 						<tr>
 							<th class="px-4 py-2 font-medium">Role</th>
 							<th class="px-4 py-2 font-medium">Model</th>
+							<th class="px-4 py-2 font-medium">Effort</th>
 							<th class="px-4 py-2 font-medium">Input</th>
 							<th class="px-4 py-2 font-medium">Cached</th>
 							<th class="px-4 py-2 font-medium">Output</th>
+							<th class="px-4 py-2 font-medium">Reasoning</th>
 							<th class="px-4 py-2 font-medium">Time</th>
 							<th class="px-4 py-2 font-medium">Cost</th>
 						</tr>
@@ -194,9 +197,13 @@
 							<tr>
 								<td class="px-4 py-2">{call.role}</td>
 								<td class="px-4 py-2 font-mono">{call.provider}/{call.model}</td>
+								<td class="px-4 py-2">
+									{call.reasoningEffort ? reasoningEffortLabel[call.reasoningEffort] : 'Default'}
+								</td>
 								<td class="px-4 py-2">{formatTokens(call.inputTokens)}</td>
 								<td class="px-4 py-2">{formatTokens(call.cachedInputTokens)}</td>
 								<td class="px-4 py-2">{formatTokens(call.outputTokens)}</td>
+								<td class="px-4 py-2">{formatTokens(call.reasoningTokens)}</td>
 								<td class="px-4 py-2">{(call.durationMs / 1000).toFixed(1)}s</td>
 								<td class="px-4 py-2">{formatCost(call.costUsd)}</td>
 							</tr>
