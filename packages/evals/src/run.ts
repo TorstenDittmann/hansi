@@ -175,7 +175,14 @@ const reportPath = join(args.out!, `${new Date().toISOString().replace(/[:.]/g, 
 await writeFile(
 	reportPath,
 	JSON.stringify(
-		{ provider, model: modelId, verifyModel: models.verify?.modelId, summary, runs },
+		{
+			provider,
+			model: modelId,
+			verifyModel: models.verify?.modelId,
+			reasoningEffort,
+			summary,
+			runs
+		},
 		null,
 		2
 	)
