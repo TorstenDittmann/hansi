@@ -53,6 +53,10 @@
 			a: 'Any model from OpenAI, Anthropic, xAI, Google, or OpenRouter, plus any OpenAI-compatible endpoint. You can use a stronger model to review and a cheaper one to double-check findings.'
 		},
 		{
+			q: 'How good are the reviews?',
+			a: 'That depends mostly on the model you choose. Every model gets the same tools and the same skeptical second pass, but a stronger model will usually spot subtler bugs. Every review shows its cost, so you can weigh one against the other.'
+		},
+		{
 			q: 'What does it cost?',
 			a: 'Hansi is free during the beta. You pay your model provider directly for the tokens each review uses, and every review shows its token usage and cost.'
 		},
@@ -62,11 +66,11 @@
 		},
 		{
 			q: 'Will it flood my pull requests with comments?',
-			a: 'No. Hansi only comments on bugs, and a second pass drops anything it cannot confirm in the code. Most good pull requests get no comments at all, just an approval.'
+			a: 'Hansi is built to comment only on bugs, and a second pass drops anything it cannot confirm in the code. Clean pull requests usually get no comments, just an approval.'
 		},
 		{
 			q: 'Can it approve pull requests?',
-			a: 'Yes. Hansi approves clean pull requests and requests changes when it finds a real problem. It never approves pull requests from people without write access to the repository.'
+			a: 'Yes. Hansi approves clean pull requests and requests changes when it finds a problem it could confirm. It never approves pull requests from people without write access to the repository.'
 		}
 	];
 
@@ -138,7 +142,8 @@
 					Curious about your code.
 				</h1>
 				<p class="mt-6 max-w-[36rem] text-lg text-stone-500 sm:text-xl dark:text-stone-400">
-					AI code review for GitHub that catches real bugs and approves the rest.
+					AI code review for GitHub, powered by the model you choose. It looks for bugs,
+					double-checks what it finds, and approves the rest.
 				</p>
 				<div class="mt-9 flex flex-wrap items-center gap-5">
 					<a href={start} class="px-5 py-3 {button}">Install on GitHub</a>
@@ -265,11 +270,11 @@
 		>
 			<div class="min-w-0">
 				<h2 class="font-display text-lg font-bold tracking-[-0.03em]">
-					Speaks up only for real mistakes
+					Comments on bugs, not style
 				</h2>
 				<p class="mt-2.5 text-stone-500 dark:text-stone-400">
-					Hansi flags the bugs you would want a teammate to catch: a missing await, an inverted
-					check, an off-by-one. A second pass drops anything it can't confirm.
+					Hansi looks for the bugs you would want a teammate to catch: a missing await, an inverted
+					check, an off-by-one. A second pass drops anything it can't confirm in the code.
 				</p>
 				<div
 					class="mt-6 space-y-2 rounded-xl border border-stone-200 bg-white p-4 text-sm dark:border-stone-800 dark:bg-stone-900"
@@ -348,6 +353,10 @@
 			aria-labelledby="providers-title"
 		>
 			<h2 id="providers-title" class={sectionTitle}>Bring your own model</h2>
+			<p class="mt-4 max-w-[36rem] text-stone-500 dark:text-stone-400">
+				Hansi runs on your key and the model you pick, so how deep the reviews go and what they cost
+				is your call. You can review with a stronger model and double-check with a cheaper one.
+			</p>
 			<ul class="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3">
 				{#each providerLogos as provider (provider.name)}
 					<li

@@ -8,11 +8,11 @@ export const SITE_ORIGIN = `https://${ANALYTICS_HOSTNAME}`;
 export const SITE_NAME = 'Hansi';
 
 /** Default document / Open Graph title. Pages override by returning `title` from `load`. */
-export const DEFAULT_TITLE = 'Hansi: AI code review that catches real bugs';
+export const DEFAULT_TITLE = 'Hansi: AI code review on your own model';
 
 /** Default meta / Open Graph description. Pages override by returning `description` from `load`. */
 export const DEFAULT_DESCRIPTION =
-	'AI code review for GitHub that runs on your own model key: OpenAI, Anthropic, Amazon Bedrock, OpenRouter, and more. It catches real bugs, approves the rest, and grades each pull request from S to F.';
+	'AI code review for GitHub that runs on your own model key: OpenAI, Anthropic, Amazon Bedrock, OpenRouter, and more. It looks for bugs, double-checks what it finds, approves clean pull requests, and grades each one from S to F.';
 
 export const OG_IMAGE_PATH = '/og.png';
 export const OG_IMAGE_WIDTH = 1200;
