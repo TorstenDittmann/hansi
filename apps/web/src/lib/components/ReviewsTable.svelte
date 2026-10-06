@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { Verdict } from '@hans/config';
+	import RepoName from '$lib/components/RepoName.svelte';
 	import RetryReviewButton from '$lib/components/RetryReviewButton.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
@@ -38,12 +39,12 @@
 		<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
 			{#each reviews as review (review.id)}
 				<tr class="hover:bg-stone-50 dark:hover:bg-stone-800/50">
-					<td class="px-4 py-2">
+					<td class="px-4 py-2 whitespace-nowrap">
 						<a
-							class="font-mono hover:underline"
+							class="inline-flex items-center font-mono hover:underline"
 							href={resolve('/app/[org]/reviews/[id]', { org, id: review.id })}
 						>
-							{review.repository}#{review.pullNumber}
+							<RepoName repository={review.repository} />#{review.pullNumber}
 						</a>
 					</td>
 					<td class="px-4 py-2"><TierBadge tier={review.tier} /></td>
