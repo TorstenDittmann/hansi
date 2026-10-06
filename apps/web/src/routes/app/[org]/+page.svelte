@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import ProviderLogo from '$lib/components/ProviderLogo.svelte';
+	import RepoName from '$lib/components/RepoName.svelte';
 	import ReviewsTable from '$lib/components/ReviewsTable.svelte';
 	import { formatCost, formatDay } from '$lib/format';
 
@@ -121,29 +122,31 @@
 		{#if costs.byModel.length === 0}
 			<p class="muted px-4 py-6">No model calls yet.</p>
 		{:else}
-			<table class="w-full text-sm">
-				<thead class="text-left text-stone-500 dark:text-stone-400">
-					<tr>
-						<th class="px-4 py-2 font-medium">Model</th>
-						<th class="px-4 py-2 text-right font-medium">Tokens</th>
-						<th class="px-4 py-2 text-right font-medium">Cost</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
-					{#each costs.byModel as row (`${row.provider}/${row.model}`)}
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm whitespace-nowrap">
+					<thead class="text-left text-stone-500 dark:text-stone-400">
 						<tr>
-							<td class="px-4 py-2">
-								<span class="flex min-w-0 items-center gap-2">
-									<ProviderLogo provider={row.provider} class="size-4" />
-									<span class="truncate font-mono">{row.model}</span>
-								</span>
-							</td>
-							<td class="px-4 py-2 text-right tabular-nums">{compact.format(row.tokens)}</td>
-							<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
+							<th class="px-4 py-2 font-medium">Model</th>
+							<th class="px-4 py-2 text-right font-medium">Tokens</th>
+							<th class="px-4 py-2 text-right font-medium">Cost</th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
+						{#each costs.byModel as row (`${row.provider}/${row.model}`)}
+							<tr>
+								<td class="px-4 py-2">
+									<span class="flex min-w-0 items-center gap-2">
+										<ProviderLogo provider={row.provider} class="size-4" />
+										<span class="font-mono">{row.model}</span>
+									</span>
+								</td>
+								<td class="px-4 py-2 text-right tabular-nums">{compact.format(row.tokens)}</td>
+								<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		{/if}
 	</section>
 
@@ -154,24 +157,26 @@
 		{#if costs.byRepository.length === 0}
 			<p class="muted px-4 py-6">No reviews yet.</p>
 		{:else}
-			<table class="w-full text-sm">
-				<thead class="text-left text-stone-500 dark:text-stone-400">
-					<tr>
-						<th class="px-4 py-2 font-medium">Repository</th>
-						<th class="px-4 py-2 text-right font-medium">Reviews</th>
-						<th class="px-4 py-2 text-right font-medium">Cost</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
-					{#each costs.byRepository as row (row.repository)}
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm whitespace-nowrap">
+					<thead class="text-left text-stone-500 dark:text-stone-400">
 						<tr>
-							<td class="max-w-0 truncate px-4 py-2 font-mono">{row.repository}</td>
-							<td class="px-4 py-2 text-right tabular-nums">{row.reviews}</td>
-							<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
+							<th class="px-4 py-2 font-medium">Repository</th>
+							<th class="px-4 py-2 text-right font-medium">Reviews</th>
+							<th class="px-4 py-2 text-right font-medium">Cost</th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody class="divide-y divide-stone-200 dark:divide-stone-800">
+						{#each costs.byRepository as row (row.repository)}
+							<tr>
+								<td class="px-4 py-2 font-mono"><RepoName repository={row.repository} /></td>
+								<td class="px-4 py-2 text-right tabular-nums">{row.reviews}</td>
+								<td class="px-4 py-2 text-right tabular-nums">{formatCost(row.cost)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		{/if}
 	</section>
 
