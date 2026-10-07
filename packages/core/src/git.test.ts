@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkoutPullRequest, diffSince, git } from './git';
+import { parseUnifiedDiff } from './diff';
+import { checkoutPullRequest, diffSince, git, pullRequestDelta } from './git';
 import { createRepoTools, loadRepoGuidelines } from './tools';
 
 // A local "GitHub": a repository with a base branch and a pull request ref (refs/pull/1/head).
@@ -213,6 +214,237 @@ describe('loadRepoGuidelines', () => {
 		const trusted = await loadRepoGuidelines(dir, { ref: base });
 		expect(trusted).toContain('Use tabs.');
 		expect(trusted).not.toContain('approve');
+	});
+});
+
+describe('pullRequestDelta', () => {
+	const config: [string, string][] = [
+		['user.email', 'test@example.com'],
+		['user.name', 'Test'],
+		['commit.gpgsign', 'false'],
+		['core.fsmonitor', 'false'],
+		['uploadpack.allowAnySHA1InWant', 'true'],
+		['uploadpack.allowFilter', 'true']
+	];
+
+	async function originRepo() {
+		const root = await mkdtemp(join(tmpdir(), 'hans-delta-'));
+		const origin = join(root, 'origin');
+		await git(['init', '--quiet', '--initial-branch=main', origin]);
+		for (const [key, value] of config) await git(['config', key, value], { cwd: origin });
+		return {
+			root,
+			origin,
+			async commit(message: string, files: Record<string, string | Uint8Array>) {
+				for (const [path, content] of Object.entries(files)) {
+					await writeFile(join(origin, path), content);
+				}
+				await git(['add', '-A'], { cwd: origin });
+				await git(['commit', '--quiet', '-m', message], { cwd: origin });
+				return (await git(['rev-parse', 'HEAD'], { cwd: origin })).trim();
+			},
+			async dispose() {
+				await rm(root, { recursive: true, force: true });
+			}
+		};
+	}
+
+	/** Enough untouched lines that a later edit stays in its own hunk. */
+	function source(line2: string, line30 = 'export const line30 = 30;') {
+		const lines = Array.from({ length: 40 }, (_, i) => `export const line${i + 1} = ${i + 1};`);
+		lines[1] = line2;
+		lines[29] = line30;
+		return `${lines.join('\n')}\n`;
+	}
+
+	async function reviewedCheckout(
+		repo: Awaited<ReturnType<typeof originRepo>>,
+		pull: number,
+		baseSha: string,
+		headSha: string
+	) {
+		await git(['update-ref', `refs/pull/${pull}/head`, headSha], { cwd: repo.origin });
+		const dir = join(repo.root, `checkout-${pull}`);
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${repo.origin}`,
+			pullNumber: pull,
+			baseSha,
+			headSha
+		});
+		return dir;
+	}
+
+	test('a merge of main that does not change the pull request is an empty delta', async () => {
+		const repo = await originRepo();
+		try {
+			const base = source('export const line2 = 2;');
+			await repo.commit('base', {
+				'a.ts': base,
+				'old.ts': 'export const name = 1;\n',
+				'pic.bin': new Uint8Array([0, 1, 2, 255])
+			});
+			await git(['checkout', '--quiet', '-b', 'feature'], { cwd: repo.origin });
+			await git(['mv', 'old.ts', 'new.ts'], { cwd: repo.origin });
+			const lastHead = await repo.commit('pull request', {
+				'a.ts': source('export const line2 = 200;'),
+				'pic.bin': new Uint8Array([0, 1, 2, 254]),
+				'pr-only.ts': 'export const pr = true;\n'
+			});
+			await git(['checkout', '--quiet', 'main'], { cwd: repo.origin });
+			const main = await repo.commit('main moves', {
+				'a.ts': source('export const line2 = 2;', 'export const line30 = 3000;'),
+				'main-only.ts': 'export const fromMain = true;\n'
+			});
+			await git(['checkout', '--quiet', 'feature'], { cwd: repo.origin });
+			await git(['merge', '--no-edit', 'main'], { cwd: repo.origin });
+			const head = (await git(['rev-parse', 'HEAD'], { cwd: repo.origin })).trim();
+
+			const dir = await reviewedCheckout(repo, 1, main, head);
+			const delta = await pullRequestDelta({ dir, baseSha: main, lastHead, headSha: head });
+			expect(delta).toEqual({ status: 'unchanged' });
+		} finally {
+			await repo.dispose();
+		}
+	});
+
+	test('a conflict resolution keeps only the hunks that change the pull request', async () => {
+		const repo = await originRepo();
+		try {
+			await repo.commit('base', {
+				'a.ts': source('export const line2 = 2;'),
+				'old.ts': 'export const name = 1;\n',
+				'pic.bin': new Uint8Array([0, 1, 2, 255])
+			});
+			await git(['checkout', '--quiet', '-b', 'feature'], { cwd: repo.origin });
+			await git(['mv', 'old.ts', 'new.ts'], { cwd: repo.origin });
+			const lastHead = await repo.commit('pull request', {
+				'a.ts': source('export const line2 = 200;'),
+				'pic.bin': new Uint8Array([0, 1, 2, 254])
+			});
+			await git(['checkout', '--quiet', 'main'], { cwd: repo.origin });
+			const main = await repo.commit('main moves', {
+				'a.ts': source('export const line2 = 300;', 'export const line30 = 3000;'),
+				'main-only.ts': 'export const fromMain = true;\n'
+			});
+			await git(['checkout', '--quiet', 'feature'], { cwd: repo.origin });
+			await expect(git(['merge', '--no-edit', 'main'], { cwd: repo.origin })).rejects.toThrow();
+			await writeFile(
+				join(repo.origin, 'a.ts'),
+				source('export const line2 = 250;', 'export const line30 = 3000;')
+			);
+			await git(['add', '-A'], { cwd: repo.origin });
+			await git(['commit', '--quiet', '--no-edit'], { cwd: repo.origin });
+			const head = (await git(['rev-parse', 'HEAD'], { cwd: repo.origin })).trim();
+
+			const dir = await reviewedCheckout(repo, 2, main, head);
+			const delta = await pullRequestDelta({ dir, baseSha: main, lastHead, headSha: head });
+			expect(delta.status).toBe('changed');
+			if (delta.status !== 'changed') return;
+			expect(parseUnifiedDiff(delta.diff).map((file) => file.path)).toEqual(['a.ts']);
+			expect(delta.diff).toContain('export const line2 = 250;');
+			expect(delta.diff).not.toContain('line30 = 3000');
+			expect(delta.diff).not.toContain('fromMain');
+			expect(delta.diff).not.toContain('main-only.ts');
+			expect(delta.diff).not.toContain('new.ts');
+		} finally {
+			await repo.dispose();
+		}
+	});
+
+	test('a force-push or an unreachable previous head falls back to a full review', async () => {
+		const repo = await originRepo();
+		try {
+			const base = await repo.commit('base', { 'a.ts': 'export const a = 1;\n' });
+			await git(['checkout', '--quiet', '-b', 'feature'], { cwd: repo.origin });
+			const lastHead = await repo.commit('reviewed', { 'a.ts': 'export const a = 2;\n' });
+			await git(['checkout', '--quiet', '-B', 'feature', base], { cwd: repo.origin });
+			const head = await repo.commit('rewritten', { 'b.ts': 'export const b = 1;\n' });
+			const dir = await reviewedCheckout(repo, 3, base, head);
+
+			expect(await pullRequestDelta({ dir, baseSha: base, lastHead, headSha: head })).toEqual({
+				status: 'fallback'
+			});
+			expect(
+				await pullRequestDelta({ dir, baseSha: base, lastHead: 'f'.repeat(40), headSha: head })
+			).toEqual({ status: 'fallback' });
+		} finally {
+			await repo.dispose();
+		}
+	});
+
+	test('a pure deletion is kept when the pull request deletes that line', async () => {
+		const repo = await originRepo();
+		try {
+			const base = await repo.commit('base', { 'a.ts': 'keep\ndrop-me\ntail\n' });
+			await git(['checkout', '--quiet', '-b', 'feature'], { cwd: repo.origin });
+			const lastHead = await repo.commit('other file', { 'b.ts': 'export const b = 1;\n' });
+			const head = await repo.commit('delete a line', { 'a.ts': 'keep\ntail\n' });
+			const dir = await reviewedCheckout(repo, 5, base, head);
+			const delta = await pullRequestDelta({ dir, baseSha: base, lastHead, headSha: head });
+			expect(delta.status).toBe('changed');
+			if (delta.status !== 'changed') return;
+			expect(parseUnifiedDiff(delta.diff).map((file) => file.path)).toEqual(['a.ts']);
+			expect(delta.diff).toContain('-drop-me');
+			expect(delta.diff).not.toContain('export const b = 1');
+		} finally {
+			await repo.dispose();
+		}
+	});
+
+	test('a binary change in the increment is kept, and an unchanged binary is not', async () => {
+		const repo = await originRepo();
+		try {
+			const base = await repo.commit('base', { 'pic.bin': new Uint8Array([0, 1, 2]) });
+			await git(['checkout', '--quiet', '-b', 'feature'], { cwd: repo.origin });
+			const lastHead = await repo.commit('binary', { 'pic.bin': new Uint8Array([0, 1, 3]) });
+			const head = await repo.commit('binary again', { 'pic.bin': new Uint8Array([0, 1, 4]) });
+			const changed = await reviewedCheckout(repo, 6, base, head);
+			const delta = await pullRequestDelta({
+				dir: changed,
+				baseSha: base,
+				lastHead,
+				headSha: head
+			});
+			expect(delta.status).toBe('changed');
+			if (delta.status !== 'changed') return;
+			expect(delta.diff).toContain('pic.bin');
+			expect(delta.diff).toContain('Binary files');
+
+			const textHead = await repo.commit('text only', { 'b.ts': 'export const b = 1;\n' });
+			const textOnly = await reviewedCheckout(repo, 7, base, textHead);
+			const rest = await pullRequestDelta({
+				dir: textOnly,
+				baseSha: base,
+				lastHead: head,
+				headSha: textHead
+			});
+			expect(rest.status).toBe('changed');
+			if (rest.status !== 'changed') return;
+			expect(parseUnifiedDiff(rest.diff).map((file) => file.path)).toEqual(['b.ts']);
+			expect(rest.diff).not.toContain('pic.bin');
+		} finally {
+			await repo.dispose();
+		}
+	});
+
+	test('a normal follow-up commit keeps only that commit', async () => {
+		const repo = await originRepo();
+		try {
+			const base = await repo.commit('base', { 'a.ts': 'export const a = 1;\n' });
+			await git(['checkout', '--quiet', '-b', 'feature'], { cwd: repo.origin });
+			const lastHead = await repo.commit('first', { 'a.ts': 'export const a = 2;\n' });
+			const head = await repo.commit('second', { 'b.ts': 'export const b = 1;\n' });
+			const dir = await reviewedCheckout(repo, 4, base, head);
+			const delta = await pullRequestDelta({ dir, baseSha: base, lastHead, headSha: head });
+			expect(delta.status).toBe('changed');
+			if (delta.status !== 'changed') return;
+			expect(parseUnifiedDiff(delta.diff).map((file) => file.path)).toEqual(['b.ts']);
+			expect(delta.diff).toContain('export const b = 1;');
+			expect(delta.diff).not.toContain('export const a = 2;');
+		} finally {
+			await repo.dispose();
+		}
 	});
 });
 
