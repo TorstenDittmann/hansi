@@ -91,13 +91,30 @@ async function spawn(args: string[], timeoutMs?: number): Promise<Spawned> {
 		killSignal: 'SIGKILL'
 	});
 	const [stdout, stderr, exitCode] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
+		readTail(proc.stdout),
+		readTail(proc.stderr),
 		proc.exited
 	]);
-	const cap = (text: string) =>
-		text.length > MAX_OUTPUT_BYTES ? text.slice(-MAX_OUTPUT_BYTES) : text;
-	return { exitCode, stdout: cap(stdout), stderr: cap(stderr) };
+	return { exitCode, stdout, stderr };
+}
+
+/**
+ * Reads a stream but keeps only its last MAX_OUTPUT_BYTES: commands run untrusted code, which
+ * can print far more than the worker should hold in memory.
+ */
+export async function readTail(
+	stream: ReadableStream<Uint8Array>,
+	max = MAX_OUTPUT_BYTES
+): Promise<string> {
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for await (const chunk of stream) {
+		chunks.push(chunk);
+		size += chunk.length;
+		while (size - chunks[0]!.length >= max) size -= chunks.shift()!.length;
+	}
+	const bytes = Buffer.concat(chunks);
+	return bytes.subarray(Math.max(0, bytes.length - max)).toString('utf8');
 }
 
 /**

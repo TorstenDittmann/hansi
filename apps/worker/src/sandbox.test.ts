@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { isBlockedAddress } from './egress-proxy';
-import { memoryUsage, sandboxSkipReason, sandboxSpec } from './sandbox';
+import { memoryUsage, readTail, sandboxSkipReason, sandboxSpec } from './sandbox';
 
 test('every review gets a sandbox unless the instance turns it off', () => {
 	expect(sandboxSkipReason({ SANDBOX: 'on' })).toBeNull();
@@ -50,4 +50,10 @@ test('memoryUsage reads runsc stats and tolerates junk', () => {
 	expect(memoryUsage(stats)).toBe(1234);
 	expect(memoryUsage('not json')).toBeNull();
 	expect(memoryUsage('{}')).toBeNull();
+});
+
+test('readTail keeps only the end of long output', async () => {
+	const stream = new Blob(['a'.repeat(50), 'b'.repeat(50), 'c'.repeat(50)]).stream();
+	expect(await readTail(stream, 60)).toBe('b'.repeat(10) + 'c'.repeat(50));
+	expect(await readTail(new Blob(['short']).stream(), 60)).toBe('short');
 });
