@@ -1107,12 +1107,71 @@ ${upstream}`;
 			walkthrough: [],
 			mention: '@hansi-codes'
 		});
-		const headline = body.split('<details>')[0] ?? '';
+		const title = 'Require mutation permission before changing video children';
+		const attachAt = body.indexOf("### Couldn't attach to a line");
+		expect(attachAt).toBeGreaterThan(0);
+		// The unattached list sits above the collapsed sections. It is not the headline.
+		const headline = body.slice(0, attachAt);
 		expect(headline).toContain('Tier B');
 		expect(headline).toContain('Division by zero');
 		expect(headline.toLowerCase()).not.toContain('bypass');
 		expect(headline).not.toContain('Require mutation permission');
-		expect(body).toContain('Require mutation permission before changing video children');
+		expect(body.split(title).length - 1).toBe(1);
+	});
+
+	test('an unattached finding does not set the headline or the grade', async () => {
+		const title = 'Require mutation permission before changing video children';
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Child-resource mutations bypass write authorization.',
+					findings: [{ ...finding(999, title), severity: 'critical', category: 'security' }],
+					tier: 'D',
+					tier_reason: 'Child-resource mutations bypass write authorization.'
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Videos', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted).toEqual([]);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			[title, 'Lines outside the changed hunks']
+		]);
+		// Nothing was posted, so the model's D and its reason do not stand.
+		expect(result.verdict).toBe('approve');
+		expect(result.tier).toBe('S');
+		expect(result.tierReason).toBe('');
+		expect(result.summary).toBe('Reviewed the changes in this pull request.');
+
+		const body = formatSummaryComment({
+			repository: 'acme/api',
+			headSha: 'abcdef1234567890',
+			summary: result.summary,
+			tier: result.tier,
+			tierReason: result.tierReason,
+			verdict: result.verdict,
+			posted: result.posted,
+			resolved: [],
+			stillOpen: [],
+			dropped: result.dropped,
+			walkthrough: [],
+			mention: '@hansi-codes'
+		});
+		const attachAt = body.indexOf("### Couldn't attach to a line");
+		expect(attachAt).toBeGreaterThan(0);
+		const headline = body.slice(0, attachAt);
+		expect(headline).toContain('Tier S');
+		expect(headline.toLowerCase()).not.toContain('bypass');
+		expect(headline).not.toContain(title);
+		expect(body.slice(attachAt)).toContain(title);
+		expect(body.split(title).length - 1).toBe(1);
+		expect(body).not.toContain('Filtered out');
 	});
 
 	test('a filtered finding does not lead the summary when an earlier finding is still open', async () => {

@@ -455,8 +455,9 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	}
 
 	// 8. Verdict from findings that will be shown. The model wrote the summary and the grade in
-	// the same call as its findings, before any of them were filtered, so reconcile both against
-	// what was actually posted or is still open.
+	// the same call as its findings, before any of them were filtered or left unattached, so
+	// reconcile both against what was actually posted or is still open. Placement misses stay in
+	// `dropped` for that reconciliation; the summary comment lists them on their own.
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
