@@ -47,8 +47,6 @@ export interface FilePermalink {
 	headSha: string;
 }
 
-const MARKDOWN_LINK = /\[((?:\\.|[^\]])*)\]\(([^)\n]*)\)/g;
-
 /**
  * Rewrites relative repo-file links to absolute blob permalinks at `sha`.
  * Link targets with a scheme, a leading `/` or `#`, or a `..` segment stay as written.
@@ -56,20 +54,130 @@ const MARKDOWN_LINK = /\[((?:\\.|[^\]])*)\]\(([^)\n]*)\)/g;
  */
 export function absolutizeLinks(markdown: string, repository: string, sha: string): string {
 	if (!repository || !sha) return markdown;
-	MARKDOWN_LINK.lastIndex = 0;
 	const { text, restore } = maskCode(markdown);
-	const rewritten = text.replace(
-		MARKDOWN_LINK,
-		(full, label: string, rawDest: string, offset: number, source: string) => {
-			if (offset > 0 && source[offset - 1] === '!') return full;
-			const dest = parseLinkDestination(rawDest);
-			if (!dest) return full;
-			const url = repoFileUrl(dest.href, repository, sha);
-			if (!url) return full;
-			return `[${label}](${url}${dest.suffix})`;
+	return restore(rewriteMarkdownLinks(text, repository, sha));
+}
+
+/** Inline links only. Image syntax (`![alt](path)`) is left as written. */
+function rewriteMarkdownLinks(prose: string, repository: string, sha: string): string {
+	let out = '';
+	let i = 0;
+	while (i < prose.length) {
+		if (prose[i] === '[' && prose[i - 1] !== '!') {
+			const link = readMarkdownLink(prose, i);
+			const dest = link && parseLinkDestination(link.rawDest);
+			const url = dest && repoFileUrl(dest.href, repository, sha);
+			if (link && dest && url) {
+				out += `[${link.label}](${url}${dest.suffix})`;
+				i = link.end;
+				continue;
+			}
 		}
-	);
-	return restore(rewritten);
+		out += prose.charAt(i);
+		i++;
+	}
+	return out;
+}
+
+function readMarkdownLink(
+	text: string,
+	start: number
+): { label: string; rawDest: string; end: number } | null {
+	let i = start + 1;
+	let label = '';
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === '\\' && i + 1 < text.length) {
+			label += text.slice(i, i + 2);
+			i += 2;
+			continue;
+		}
+		if (ch === ']') break;
+		label += ch ?? '';
+		i++;
+	}
+	if (text[i] !== ']' || text[i + 1] !== '(') return null;
+	const dest = readRawDestination(text, i + 1);
+	if (!dest) return null;
+	return { label, rawDest: dest.rawDest, end: dest.end };
+}
+
+/**
+ * The inside of a markdown link's `(...)`, including a title. Parentheses in the path
+ * are balanced, so `src/foo(bar).ts` is one destination rather than a truncated one.
+ */
+function readRawDestination(
+	text: string,
+	openParen: number
+): { rawDest: string; end: number } | null {
+	let i = openParen + 1;
+	if (text[i] === '<') {
+		const close = text.indexOf('>', i + 1);
+		if (close === -1 || text.slice(i, close).includes('\n')) return null;
+		i = close + 1;
+	} else {
+		let depth = 0;
+		while (i < text.length) {
+			const ch = text[i];
+			if (ch === '\n' || ch === undefined) return null;
+			if (ch === '\\' && i + 1 < text.length) {
+				i += 2;
+				continue;
+			}
+			if (ch === '(') {
+				depth++;
+				i++;
+				continue;
+			}
+			if (ch === ')') {
+				if (depth === 0) break;
+				depth--;
+				i++;
+				continue;
+			}
+			if ((ch === ' ' || ch === '\t') && depth === 0) break;
+			i++;
+		}
+	}
+	if (text[i] === ' ' || text[i] === '\t') {
+		let j = i;
+		while (text[j] === ' ' || text[j] === '\t') j++;
+		if (text[j] !== ')') {
+			const titleEnd = readLinkTitle(text, j);
+			if (titleEnd === null) return null;
+			i = titleEnd;
+			while (text[i] === ' ' || text[i] === '\t') i++;
+		}
+	}
+	if (text[i] !== ')') return null;
+	return { rawDest: text.slice(openParen + 1, i), end: i + 1 };
+}
+
+function readLinkTitle(text: string, start: number): number | null {
+	const quote = text[start];
+	if (quote !== '"' && quote !== "'" && quote !== '(') return null;
+	const closer = quote === '(' ? ')' : quote;
+	let i = start + 1;
+	let depth = quote === '(' ? 1 : 0;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === '\n' || ch === undefined) return null;
+		if (ch === '\\' && i + 1 < text.length) {
+			i += 2;
+			continue;
+		}
+		if (quote === '(' && ch === '(') {
+			depth++;
+			i++;
+			continue;
+		}
+		if (ch === closer) {
+			if (quote !== '(' || depth === 1) return i + 1;
+			depth--;
+		}
+		i++;
+	}
+	return null;
 }
 
 function repoFileUrl(href: string, repository: string, sha: string): string | null {

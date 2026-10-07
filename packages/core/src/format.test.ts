@@ -211,6 +211,23 @@ describe('absolutizeLinks', () => {
 		expect(absolutizeLinks(body, REPO, SHA)).toBe(body);
 	});
 
+	test('rewrites paths that contain parentheses', () => {
+		const body = [
+			'[file](src/foo(bar).ts#L10-L20)',
+			'[both](./src/foo(bar)(baz).ts)',
+			'[angled](<src/foo(bar).ts#L2>)',
+			'[titled](src/foo(bar).ts "the helper")',
+			'[docs](https://example.com/foo(bar).ts#L10-L20)'
+		].join('\n');
+		const linked = absolutizeLinks(body, REPO, SHA);
+		expect(linked).toContain(`[file](${blob('src/foo%28bar%29.ts')}#L10-L20)`);
+		expect(linked).toContain(`[both](${blob('src/foo%28bar%29%28baz%29.ts')})`);
+		expect(linked).toContain(`[angled](${blob('src/foo%28bar%29.ts')}#L2)`);
+		expect(linked).toContain(`[titled](${blob('src/foo%28bar%29.ts')} "the helper")`);
+		expect(linked).toContain('[docs](https://example.com/foo(bar).ts#L10-L20)');
+		expect(linked).not.toContain('](src/foo(bar');
+	});
+
 	test('keeps a link title and does not rewrite code or images', () => {
 		const body = [
 			'[file](./src/a.ts#L10-L20 "the helper")',
