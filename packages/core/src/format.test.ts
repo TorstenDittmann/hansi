@@ -134,6 +134,23 @@ describe('formatSummaryComment', () => {
 		);
 	});
 
+	test('notes that newer commits exist without dropping a withheld-approval note', () => {
+		const body = formatSummaryComment({
+			...base,
+			verdict: 'comment',
+			headSha: '410aa75000000000000000000000000000000000',
+			staleHead:
+				'Newer commits exist (`8c9e110`) and will be reviewed. This review is of `410aa75` and does not approve it.',
+			approvalWithheld: '@stranger does not have write access to this repository.'
+		});
+		expect(body).toContain(
+			'> [!NOTE]\n> <!-- hans:stale-head --> Newer commits exist (`8c9e110`) and will be reviewed. This review is of `410aa75` and does not approve it.'
+		);
+		expect(body).toContain('> [!NOTE]\n> @stranger does not have write access to this repository.');
+		expect(body).toContain('| 💬 Commented |');
+		expect(body).toContain('Reviewed <code>410aa75</code>');
+	});
+
 	test('ends with how to interact', () => {
 		expect(body).toContain('Reviewed <code>abcdef1</code>');
 		expect(body).toContain('<code>@hans-review review</code> to re-run');

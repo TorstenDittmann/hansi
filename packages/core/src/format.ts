@@ -5,6 +5,13 @@ import { tierMeaning } from './tier';
 /** Hidden marker that identifies Hansi's summary comment, so each review edits it in place. */
 export const SUMMARY_MARKER = '<!-- hans:summary -->';
 
+/**
+ * Hidden marker on the summary note that the pull request head moved during the review.
+ * Settlement rebuilds the comment from its body, and this keeps the note distinct from a
+ * withheld-approval note.
+ */
+export const STALE_HEAD_NOTE_MARK = '<!-- hans:stale-head -->';
+
 const severityIcon: Record<Severity, string> = {
 	critical: '🔴',
 	major: '🟠',
@@ -158,6 +165,11 @@ export interface SummaryInput {
 	 * Absent or null when every reviewable file was included.
 	 */
 	filesTooLargeForPrompt?: { omitted: number; total: number } | null;
+	/**
+	 * Set when the head moved after this review started. Newer commits exist and will be
+	 * reviewed; this review did not approve the commit it read.
+	 */
+	staleHead?: string | null;
 	incrementalFrom?: string;
 	detailsUrl?: string;
 	/** The bot's handle, e.g. `@hansi-codes`. */
@@ -189,6 +201,9 @@ export function formatSummaryComment(input: SummaryInput): string {
 		].join('\n')
 	);
 
+	if (input.staleHead) {
+		parts.push(`> [!NOTE]\n> ${STALE_HEAD_NOTE_MARK} ${cell(input.staleHead)}`);
+	}
 	if (input.approvalWithheld) parts.push(`> [!NOTE]\n> ${cell(input.approvalWithheld)}`);
 
 	if (input.posted.length) {

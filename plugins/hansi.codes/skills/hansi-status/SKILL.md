@@ -56,7 +56,7 @@ Parse the body:
 - **Findings table** of comments posted on this review. A row is a title plus a file and line.
 - **Still open from earlier reviews**, inside the `⏳ Still open` details block.
 - **Filtered out**, inside the `🔇 Filtered out` details block. These were considered and not posted. Include the reason.
-- **Approval withheld**, a `> [!NOTE]` block. Hansi will not approve in that case (for example, the author has no write access).
+- **Approval withheld**, a `> [!NOTE]` block. Hansi will not approve in that case. A note about an open bug finding clears once that finding is fixed or dismissed. A note about write access or an incomplete diff does not.
 
 The footer looks like `Comment <code>@hansi-codes review</code>`. That `@<slug>` is Hansi's mention handle. Review comments are authored by `<slug>[bot]`.
 

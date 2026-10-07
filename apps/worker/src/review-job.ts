@@ -51,7 +51,7 @@ import {
 	type RepositoryConnection,
 	type WorkerContext
 } from './shared';
-import { shouldSubmitReview } from './submit-review';
+import { shouldSubmitReview, submissionForCurrentHead } from './submit-review';
 
 type Review = typeof schema.reviews.$inferSelect;
 type Outcome = Pick<
@@ -295,18 +295,37 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 			// One summary comment per PR, edited in place on every review.
 			const threshold = blockingSeverity(config);
 			const stillOpen = history.open.filter((f) => !result.resolved.includes(f.id));
-			const summary = await upsertMarkedComment(
-				octokit,
-				ref,
-				pr.number,
-				SUMMARY_MARKER,
+			// Submit a GitHub review when there are inline comments, the approve/request-changes
+			// state changes, the pull request reaches Tier S, or someone explicitly asked for a
+			// re-review. A clean Tier S used to only edit the summary, so the timeline never
+			// showed the review the earlier grades left.
+			const plannedSubmit = shouldSubmitReview({
+				posted: result.posted.length,
+				verdict: result.verdict,
+				tier: result.tier,
+				previousTier: history.previousTier,
+				lastDecisiveVerdict: history.lastDecisiveVerdict,
+				trigger: review.trigger
+			});
+			// The model ran against `pr.headSha`. Re-read the head before publishing so an
+			// approval cannot land on a commit the author has already replaced.
+			const decide = (currentHeadSha: string) =>
+				submissionForCurrentHead({
+					reviewedSha: pr.headSha,
+					currentHeadSha,
+					verdict: result.verdict,
+					posted: result.posted.length,
+					shouldSubmit: plannedSubmit
+				});
+			const summaryBody = (decision: ReturnType<typeof decide>) =>
 				formatSummaryComment({
 					repository: connection.repository.fullName,
+					// Line links stay on the reviewed commit. The new head may have moved them.
 					headSha: pr.headSha,
 					summary: result.summary,
 					tier: result.tier,
 					tierReason: result.tierReason,
-					verdict: result.verdict,
+					verdict: decision.verdict,
 					posted: result.posted,
 					resolved: history.open.filter((f) => result.resolved.includes(f.id)),
 					// Every open finding, including minors: the grade may rest on them.
@@ -316,38 +335,56 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					latestChanges: result.latestChanges,
 					approvalWithheld: result.approvalWithheld,
 					filesTooLargeForPrompt: result.filesTooLargeForPrompt,
+					staleHead: decision.note,
 					incrementalFrom,
 					detailsUrl,
 					mention: connection.mention
-				})
-			);
+				});
 
-			// Submit a GitHub review when there are inline comments, the approve/request-changes
-			// state changes, the pull request reaches Tier S, or someone explicitly asked for a
-			// re-review. A clean Tier S used to only edit the summary, so the timeline never
-			// showed the review the earlier grades left.
-			const shouldPostReview = shouldSubmitReview({
-				posted: result.posted.length,
-				verdict: result.verdict,
-				tier: result.tier,
-				previousTier: history.previousTier,
-				lastDecisiveVerdict: history.lastDecisiveVerdict,
-				trigger: review.trigger
-			});
-			const commentIds = shouldPostReview
+			let submission = decide((await getPullRequest(octokit, ref, pr.number)).headSha);
+			let summary = await upsertMarkedComment(
+				octokit,
+				ref,
+				pr.number,
+				SUMMARY_MARKER,
+				summaryBody(submission)
+			);
+			// Confirm again immediately before a decisive review. The summary write is the only
+			// gap after the first read; a move there downgrades the event instead of approving.
+			if (submission.submit && submission.verdict !== 'comment') {
+				const confirmed = decide((await getPullRequest(octokit, ref, pr.number)).headSha);
+				if (confirmed.headMoved) {
+					submission = confirmed;
+					summary = await upsertMarkedComment(
+						octokit,
+						ref,
+						pr.number,
+						SUMMARY_MARKER,
+						summaryBody(submission)
+					);
+				}
+			}
+			if (submission.headMoved) {
+				log.info(
+					{ reviewedSha: pr.headSha, submit: submission.submit },
+					'pull request head moved before submit'
+				);
+			}
+
+			const commentIds = submission.submit
 				? await postReview(
 						connection,
 						pr,
 						{
 							body: formatReviewBody({
 								tier: result.tier,
-								verdict: result.verdict,
+								verdict: submission.verdict,
 								blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
 									.length,
 								comments: result.posted.length,
 								summaryUrl: summary.url
 							}),
-							event: reviewEvents[result.verdict]
+							event: reviewEvents[submission.verdict]
 						},
 						result.posted,
 						log
@@ -355,7 +392,11 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				: [];
 			record({
 				type: 'review.posted',
-				data: { summaryUrl: summary.url, submittedReview: shouldPostReview }
+				data: {
+					summaryUrl: summary.url,
+					submittedReview: submission.submit,
+					headMoved: submission.headMoved
+				}
 			});
 
 			const findingRows = [
@@ -374,14 +415,16 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 			if (findingRows.length) await db.insert(schema.reviewFindings).values(findingRows);
 
 			await completeCheckRun(octokit, ref, checkRunId, {
-				conclusion: checkConclusions[result.verdict],
-				title: `Tier ${result.tier}: ${tierMeaning[result.tier]}`,
-				summary: [result.tierReason, result.summary].filter(Boolean).join('\n\n')
+				conclusion: checkConclusions[submission.verdict],
+				title: submission.headMoved
+					? 'Newer commits will be reviewed'
+					: `Tier ${result.tier}: ${tierMeaning[result.tier]}`,
+				summary: [submission.note, result.tierReason, result.summary].filter(Boolean).join('\n\n')
 			});
 			return {
 				status: 'completed',
 				summary: result.summary,
-				verdict: result.verdict,
+				verdict: submission.verdict,
 				tier: result.tier,
 				tierReason: result.tierReason,
 				walkthrough: result.walkthrough
