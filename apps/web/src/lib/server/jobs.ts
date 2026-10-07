@@ -14,6 +14,9 @@ export interface EnqueueReviewInput {
 /**
  * Creates a review and queues it. Older queued reviews for the same PR are superseded: the
  * singleton key makes the queue hold one pending job per PR, pointing at the newest review.
+ *
+ * A review that is already running is left in place, so a mention during that run queues a
+ * second job. The worker skips that job when it resolves to the same head commit.
  */
 export async function enqueueReview(db: Database, queue: Queue, input: EnqueueReviewInput) {
 	await db

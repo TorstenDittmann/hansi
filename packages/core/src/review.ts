@@ -28,8 +28,9 @@ import {
 	compareSeverity,
 	findingSchema,
 	isDuplicateFinding,
+	isUnattachedDrop,
 	omittable,
-	UNATTACHED_DROP_REASON,
+	PLACEMENT_FAILURES,
 	type DroppedFinding,
 	type Finding,
 	type PreviousFinding
@@ -242,6 +243,16 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		shown.push(file);
 	}
 	if (shown.length === 0) return { status: 'skipped', reason: 'Diff too large to review' };
+	// `shown` is only the prompt. Placement uses `included`, so record which files the model
+	// had to read with tools instead of seeing in the diff.
+	const omittedFromPrompt = notShown.filter((file) => file.reason === 'too large to show');
+	emit({
+		type: 'files.prompt',
+		data: {
+			shown: shown.map((file) => file.path),
+			notShown: omittedFromPrompt.map((file) => file.path)
+		}
+	});
 
 	const pathInstructions = config.pathInstructions.flatMap((entry) => {
 		const glob = new Bun.Glob(entry.path);
@@ -316,18 +327,48 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		data: { findings: findings.length, resolved, tier: submitted.tier ?? null }
 	});
 
-	// 2. Validate positions: GitHub rejects comments outside the PR diff. For incremental reviews
-	//    the finding must be on a newly changed line *and* on a line of the full PR diff.
+	// 2. Validate positions against every reviewable file, not only the ones that fit in the
+	//    prompt. GitHub rejects comments outside the pull request diff. For incremental reviews
+	//    the finding must be on a newly changed line and on a line of the full pull request diff.
 	const dropped: DroppedFinding[] = [];
+	const shownPaths = new Set(shown.map((file) => file.path));
 	const place = (finding: Finding) => {
-		const placed = placeFinding(finding, shown);
+		const placed = placeFinding(finding, included);
 		return placed && pullRequestFiles ? placeFinding(placed, pullRequestFiles) : placed;
+	};
+	const recordPlacement = (
+		finding: Finding,
+		outcome: { kept: boolean; code: string; reason: string }
+	) => {
+		emit({
+			type: 'finding.placement',
+			data: {
+				path: finding.path,
+				title: finding.title,
+				startLine: finding.startLine,
+				endLine: finding.endLine,
+				kept: outcome.kept,
+				code: outcome.code,
+				reason: outcome.reason,
+				shownInPrompt: shownPaths.has(finding.path)
+			}
+		});
 	};
 	const positioned = findings.flatMap((finding) => {
 		const placed = place(finding);
 		if (!placed) {
-			dropped.push({ ...finding, dropReason: UNATTACHED_DROP_REASON });
+			const failure = placementFailure(finding, included, excluded, pullRequestFiles);
+			dropped.push({ ...finding, dropReason: failure.reason });
+			recordPlacement(finding, { kept: false, ...failure });
 			return [];
+		}
+		// The file was past the prompt budget. Keep the finding; say so in the trace.
+		if (!shownPaths.has(placed.path)) {
+			recordPlacement(placed, {
+				kept: true,
+				code: 'not_shown',
+				reason: 'File not shown in the prompt'
+			});
 		}
 		if (isDuplicateFinding(placed, previousFindings)) {
 			dropped.push({ ...placed, dropReason: 'Already reported in an earlier review' });
@@ -338,7 +379,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// A few findings on the wrong line is normal. Most of them missing is the large-PR failure
 	// mode where the posted review would otherwise hide what the model found.
-	const unattached = dropped.filter((finding) => finding.dropReason === UNATTACHED_DROP_REASON);
+	const unattached = dropped.filter((finding) => isUnattachedDrop(finding.dropReason));
 	if (anchoringIsSuspicious(findings.length, unattached.length)) {
 		emit({
 			type: 'anchoring.suspicious',
@@ -380,7 +421,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const verified = distinct.length
 		? await verifyFindings(
 				distinct,
-				{ files: shown, rules },
+				{ files: included, rules },
 				input,
 				tools,
 				limits.maxVerifySteps,
@@ -560,6 +601,39 @@ function relocate(
 	});
 	// A suggestion replaces exactly the lines it was written for.
 	return withoutSuggestion(placed);
+}
+
+const PATH_FILTER_REASONS = new Set(['path filter', 'not in path filters', 'ignored by default']);
+
+/**
+ * Why a finding could not be anchored. The prompt only shows files that fit in the character
+ * budget; that is not a reason to drop a finding whose lines are in the diff.
+ */
+function placementFailure(
+	finding: Finding,
+	included: FileDiff[],
+	excluded: { path: string; reason: string }[],
+	pullRequestFiles: FileDiff[] | null
+): { reason: string; code: string } {
+	const reviewFile = included.find((file) => file.path === finding.path);
+	if (reviewFile) {
+		const onReview = placeFinding(finding, included);
+		if (onReview && pullRequestFiles && !placeFinding(onReview, pullRequestFiles)) {
+			return { reason: PLACEMENT_FAILURES.outside_pr_diff, code: 'outside_pr_diff' };
+		}
+		return { reason: PLACEMENT_FAILURES.outside_hunk, code: 'outside_hunk' };
+	}
+
+	const skipped = excluded.find((file) => file.path === finding.path);
+	if (skipped?.reason === 'not part of the pull request diff') {
+		return { reason: PLACEMENT_FAILURES.not_in_diff, code: 'not_in_diff' };
+	}
+	if (skipped && PATH_FILTER_REASONS.has(skipped.reason)) {
+		return { reason: PLACEMENT_FAILURES.path_filtered, code: 'path_filtered' };
+	}
+	if (skipped)
+		return { reason: PLACEMENT_FAILURES.no_commentable_lines, code: 'no_commentable_lines' };
+	return { reason: PLACEMENT_FAILURES.not_in_diff, code: 'not_in_diff' };
 }
 
 /** Clamps a finding onto commentable lines of a single hunk, or returns null. */

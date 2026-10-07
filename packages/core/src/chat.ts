@@ -16,6 +16,10 @@ export interface ThreadMessage {
 
 export interface ChatInput {
 	repoDir: string;
+	/** `owner/name`. File permalinks in the reply use this repository. */
+	repository: string;
+	/** Commit the reply is about. File permalinks point at this SHA. */
+	headSha: string;
 	pullRequest: { title: string; body: string; author: string };
 	/** Full PR diff, for context. */
 	diff: string;
@@ -112,7 +116,10 @@ export async function runChat(input: ChatInput): Promise<string> {
 		generateText({
 			model: input.model.model,
 			...reasoningCallOptions(input.model),
-			instructions: chatInstructions(input.language, !!input.onMarkFinding),
+			instructions: chatInstructions(input.language, !!input.onMarkFinding, {
+				repository: input.repository,
+				headSha: input.headSha
+			}),
 			prompt: parts.join('\n\n'),
 			tools,
 			stopWhen: isStepCount(20),

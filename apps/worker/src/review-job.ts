@@ -7,6 +7,7 @@ import {
 	type Severity
 } from '@hans/config';
 import {
+	absolutizeLinks,
 	checkoutPullRequest,
 	diffSince,
 	formatFindingComment,
@@ -23,6 +24,7 @@ import {
 import { schema, type Database } from '@hans/db';
 import {
 	completeCheckRun,
+	createIssueComment,
 	createReview,
 	getFailedChecks,
 	getFileContent,
@@ -51,6 +53,12 @@ import {
 	type RepositoryConnection,
 	type WorkerContext
 } from './shared';
+import {
+	mentionWantsSameHeadReply,
+	otherPullReviews,
+	sameHeadCoalesce,
+	sameHeadSkipSummary
+} from './same-head';
 import { shouldSubmitReview, submissionForCurrentHead } from './submit-review';
 
 type Review = typeof schema.reviews.$inferSelect;
@@ -160,6 +168,25 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					? `Base branch ${pr.baseRef} is not configured for reviews`
 					: null;
 	if (skipReason) return { status: 'skipped', summary: skipReason };
+
+	// A follow-up trigger (a mention while this commit is in review, or another event after it
+	// finished) would otherwise run next and submit again. The queue only replaces queued jobs.
+	// Skip when this commit is already covered. A new commit has a different head and still runs.
+	const covered = sameHeadCoalesce(pr.headSha, await otherPullReviews(db, review));
+	if (covered) {
+		const summary = sameHeadSkipSummary(covered, pr.headSha);
+		log.info({ reason: covered, headSha: pr.headSha }, 'commit already reviewed, skipping');
+		if (mentionWantsSameHeadReply(review.trigger)) {
+			await createIssueComment(octokit, ref, pr.number, summary).catch((error) =>
+				log.warn({ err: error }, 'could not reply that this commit is already reviewed')
+			);
+		}
+		await db
+			.update(schema.reviews)
+			.set({ headSha: pr.headSha })
+			.where(eq(schema.reviews.id, review.id));
+		return { status: 'skipped', summary };
+	}
 
 	const models = await loadModels(ctx, review.organizationId);
 
@@ -419,7 +446,11 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				title: submission.headMoved
 					? 'Newer commits will be reviewed'
 					: `Tier ${result.tier}: ${tierMeaning[result.tier]}`,
-				summary: [submission.note, result.tierReason, result.summary].filter(Boolean).join('\n\n')
+				summary: absolutizeLinks(
+					[submission.note, result.tierReason, result.summary].filter(Boolean).join('\n\n'),
+					connection.repository.fullName,
+					pr.headSha
+				)
 			});
 			return {
 				status: 'completed',
@@ -489,11 +520,12 @@ async function postReview(
 	log: Logger
 ): Promise<(number | null)[]> {
 	const { body, event } = review;
+	const permalink = { repository: `${ref.owner}/${ref.repo}`, headSha: pr.headSha };
 	const comments = findings.map((finding) => ({
 		path: finding.path,
 		line: finding.endLine,
 		startLine: finding.startLine,
-		body: formatFindingComment(finding)
+		body: formatFindingComment(finding, permalink)
 	}));
 
 	try {
@@ -525,7 +557,10 @@ async function postReview(
 		}
 		log.warn({ err: error }, 'inline comments rejected, posting findings in the review body');
 		const inline = findings
-			.map((f) => `#### \`${f.path}:${f.startLine}-${f.endLine}\`\n\n${formatFindingComment(f)}`)
+			.map(
+				(f) =>
+					`#### \`${f.path}:${f.startLine}-${f.endLine}\`\n\n${formatFindingComment(f, permalink)}`
+			)
 			.join('\n\n---\n\n');
 		await createReview(octokit, ref, {
 			pullNumber: pr.number,
