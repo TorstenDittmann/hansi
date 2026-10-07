@@ -1,6 +1,7 @@
 import {
 	formatSummaryComment,
 	standingFromOpenFindings,
+	STALE_HEAD_NOTE_MARK,
 	SUMMARY_MARKER,
 	type Finding,
 	type SummaryInput
@@ -29,6 +30,7 @@ type FindingRow = {
 export type SummaryExtras = {
 	latestChanges?: string | null;
 	approvalWithheld?: string | null;
+	staleHead?: string | null;
 	incrementalFrom?: string;
 };
 
@@ -40,11 +42,15 @@ export function summaryExtrasFromBody(body: string): SummaryExtras {
 	// latestChanges can span lines; it always sits before the verdict table.
 	const latestChanges =
 		body.match(/\*\*Latest changes:\*\* ([\s\S]*?)\n\n\| Verdict \|/)?.[1] ?? null;
-	const approvalWithheld = body.match(/> \[!NOTE\]\n> (.+)/)?.[1] ?? null;
+	const noteLines = [...body.matchAll(/> \[!NOTE\]\n> (.+)/g)].map((match) => match[1] ?? '');
+	const stalePrefix = `${STALE_HEAD_NOTE_MARK} `;
+	const staleLine = noteLines.find((line) => line.startsWith(stalePrefix));
+	const approvalWithheld = noteLines.find((line) => !line.startsWith(stalePrefix)) ?? null;
 	const incrementalFrom = body.match(/Reviewed the commits since <code>([0-9a-f]+)<\/code>/i)?.[1];
 	return {
 		latestChanges,
 		approvalWithheld,
+		staleHead: staleLine ? staleLine.slice(stalePrefix.length) : null,
 		...(incrementalFrom ? { incrementalFrom } : {})
 	};
 }
@@ -203,6 +209,7 @@ export function summaryAfterSettlement(
 		walkthrough: input.walkthrough,
 		latestChanges: input.latestChanges,
 		approvalWithheld: input.approvalWithheld,
+		staleHead: input.staleHead,
 		incrementalFrom: input.incrementalFrom,
 		detailsUrl: input.detailsUrl,
 		mention: input.mention

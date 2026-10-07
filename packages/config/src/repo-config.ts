@@ -66,7 +66,9 @@ export const repoConfigSchema = z
 				approve: z
 					.boolean()
 					.default(true)
-					.describe('Approve pull requests that have no blocking findings.'),
+					.describe(
+						'Approve pull requests that have no blocking findings and no open bug, security, concurrency, or error-handling findings.'
+					),
 				requestChanges: z
 					.enum([...severities, 'never'])
 					.default('major')
