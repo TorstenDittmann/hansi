@@ -380,7 +380,7 @@ async function executeReview(
 				}
 			});
 
-			const sandbox = await reviewSandbox(ctx, connection, pr, config, {
+			const sandbox = await reviewSandbox(ctx, config, {
 				repoDir,
 				name: `hansi-review-${review.id}`,
 				record,
@@ -616,15 +616,11 @@ async function loadPullRequestContext(
  */
 async function reviewSandbox(
 	ctx: WorkerContext,
-	{ octokit, ref }: RepositoryConnection,
-	pr: { author: string; authorAssociation: string },
 	config: RepoConfig,
 	options: { repoDir: string; name: string; record: (event: TraceEvent) => void; log: Logger }
 ): Promise<ReviewSandbox | undefined> {
 	const { record, log } = options;
-	const skip =
-		sandboxSkipReason(ctx.env) ??
-		((await isTrustedAuthor(octokit, ref, pr)) ? null : 'the author does not have write access');
+	const skip = sandboxSkipReason(ctx.env);
 	if (skip) {
 		record({ type: 'sandbox.skipped', data: { reason: skip } });
 		return undefined;

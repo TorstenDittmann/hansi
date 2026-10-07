@@ -15,9 +15,9 @@ export interface ReviewSandbox {
 }
 
 /**
- * Why reviews on this instance run without a VM, or null when they get one. The worker also
- * checks the author: pull requests from people without write access never get one, since their
- * code would run on this instance's hardware.
+ * Why reviews on this instance run without a VM, or null when they get one. Every pull request
+ * gets one, including those from people without write access: the VM holds no credentials and
+ * is capped in CPU, memory, and lifetime.
  */
 export function sandboxSkipReason(env: Pick<Env, 'SANDBOX' | 'MSB_API_KEY'>): string | null {
 	if (env.SANDBOX === 'off') return 'SANDBOX=off on this instance';
