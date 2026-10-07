@@ -221,13 +221,23 @@ export function createRepoTools(
 	};
 }
 
-const GUIDELINE_FILES = [
+export const GUIDELINE_FILES = [
 	'AGENTS.md',
 	'CLAUDE.md',
 	'.cursorrules',
 	'.github/copilot-instructions.md',
 	'CONTRIBUTING.md'
-];
+] as const;
+
+/** Guideline files this diff adds, edits, deletes, or renames, in `GUIDELINE_FILES` order. */
+export function changedGuidelineFiles(files: { path: string; oldPath?: string }[]): string[] {
+	const present = new Set<string>();
+	for (const file of files) {
+		present.add(file.path);
+		if (file.oldPath) present.add(file.oldPath);
+	}
+	return GUIDELINE_FILES.filter((path) => present.has(path));
+}
 /**
  * Per file, and every file is loaded. Authors do not place their rules to survive a cut,
  * so a long AGENTS.md must not drop its own middle or crowd out CLAUDE.md.

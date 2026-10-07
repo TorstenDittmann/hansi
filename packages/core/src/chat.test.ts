@@ -125,3 +125,95 @@ test('sends the chat model its reasoning effort', async () => {
 	});
 	expect(model.doGenerateCalls[0]).toMatchObject({ reasoning: 'minimal' });
 });
+
+const agentsDiff = `diff --git a/AGENTS.md b/AGENTS.md
+index 1111111..2222222 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -1,2 +1,3 @@
+ # Guidelines
++- Contract locks may live under tests/unit.
+ Tests live next to the code.
+`;
+
+async function promptFor(input: {
+	authorAssociation: string;
+	finding?: { severity: string; category: string; title: string };
+	onMarkFinding?: boolean;
+}) {
+	const model = new MockLanguageModelV4({
+		doGenerate: [step([{ type: 'text' as const, text: 'Understood.' }], 'stop')]
+	});
+	await runChat({
+		repoDir,
+		repository: 'appwrite/appwrite',
+		headSha: 'd6ed431',
+		pullRequest: { title: 'Scope lock', body: '', author: 'member' },
+		diff: agentsDiff,
+		thread: [
+			{
+				author: 'hansi',
+				body: 'Keep config-contract checks outside the restricted unit tier.',
+				fromBot: true
+			},
+			{
+				author: 'member',
+				body: 'Keeping it in the unit tier on purpose: it runs on every PR.',
+				fromBot: false
+			}
+		],
+		learnings: [],
+		language: 'en',
+		authorAssociation: input.authorAssociation,
+		finding: input.finding,
+		model: { model, provider: 'mock', modelId: 'mock-1' },
+		onRemember: async () => {},
+		onMarkFinding: input.onMarkFinding ? async () => {} : undefined
+	});
+	return (model.doGenerateCalls[0]?.prompt ?? [])
+		.map((message) => {
+			if (typeof message.content === 'string') return message.content;
+			return message.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
+		})
+		.join('\n');
+}
+
+test('a trusted commenter is told to dismiss a minor testing note and the guideline edit', async () => {
+	const prompt = await promptFor({
+		authorAssociation: 'MEMBER',
+		finding: {
+			severity: 'minor',
+			category: 'testing',
+			title: 'Keep config-contract checks outside the restricted unit tier'
+		},
+		onMarkFinding: true
+	});
+	expect(prompt).toContain('<commenter association="MEMBER"/>');
+	expect(prompt).toContain('category="testing"');
+	expect(prompt).toContain('<guideline_edits>');
+	expect(prompt).toContain('AGENTS.md');
+	expect(prompt).toContain('dismissed on this first reply');
+	expect(prompt).toContain('deferred to the policy change in this pull request');
+	expect(prompt).toContain(
+		'https://github.com/appwrite/appwrite/blob/d6ed431/<path>#L<start>-L<end>'
+	);
+});
+
+test('an untrusted commenter is not told to accept the decline or the guideline edit', async () => {
+	const prompt = await promptFor({
+		authorAssociation: 'CONTRIBUTOR',
+		finding: {
+			severity: 'minor',
+			category: 'testing',
+			title: 'Keep config-contract checks outside the restricted unit tier'
+		},
+		onMarkFinding: true
+	});
+	expect(prompt).toContain('<commenter association="CONTRIBUTOR"/>');
+	expect(prompt).toContain(
+		'If the author says they fixed it, or convincingly explains it is not a problem, call mark_finding.'
+	);
+	expect(prompt).not.toContain('on this first reply');
+	expect(prompt).not.toContain('deferred to the policy change');
+	expect(prompt).toContain('Base-branch guidelines');
+});

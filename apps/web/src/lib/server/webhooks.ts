@@ -1,5 +1,6 @@
 import { schema } from '@hans/db';
 import { canTriggerFromComment, classifyMention, verifyWebhookSignature } from '@hans/github';
+import { chatJobFromComment } from '@hans/queue';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { getContext, getGitHubCredentials } from './context';
 import { removeRepositories, upsertInstallation, upsertRepositories } from './installations';
@@ -154,16 +155,17 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 					commentKind: isReviewThread ? 'review' : 'issue'
 				});
 			} else if (intent === 'chat') {
-				await enqueueChat(queue, {
-					organizationId: repo.organizationId,
-					repositoryId: repo.id,
-					pullNumber,
-					commentId: comment.id,
-					kind: isReviewThread ? 'review' : 'issue',
-					rootCommentId,
-					author: comment.user.login,
-					commentUrl: comment.html_url
-				});
+				await enqueueChat(
+					queue,
+					chatJobFromComment({
+						organizationId: repo.organizationId,
+						repositoryId: repo.id,
+						pullNumber,
+						kind: isReviewThread ? 'review' : 'issue',
+						rootCommentId,
+						comment
+					})
+				);
 			}
 			break;
 		}
