@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { createTestDatabase, schema, type Database } from '@hans/db';
 import { Queue } from '@hans/queue';
-import { enqueueReview, retryFailedReview } from './jobs';
+import { enqueueReview, retryFailedReview, reviewJobPayload } from './jobs';
 
 const now = new Date('2026-09-01T00:00:00Z');
 
@@ -136,6 +136,72 @@ test('retry starts over when the waiting job already used attempts', async () =>
 		maxAttempts: 3,
 		lastError: null,
 		payload: { reviewId: result.reviewId }
+	});
+});
+
+test("a mention's comment id is carried on the job payload", async () => {
+	const db = await setup();
+	const queue = new Queue(db);
+
+	const review = await enqueueReview(db, queue, {
+		organizationId: 'org-a',
+		repositoryId: 10,
+		pullNumber: 7,
+		headSha: '',
+		trigger: 'mention',
+		commentId: 6032071535,
+		commentKind: 'issue'
+	});
+
+	const [row] = await db.select().from(schema.reviews).where(eq(schema.reviews.id, review.id));
+	expect(row).toMatchObject({ trigger: 'mention', headSha: '', status: 'queued' });
+
+	const jobs = await db.select().from(schema.jobs);
+	expect(jobs).toHaveLength(1);
+	expect(jobs[0]?.payload).toEqual({
+		reviewId: review.id,
+		commentId: 6032071535,
+		commentKind: 'issue'
+	});
+});
+
+test('a review comment mention records its kind, and a push does not', () => {
+	expect(reviewJobPayload('rev-1', { commentId: 12, commentKind: 'review' })).toEqual({
+		reviewId: 'rev-1',
+		commentId: 12,
+		commentKind: 'review'
+	});
+	expect(reviewJobPayload('rev-1')).toEqual({ reviewId: 'rev-1' });
+});
+
+test('a later mention replaces the comment id on the waiting job', async () => {
+	const db = await setup();
+	const queue = new Queue(db);
+	await enqueueReview(db, queue, {
+		organizationId: 'org-a',
+		repositoryId: 10,
+		pullNumber: 7,
+		headSha: '',
+		trigger: 'mention',
+		commentId: 1,
+		commentKind: 'issue'
+	});
+	const latest = await enqueueReview(db, queue, {
+		organizationId: 'org-a',
+		repositoryId: 10,
+		pullNumber: 7,
+		headSha: '',
+		trigger: 'mention',
+		commentId: 2,
+		commentKind: 'review'
+	});
+
+	const jobs = await db.select().from(schema.jobs).where(eq(schema.jobs.status, 'queued'));
+	expect(jobs).toHaveLength(1);
+	expect(jobs[0]?.payload).toEqual({
+		reviewId: latest.id,
+		commentId: 2,
+		commentKind: 'review'
 	});
 });
 

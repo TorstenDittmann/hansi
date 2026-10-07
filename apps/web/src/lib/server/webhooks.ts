@@ -149,7 +149,9 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 					repositoryId: repo.id,
 					pullNumber,
 					headSha: '',
-					trigger: 'mention'
+					trigger: 'mention',
+					commentId: comment.id,
+					commentKind: isReviewThread ? 'review' : 'issue'
 				});
 			} else if (intent === 'chat') {
 				await enqueueChat(queue, {
