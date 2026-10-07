@@ -42,7 +42,7 @@ import {
 import { presentReview } from './present';
 import { tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
-import { decideVerdict, type Verdict } from './verdict';
+import { decideVerdict, openDefectApprovalReason, type Verdict } from './verdict';
 import {
 	createRepoTools,
 	loadRepoGuidelines,
@@ -72,7 +72,8 @@ export interface ReviewInput {
 	previousFindings?: PreviousFinding[];
 	/**
 	 * Posted findings not yet resolved or dismissed. The model checks whether the current code
-	 * fixes them; open blocking findings keep a PR from being approved.
+	 * fixes them. Findings at the blocking severity, and bug-like findings at minor or above,
+	 * keep a pull request from being approved.
 	 */
 	openFindings?: OpenFinding[];
 	/** Team preferences from earlier conversations (see `remember` in chat). */
@@ -125,6 +126,8 @@ export interface OpenFinding {
 	startLine: number;
 	endLine: number;
 	severity: Severity;
+	/** As stored on the finding. Bug-like categories withhold approval even at minor. */
+	category: string;
 	title: string;
 	body: string;
 }
@@ -391,15 +394,15 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
-	let verdict = decideVerdict({ posted, stillOpen: stillOpenBlocking, config });
+	let verdict = decideVerdict({ posted, stillOpen, config });
 	// Approval is the one outcome an attacker would want: only grant it when it is safe to.
 	const truncated = shown.length < included.length;
 	const approvalWithheld =
-		verdict !== 'approve'
-			? null
-			: (input.withholdApproval ??
-				(truncated ? 'Part of the diff was too large to review, so Hansi did not approve.' : null));
-	if (approvalWithheld) verdict = 'comment';
+		verdict === 'approve'
+			? (input.withholdApproval ??
+				(truncated ? 'Part of the diff was too large to review, so Hansi did not approve.' : null))
+			: openDefectApprovalReason([...posted, ...stillOpen], config);
+	if (verdict === 'approve' && approvalWithheld) verdict = 'comment';
 	const presented = presentReview({
 		summary,
 		modelTier: submitted.tier,

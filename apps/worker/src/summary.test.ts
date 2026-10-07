@@ -119,8 +119,37 @@ describe('summaryExtrasFromBody', () => {
 		expect(summaryExtrasFromBody(body)).toEqual({
 			latestChanges: 'Adds pageCount.',
 			approvalWithheld: '@stranger does not have write access.',
+			staleHead: null,
 			incrementalFrom: 'abcdef1'
 		});
+	});
+
+	test('keeps a stale-head note distinct from a withheld approval', () => {
+		const staleHead =
+			'Newer commits exist (`8c9e110`) and will be reviewed. This review is of `410aa75` and does not approve it.';
+		const body = formatSummaryComment(
+			summaryAfterSettlement({
+				...base,
+				verdict: 'comment',
+				findings: [],
+				approvalWithheld: '@stranger does not have write access.',
+				staleHead
+			})
+		);
+		expect(summaryExtrasFromBody(body)).toMatchObject({
+			approvalWithheld: '@stranger does not have write access.',
+			staleHead
+		});
+		const rebuilt = formatSummaryComment(
+			summaryAfterSettlement({
+				...base,
+				verdict: 'comment',
+				findings: [],
+				...summaryExtrasFromBody(body)
+			})
+		);
+		expect(rebuilt).toContain(staleHead);
+		expect(rebuilt).toContain('@stranger does not have write access.');
 	});
 
 	test('returns nulls when those sections are absent', () => {
@@ -128,7 +157,8 @@ describe('summaryExtrasFromBody', () => {
 			summaryExtrasFromBody(formatSummaryComment(summaryAfterSettlement({ ...base, findings: [] })))
 		).toEqual({
 			latestChanges: null,
-			approvalWithheld: null
+			approvalWithheld: null,
+			staleHead: null
 		});
 	});
 

@@ -30,7 +30,8 @@ Amazon Bedrock, Google, xAI, OpenRouter, or any OpenAI-compatible endpoint.
    from **S** (ready to merge) to **F** (do not merge) in one summary comment that it keeps up to
    date.
 5. After a fix is pushed, it reviews only what changed, resolves the threads of the findings that
-   are fixed, and approves once nothing blocking is left.
+   are fixed, and approves once nothing blocking is left and no bug, security, concurrency, or
+   error-handling finding is still open.
 
 Reply to any of its comments, or mention the app with a question, and Hansi answers in the thread.
 Tell it "we don't flag this in tests" and it remembers for future reviews.
@@ -91,7 +92,7 @@ branch, so changes take effect once they are merged. Every field is optional:
 | `reviews.profile`                    | `balanced` | How picky to be; see [Review profiles](#review-profiles).                           |
 | `reviews.minSeverity`                | `minor`    | Findings below this severity (`info`, `minor`, `major`, `critical`) are not posted. |
 | `reviews.maxComments`                | `15`       | The most inline comments in one review.                                             |
-| `reviews.approve`                    | `true`     | Approve pull requests without blocking findings.                                    |
+| `reviews.approve`                    | `true`     | Approve when nothing blocking is open and no bug-like finding is still open.        |
 | `reviews.requestChanges`             | `major`    | Severity from which Hansi requests changes; `never` to only comment.                |
 | `reviews.approveOutsideContributors` | `false`    | Approve pull requests from people without write access.                             |
 | `instructions`                       | `""`       | Extra review instructions for the repository.                                       |
@@ -120,7 +121,10 @@ Each review is submitted to GitHub as **Approve**, **Request changes**, or **Com
 - New findings at or above `requestChanges`: **Request changes**.
 - Blocking findings from an earlier review still open: **Comment**, so the earlier request for
   changes stays in effect until they are fixed or dismissed in the thread.
-- Otherwise: **Approve** (minor findings are still posted as comments), unless `approve: false`.
+- An open bug, security, concurrency, or error-handling finding, including a minor one and
+  including one still open from an earlier review: **Comment**, never **Approve**. Minor testing,
+  documentation, and maintainability notes do not block approval.
+- Otherwise: **Approve** (those minor notes are still posted as comments), unless `approve: false`.
 
 The tier grades merge confidence:
 
@@ -256,7 +260,9 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
   are guarded outside the model:
   - `.hansi.json` and guideline files come from the base branch;
   - pull requests from people without write access are never approved automatically;
-  - a review that could not see the whole diff never approves.
+  - a review that could not see the whole diff never approves;
+  - an open bug, security, concurrency, or error-handling finding, even a minor one, is never
+    approved over.
 - Provider keys and GitHub App secrets are encrypted with AES-256-GCM using `HANS_ENCRYPTION_KEY`.
 - Webhooks are signature-verified and deduplicated.
 - Only owners, members, and collaborators can trigger reviews or answers by mention, since each

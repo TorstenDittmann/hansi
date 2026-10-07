@@ -670,12 +670,13 @@ ${upstream}`;
 	});
 
 	test('resolves fixed findings, approves, and grades the PR', async () => {
-		const open = (id: string, severity: 'major' | 'minor', title: string) => ({
+		const open = (id: string, severity: 'major' | 'minor', title: string, category = 'bug') => ({
 			id,
 			path: 'src/math.ts',
 			startLine: 2,
 			endLine: 2,
 			severity,
+			category,
 			title,
 			body: 'Explained.'
 		});
@@ -738,6 +739,7 @@ ${upstream}`;
 					startLine: 2,
 					endLine: 2,
 					severity: 'minor',
+					category: 'documentation',
 					title: '/api responses bypass this robots meta tag',
 					body: 'Explained.'
 				}
@@ -760,9 +762,77 @@ ${upstream}`;
 		);
 	});
 
+	test('comments instead of approving when a minor bug is posted or still open', async () => {
+		const posted = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Purge', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: {
+				review: {
+					model: new MockLanguageModelV4({
+						doGenerate: [
+							toolCall('submit_review', {
+								summary: 'Purges committed rows.',
+								findings: [finding(2, 'Include nested rows in the purge', 'minor')],
+								tier: 'A'
+							}),
+							toolCall('submit_verdicts', {
+								verdicts: [{ id: 'F1', keep: true, reason: 'nested child stays cached' }]
+							})
+						]
+					}),
+					provider: 'mock',
+					modelId: 'mock-1'
+				}
+			}
+		});
+		if (posted.status !== 'completed') throw new Error('expected a completed review');
+		expect(posted.verdict).toBe('comment');
+		expect(posted.approvalWithheld).toBe(
+			'Not approving while a bug finding is open: Include nested rows in the purge'
+		);
+
+		const earlier = await runReview({
+			repoDir,
+			diff,
+			openFindings: [
+				{
+					id: 'f-purge',
+					path: 'src/math.ts',
+					startLine: 2,
+					endLine: 2,
+					severity: 'minor',
+					category: 'bug',
+					title: 'Include nested rows in the purge',
+					body: 'A nested child can stay cached.'
+				}
+			],
+			pullRequest: { title: 'Follow-up', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: {
+				review: {
+					model: new MockLanguageModelV4({
+						doGenerate: [
+							toolCall('submit_review', { summary: 'Follow-up.', findings: [], tier: 'A' })
+						]
+					}),
+					provider: 'mock',
+					modelId: 'mock-1'
+				}
+			}
+		});
+		if (earlier.status !== 'completed') throw new Error('expected a completed review');
+		expect(earlier.verdict).toBe('comment');
+		expect(earlier.approvalWithheld).toBe(
+			'Not approving while a bug finding is open: Include nested rows in the purge'
+		);
+	});
+
 	test('approval clamp still respects the open-finding cap when majors do not block', async () => {
-		// requestChanges: critical → majors do not block, so verdict can be approve while tierCap
-		// is still B. Softening the model grade must not raise that above the cap.
+		// requestChanges: critical → a non-defect major does not block, so the verdict can be
+		// approve while tierCap is still B. Softening the model grade must not raise that above
+		// the cap. A bug-category major comments instead; verdict.test.ts covers that.
 		const submission = toolCall('submit_review', {
 			summary: 'Still open major elsewhere.',
 			findings: [],
@@ -780,7 +850,8 @@ ${upstream}`;
 					startLine: 2,
 					endLine: 2,
 					severity: 'major',
-					title: 'Division by zero',
+					category: 'maintainability',
+					title: 'Duplicated validation',
 					body: 'Explained.'
 				}
 			],
@@ -797,7 +868,7 @@ ${upstream}`;
 		if (result.status !== 'completed') throw new Error('expected a completed review');
 		expect(result.verdict).toBe('approve');
 		expect(result.tier).toBe('B');
-		expect(result.tierReason).toBe('Limited by an open major finding: Division by zero');
+		expect(result.tierReason).toBe('Limited by an open major finding: Duplicated validation');
 	});
 
 	test('grades S when the findings behind a lower grade were all dropped', async () => {
@@ -1021,6 +1092,7 @@ ${upstream}`;
 					startLine: 2,
 					endLine: 2,
 					severity: 'minor',
+					category: 'bug',
 					title: 'Prohibited worker regression',
 					body: 'The worker still accepts the old payload.'
 				}
@@ -1031,8 +1103,12 @@ ${upstream}`;
 		});
 		if (result.status !== 'completed') throw new Error('expected a completed review');
 		expect(result.posted).toEqual([]);
-		// The filtered major is not posted, so it does not block. The open minor does not either.
-		expect(result.verdict).toBe('approve');
+		// The filtered major is not posted, so it does not block or explain the verdict.
+		// The still-open minor bug does withhold approval.
+		expect(result.verdict).toBe('comment');
+		expect(result.approvalWithheld).toBe(
+			'Not approving while a bug finding is open: Prohibited worker regression'
+		);
 		expect(result.tier).toBe('A');
 		expect(result.tierReason).toBe(
 			'Limited by an open minor finding: Prohibited worker regression'
