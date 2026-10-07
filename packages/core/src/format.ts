@@ -447,6 +447,11 @@ export interface SummaryInput {
 	 */
 	staleHead?: string | null;
 	incrementalFrom?: string;
+	/**
+	 * Replaces the "Reviewed …" footer sentence. Set when a merge of the base branch did not
+	 * change this pull request's code.
+	 */
+	scope?: string;
 	detailsUrl?: string;
 	/** The bot's handle, e.g. `@hansi-codes`. */
 	mention: string;
@@ -594,12 +599,14 @@ export function formatSummaryComment(input: SummaryInput): string {
 		);
 	}
 
-	const scope = input.incrementalFrom
-		? `the commits since <code>${input.incrementalFrom.slice(0, 7)}</code>`
-		: `<code>${input.headSha.slice(0, 7)}</code>`;
+	const reviewed = input.scope
+		? input.scope
+		: input.incrementalFrom
+			? `Reviewed the commits since <code>${input.incrementalFrom.slice(0, 7)}</code>`
+			: `Reviewed <code>${input.headSha.slice(0, 7)}</code>`;
 	const details = input.detailsUrl ? ` · <a href="${input.detailsUrl}">Details</a>` : '';
 	parts.push(
-		`---\n<sub>Reviewed ${scope}${details} · Comment <code>${input.mention} review</code> to re-run, or mention <code>${input.mention}</code> with a question.</sub>`
+		`---\n<sub>${reviewed}${details} · Comment <code>${input.mention} review</code> to re-run, or mention <code>${input.mention}</code> with a question.</sub>`
 	);
 	return parts.join('\n\n');
 }
