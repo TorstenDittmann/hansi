@@ -9,6 +9,23 @@ export interface EnqueueReviewInput {
 	/** Known for pull_request events; the worker resolves it for mentions. */
 	headSha: string;
 	trigger: ReviewTrigger;
+	/** The comment that asked for the review. Only mentions have one. */
+	commentId?: number;
+	/** Where that comment lives, so the worker can react on the right GitHub API. */
+	commentKind?: 'issue' | 'review';
+}
+
+/** Job payload for a review. The comment id stays off the review row, so no migration. */
+export function reviewJobPayload(
+	reviewId: string,
+	mention?: { commentId: number; commentKind?: 'issue' | 'review' }
+): ReviewJobPayload {
+	if (!mention) return { reviewId };
+	return {
+		reviewId,
+		commentId: mention.commentId,
+		commentKind: mention.commentKind ?? 'issue'
+	};
 }
 
 /**
@@ -30,10 +47,11 @@ export async function enqueueReview(db: Database, queue: Queue, input: EnqueueRe
 			)
 		);
 
-	const [review] = await db.insert(schema.reviews).values(input).returning();
+	const { commentId, commentKind, ...reviewInput } = input;
+	const [review] = await db.insert(schema.reviews).values(reviewInput).returning();
 	await queue.send<ReviewJobPayload>(
 		queues.review,
-		{ reviewId: review!.id },
+		reviewJobPayload(review!.id, commentId == null ? undefined : { commentId, commentKind }),
 		{ singletonKey: `${input.repositoryId}:${input.pullNumber}` }
 	);
 	return review!;
