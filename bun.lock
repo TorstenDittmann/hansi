@@ -65,7 +65,6 @@
         "@hans/llm": "workspace:*",
         "@hans/queue": "workspace:*",
         "drizzle-orm": "catalog:",
-        "microsandbox": "0.7.7",
         "pino": "^10.3.1",
       },
       "devDependencies": {
@@ -428,8 +427,6 @@
 
     "@libsql/win32-x64-msvc": ["@libsql/win32-x64-msvc@0.5.29", "", { "os": "win32", "cpu": "x64" }, "sha512-4/0CvEdhi6+KjMxMaVbFM2n2Z44escBRoEYpR+gZg64DdetzGnYm8mcNLcoySaDJZNaBd6wz5DNdgRmcI4hXcg=="],
 
-    "@microsandbox/types": ["@microsandbox/types@0.7.7", "", {}, "sha512-67/tP2k+tpksQbIIvzbPGtiq3Ai/3242NLTkxTZawelUk+qVvOc3BygAVK+kxoHYJW0fyTtmZ1mYAyJrXLSSEg=="],
-
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
     "@neon-rs/load": ["@neon-rs/load@0.0.4", "", {}, "sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw=="],
@@ -611,16 +608,6 @@
     "@smithy/util-utf8": ["@smithy/util-utf8@4.5.2", "", { "dependencies": { "@smithy/core": "^3.33.2", "tslib": "^2.6.2" } }, "sha512-7wNWV7SugHpcMA7uzEawJNpE0GrasXM7a9E+1+Wm6NxVuDClESac/AKt+G7jMZNUz5vBLWqKlqVV7Sv7AtUr6Q=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
-
-    "@superradcompany/microsandbox-darwin-arm64": ["@superradcompany/microsandbox-darwin-arm64@0.7.7", "", { "os": "darwin", "cpu": "arm64" }, "sha512-vvyMNGytk2R/HpCJXGekNniUuzKbQH+ARZMC4Ne4BxEu9q1gDmx4bfn6NdQ2Gej5oIfQEyiuK7naq3U8/GC2lQ=="],
-
-    "@superradcompany/microsandbox-linux-arm64-gnu": ["@superradcompany/microsandbox-linux-arm64-gnu@0.7.7", "", { "os": "linux", "cpu": "arm64" }, "sha512-/s6icz7ox8jz1vCdr6c3USnX08cDNUZ0SEjFhYVrcmumXrMfjNmfCke7aRBxkmF17uhY/0h1wsmeDZPoUL4wAA=="],
-
-    "@superradcompany/microsandbox-linux-x64-gnu": ["@superradcompany/microsandbox-linux-x64-gnu@0.7.7", "", { "os": "linux", "cpu": "x64" }, "sha512-sn19EZNpHgQ/wFv6S0eyNEh/c5+CBl629h8AG5o94ZYY05tbVDmBqI33wrdA7nGKySbx/2Uni+ecKvGVi0jTgg=="],
-
-    "@superradcompany/microsandbox-win32-arm64-msvc": ["@superradcompany/microsandbox-win32-arm64-msvc@0.7.7", "", { "os": "win32", "cpu": "arm64" }, "sha512-Ggzi1SGFeErCjaNdMiel7siFjHHILVNrTHvnNMPH4VMVGTNnYmmz0LRx8Z6fWLEQrmZe9YsW2Bx1oEvD9mbpKQ=="],
-
-    "@superradcompany/microsandbox-win32-x64-msvc": ["@superradcompany/microsandbox-win32-x64-msvc@0.7.7", "", { "os": "win32", "cpu": "x64" }, "sha512-KCiwNMN1beDzTEMuJ6AK4nJk2DMME3hvv8x4dB12uwpCRoRnIwWajs4rp7/UogZEMV/wO/skhNFJaNzTpt9QWQ=="],
 
     "@sveltejs/acorn-typescript": ["@sveltejs/acorn-typescript@1.0.13", "", { "peerDependencies": { "acorn": "^8.9.0" } }, "sha512-wgKggnhZVL9Bfx1OaKKTrYY9BFRk6C8UAkQNUcIv1+llzYrIqy+RZm5HPKzn0NpEBvTVhTqB4kQyllZywsRBRQ=="],
 
@@ -939,8 +926,6 @@
     "merge2": ["merge2@1.4.1", "", {}, "sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg=="],
 
     "micromatch": ["micromatch@4.0.8", "", { "dependencies": { "braces": "^3.0.3", "picomatch": "^2.3.1" } }, "sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA=="],
-
-    "microsandbox": ["microsandbox@0.7.7", "", { "dependencies": { "@microsandbox/types": "0.7.7" }, "optionalDependencies": { "@superradcompany/microsandbox-darwin-arm64": "0.7.7", "@superradcompany/microsandbox-linux-arm64-gnu": "0.7.7", "@superradcompany/microsandbox-linux-x64-gnu": "0.7.7", "@superradcompany/microsandbox-win32-arm64-msvc": "0.7.7", "@superradcompany/microsandbox-win32-x64-msvc": "0.7.7" }, "bin": { "msb": "bin/microsandbox.cjs", "microsandbox": "bin/microsandbox.cjs" } }, "sha512-H2ipvZyDATXlQAem3Yhf5OZ6dUxOVJlgC/QMSEVZOBqB3UN3OOqPcpk3Tg7MqkKnKucuUF5GMsAvmb8d8BADXQ=="],
 
     "mini-svg-data-uri": ["mini-svg-data-uri@1.4.4", "", { "bin": { "mini-svg-data-uri": "cli.js" } }, "sha512-r9deDe9p5FJUPZAk3A59wGH7Ii9YrjjWw0jmw/liSbHl2CHiyXj6FcDXDu2K3TjVAXqiJdaw3xxwlZZr9E6nHg=="],
 

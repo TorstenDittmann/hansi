@@ -611,8 +611,8 @@ async function loadPullRequestContext(
 }
 
 /**
- * The VM this review runs commands in. It boots before the review starts. When it cannot start
- * (no KVM, a bad image), the failure is recorded and the review goes ahead by reading code only.
+ * The container this review runs commands in. It starts before the review. When it cannot start
+ * (no sandbox daemon, a bad image), the failure is recorded and the review reads code only.
  */
 async function reviewSandbox(
 	ctx: WorkerContext,

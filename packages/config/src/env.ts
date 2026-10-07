@@ -58,11 +58,13 @@ export const envSchema = z.object({
 	WORKER_WORKDIR: optional,
 
 	/**
-	 * Where each review's VM runs: microsandbox `local` (default; needs /dev/kvm), microsandbox
-	 * `cloud` with MSB_API_KEY, or `off` to review by reading code only.
+	 * Every review runs commands in a fresh container under gVisor. `off` reviews by reading code
+	 * only. The Docker daemon is normally the `sandbox` sidecar in docker/compose.yml.
 	 */
-	SANDBOX: z.enum(['off', 'local', 'cloud']).default('local'),
-	MSB_API_KEY: optional
+	SANDBOX: z.enum(['on', 'off']).default('on'),
+	SANDBOX_DOCKER_HOST: z.string().default('unix:///var/run/hansi-sandbox/docker.sock'),
+	/** The container runtime for review sandboxes. Only change it for local development. */
+	SANDBOX_RUNTIME: z.string().default('runsc')
 });
 
 export type Env = z.infer<typeof envSchema>;

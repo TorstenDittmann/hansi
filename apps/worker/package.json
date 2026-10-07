@@ -21,7 +21,6 @@
 		"@hans/llm": "workspace:*",
 		"@hans/queue": "workspace:*",
 		"drizzle-orm": "catalog:",
-		"microsandbox": "0.7.7",
 		"pino": "^10.3.1"
 	}
 }

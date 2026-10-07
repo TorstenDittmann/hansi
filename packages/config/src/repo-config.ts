@@ -104,12 +104,14 @@ export const repoConfigSchema = z
 					.string()
 					.default('node:22')
 					.describe(
-						'OCI image of the VM each review runs commands in, e.g. "node:22", "python:3.12", or "golang:1.24". Hansi can install anything else it needs.'
+						'Container image each review runs commands in, e.g. "node:22", "python:3.12", or "golang:1.24". Hansi can install anything else it needs.'
 					),
 				setup: z
 					.string()
 					.default('')
-					.describe('Shell command that runs in the VM before the review starts, e.g. "npm ci".'),
+					.describe(
+						'Shell command that runs in the container before the review starts, e.g. "npm ci".'
+					),
 				network: z
 					.enum(['public', 'none'])
 					.default('public')
@@ -118,7 +120,7 @@ export const repoConfigSchema = z
 					)
 			})
 			.prefault({})
-			.describe('The VM each review runs commands in.')
+			.describe('The container each review runs commands in.')
 	})
 	.meta({ title: 'Hansi configuration', description: 'Configures Hansi for a repository.' });
 
