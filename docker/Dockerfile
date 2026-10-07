@@ -47,5 +47,7 @@ VOLUME /data
 EXPOSE 3000
 
 # HANS_MODE: all (default, web + worker), web, or worker.
+# The worker finishes a running review on SIGTERM. The orchestrator has to allow that
+# (compose sets a 30 minute stop grace) or it kills the container first.
 ENTRYPOINT ["tini", "--"]
 CMD ["bun", "docker/start.ts"]

@@ -93,6 +93,42 @@ describe('Queue', () => {
 		expect((await queue('w2').claim('review'))?.attempts).toBe(2);
 	});
 
+	test('abort finishes the in-flight job and leaves the next one queued', async () => {
+		const q = new Queue(db);
+		await q.send('review', { n: 1 });
+		await q.send('review', { n: 2 });
+
+		const seen: number[] = [];
+		const controller = new AbortController();
+		let release: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+
+		const done = q.work<{ n: number }>(
+			'review',
+			async (job) => {
+				seen.push(job.payload.n);
+				controller.abort();
+				await gate;
+			},
+			{ concurrency: 1, pollIntervalMs: 5, signal: controller.signal }
+		);
+
+		for (let i = 0; i < 50 && seen.length === 0; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		expect(seen).toEqual([1]);
+		release();
+		await done;
+
+		const rows = await db.select().from(schema.jobs);
+		const status = (n: number) =>
+			rows.find((row) => (row.payload as { n: number }).n === n)?.status;
+		expect(status(1)).toBe('completed');
+		expect(status(2)).toBe('queued');
+	});
+
 	test('work() processes jobs and stops on abort', async () => {
 		const q = new Queue(db);
 		await q.send('review', { n: 1 });
