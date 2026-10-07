@@ -1,9 +1,26 @@
 import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
-import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from './prompts';
+import {
+	buildReviewPrompt,
+	chatInstructions,
+	reviewerInstructions,
+	verifierInstructions
+} from './prompts';
 
 const withProfile = (profile: string) =>
 	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
+
+test('chat replies cite files as blob permalinks at the reviewed commit', () => {
+	const instructions = chatInstructions('en', true, {
+		repository: 'appwrite/appwrite',
+		headSha: '999c0d1'
+	});
+	expect(instructions).toContain(
+		'https://github.com/appwrite/appwrite/blob/999c0d1/<path>#L<start>-L<end>'
+	);
+	expect(instructions).toContain('a single line is `#L<start>`');
+	expect(instructions).toContain('call mark_finding');
+});
 
 test('balanced and strict review tests and docs; only strict adds naming, style, and maintainability', () => {
 	for (const profile of ['balanced', 'strict'] as const) {

@@ -41,6 +41,173 @@ function cell(text: string) {
 	return text.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
 }
 
+/** `owner/name` plus the commit file links should point at. */
+export interface FilePermalink {
+	repository: string;
+	headSha: string;
+}
+
+const MARKDOWN_LINK = /\[((?:\\.|[^\]])*)\]\(([^)\n]*)\)/g;
+
+/**
+ * Rewrites relative repo-file links to absolute blob permalinks at `sha`.
+ * Link targets with a scheme, a leading `/` or `#`, or a `..` segment stay as written.
+ * Fenced and inline code is left unchanged, so suggestion blocks and examples are not rewritten.
+ */
+export function absolutizeLinks(markdown: string, repository: string, sha: string): string {
+	if (!repository || !sha) return markdown;
+	MARKDOWN_LINK.lastIndex = 0;
+	const { text, restore } = maskCode(markdown);
+	const rewritten = text.replace(
+		MARKDOWN_LINK,
+		(full, label: string, rawDest: string, offset: number, source: string) => {
+			if (offset > 0 && source[offset - 1] === '!') return full;
+			const dest = parseLinkDestination(rawDest);
+			if (!dest) return full;
+			const url = repoFileUrl(dest.href, repository, sha);
+			if (!url) return full;
+			return `[${label}](${url}${dest.suffix})`;
+		}
+	);
+	return restore(rewritten);
+}
+
+function repoFileUrl(href: string, repository: string, sha: string): string | null {
+	let target = href.trim();
+	if (!target || target.startsWith('#') || target.startsWith('/') || target.startsWith('?')) {
+		return null;
+	}
+
+	const hashAt = target.indexOf('#');
+	const hash = hashAt === -1 ? '' : target.slice(hashAt);
+	target = hashAt === -1 ? target : target.slice(0, hashAt);
+	const queryAt = target.indexOf('?');
+	const query = queryAt === -1 ? '' : target.slice(queryAt);
+	let path = queryAt === -1 ? target : target.slice(0, queryAt);
+
+	if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return null;
+	path = path.replace(/^(?:\.\/)+/, '');
+	const segments = path.split('/').filter((segment) => segment !== '.');
+	if (segments.length === 0 || segments.some((segment) => segment === '' || segment === '..')) {
+		return null;
+	}
+
+	const encoded = segments.map(encodePathSegment).join('/');
+	return `https://github.com/${repository}/blob/${sha}/${encoded}${query}${hash}`;
+}
+
+/** `encodeURIComponent` leaves parentheses, which would close the markdown link. */
+function encodePathSegment(segment: string): string {
+	return encodeURIComponent(segment).replace(/[()]/g, (ch) => (ch === '(' ? '%28' : '%29'));
+}
+
+function parseLinkDestination(raw: string): { href: string; suffix: string } | null {
+	const trimmed = raw.trim();
+	if (!trimmed) return null;
+	if (trimmed.startsWith('<')) {
+		const end = trimmed.indexOf('>');
+		if (end === -1) return null;
+		return { href: trimmed.slice(1, end).trim(), suffix: trimmed.slice(end + 1) };
+	}
+	const ws = trimmed.search(/\s/);
+	if (ws === -1) return { href: trimmed, suffix: '' };
+	return { href: trimmed.slice(0, ws), suffix: trimmed.slice(ws) };
+}
+
+/** Hides fenced and inline code from the link rewriter, then puts it back. */
+function maskCode(markdown: string): { text: string; restore: (value: string) => string } {
+	const blocks: string[] = [];
+	const stash = (block: string) => {
+		const token = `\uE000${blocks.length}\uE000`;
+		blocks.push(block);
+		return token;
+	};
+
+	let text = '';
+	let i = 0;
+	while (i < markdown.length) {
+		const atLineStart = i === 0 || markdown[i - 1] === '\n';
+		if (atLineStart && (markdown[i] === '`' || markdown[i] === '~')) {
+			const fence = readFence(markdown, i);
+			if (fence) {
+				text += stash(fence);
+				i += fence.length;
+				continue;
+			}
+		}
+		if (markdown[i] === '`') {
+			const inline = readInlineCode(markdown, i);
+			if (inline) {
+				text += stash(inline);
+				i += inline.length;
+				continue;
+			}
+		}
+		text += markdown.charAt(i);
+		i++;
+	}
+
+	return {
+		text,
+		restore: (value) =>
+			value.replace(/\uE000(\d+)\uE000/g, (_, index) => blocks[Number(index)] ?? '')
+	};
+}
+
+function readFence(markdown: string, start: number): string | null {
+	const lineEnd = markdown.indexOf('\n', start);
+	if (lineEnd === -1) return null;
+	const openLine = markdown.slice(start, lineEnd);
+	const opened = /^(`{3,}|~{3,})/.exec(openLine);
+	const fence = opened?.[1];
+	if (!fence) return null;
+	const marker = fence[0];
+	const size = fence.length;
+	if (!marker || (marker === '`' && openLine.slice(size).includes('`'))) return null;
+
+	let i = lineEnd + 1;
+	const close = new RegExp(`^\\${marker}{${size},}[ \\t]*$`);
+	while (i < markdown.length) {
+		const end = markdown.indexOf('\n', i);
+		const line = end === -1 ? markdown.slice(i) : markdown.slice(i, end);
+		if (close.test(line)) return markdown.slice(start, end === -1 ? markdown.length : end);
+		if (end === -1) return null;
+		i = end + 1;
+	}
+	return null;
+}
+
+function readInlineCode(markdown: string, start: number): string | null {
+	const opened = /^`+/.exec(markdown.slice(start));
+	if (!opened) return null;
+	const ticks = opened[0];
+	let i = start + ticks.length;
+	while (i < markdown.length) {
+		const idx = markdown.indexOf(ticks, i);
+		if (idx === -1) return null;
+		if (markdown[idx + ticks.length] === '`') {
+			i = idx + ticks.length;
+			while (markdown[i] === '`') i++;
+			continue;
+		}
+		return markdown.slice(start, idx + ticks.length);
+	}
+	return null;
+}
+
+function withPermalinks<T extends { title: string; body?: string }>(
+	finding: T,
+	permalink: FilePermalink
+): T {
+	return {
+		...finding,
+		title: absolutizeLinks(finding.title, permalink.repository, permalink.headSha),
+		...(finding.body !== undefined
+			? { body: absolutizeLinks(finding.body, permalink.repository, permalink.headSha) }
+			: {})
+	};
+}
+
 /**
  * The instruction Greptile-style agents already follow. Kept verbatim so a copied prompt is
  * enough to fix the finding without any Hansi-specific skill.
@@ -119,11 +286,12 @@ function summaryAgentPrompt(issues: AgentIssue[]): string {
 }
 
 /** An inline review comment: title, explanation, optional suggestion, an agent prompt, then metadata. */
-export function formatFindingComment(finding: Finding): string {
+export function formatFindingComment(finding: Finding, permalink?: FilePermalink): string {
+	const linked = permalink ? withPermalinks(finding, permalink) : finding;
 	return [
-		findingText(finding),
-		agentPromptBlock('Prompt To Fix With AI', inlineAgentPrompt(finding)),
-		`<sub>${severityIcon[finding.severity]} ${severityName[finding.severity]} · ${finding.category} · Reply if this doesn't apply.</sub>`
+		findingText(linked),
+		agentPromptBlock('Prompt To Fix With AI', inlineAgentPrompt(linked)),
+		`<sub>${severityIcon[linked.severity]} ${severityName[linked.severity]} · ${linked.category} · Reply if this doesn't apply.</sub>`
 	].join('\n\n');
 }
 
@@ -161,6 +329,21 @@ export interface SummaryInput {
 
 /** The summary comment Hansi keeps up to date on every pull request. */
 export function formatSummaryComment(input: SummaryInput): string {
+	const permalink = { repository: input.repository, headSha: input.headSha };
+	const link = (text: string) => absolutizeLinks(text, permalink.repository, permalink.headSha);
+	input = {
+		...input,
+		summary: link(input.summary),
+		tierReason: link(input.tierReason),
+		latestChanges: input.latestChanges == null ? input.latestChanges : link(input.latestChanges),
+		approvalWithheld:
+			input.approvalWithheld == null ? input.approvalWithheld : link(input.approvalWithheld),
+		posted: input.posted.map((finding) => withPermalinks(finding, permalink)),
+		stillOpen: input.stillOpen.map((finding) => withPermalinks(finding, permalink)),
+		dropped: input.dropped.map((finding) => withPermalinks(finding, permalink)),
+		resolved: input.resolved.map((finding) => ({ ...finding, title: link(finding.title) })),
+		walkthrough: input.walkthrough.map((row) => ({ ...row, change: link(row.change) }))
+	};
 	const lineLink = (path: string, start: number, end = start) =>
 		`[\`${path}:${start}\`](https://github.com/${input.repository}/blob/${input.headSha}/${path}#L${start}${end > start ? `-L${end}` : ''})`;
 
