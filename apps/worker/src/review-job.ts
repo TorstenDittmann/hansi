@@ -24,6 +24,7 @@ import {
 import { schema, type Database } from '@hans/db';
 import {
 	completeCheckRun,
+	createIssueComment,
 	createReview,
 	getFailedChecks,
 	getFileContent,
@@ -52,6 +53,12 @@ import {
 	type RepositoryConnection,
 	type WorkerContext
 } from './shared';
+import {
+	mentionWantsSameHeadReply,
+	otherPullReviews,
+	sameHeadCoalesce,
+	sameHeadSkipSummary
+} from './same-head';
 import { shouldSubmitReview, submissionForCurrentHead } from './submit-review';
 
 type Review = typeof schema.reviews.$inferSelect;
@@ -161,6 +168,25 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					? `Base branch ${pr.baseRef} is not configured for reviews`
 					: null;
 	if (skipReason) return { status: 'skipped', summary: skipReason };
+
+	// A follow-up trigger (a mention while this commit is in review, or another event after it
+	// finished) would otherwise run next and submit again. The queue only replaces queued jobs.
+	// Skip when this commit is already covered. A new commit has a different head and still runs.
+	const covered = sameHeadCoalesce(pr.headSha, await otherPullReviews(db, review));
+	if (covered) {
+		const summary = sameHeadSkipSummary(covered, pr.headSha);
+		log.info({ reason: covered, headSha: pr.headSha }, 'commit already reviewed, skipping');
+		if (mentionWantsSameHeadReply(review.trigger)) {
+			await createIssueComment(octokit, ref, pr.number, summary).catch((error) =>
+				log.warn({ err: error }, 'could not reply that this commit is already reviewed')
+			);
+		}
+		await db
+			.update(schema.reviews)
+			.set({ headSha: pr.headSha })
+			.where(eq(schema.reviews.id, review.id));
+		return { status: 'skipped', summary };
+	}
 
 	const models = await loadModels(ctx, review.organizationId);
 
