@@ -35,6 +35,8 @@ export type SummaryExtras = {
 	incrementalFrom?: string;
 	/** Reviewable files that did not fit in the prompt. Null when the summary does not say so. */
 	filesTooLargeForPrompt?: { omitted: number; total: number } | null;
+	/** Footer sentence written when a merge did not change the pull request. */
+	scope?: string;
 };
 
 /**
@@ -50,13 +52,51 @@ export function summaryExtrasFromBody(body: string): SummaryExtras {
 	const staleLine = noteLines.find((line) => line.startsWith(stalePrefix));
 	const approvalWithheld = noteLines.find((line) => !line.startsWith(stalePrefix)) ?? null;
 	const incrementalFrom = body.match(/Reviewed the commits since <code>([0-9a-f]+)<\/code>/i)?.[1];
+	const scope = body.match(
+		/Merged <code>[^<]*<\/code> \(<code>[0-9a-f]+<\/code>\); no changes to this PR's code since <code>[0-9a-f]+<\/code>/
+	)?.[0];
 	return {
 		latestChanges,
 		approvalWithheld,
 		filesTooLargeForPrompt: filesTooLargeFromBody(body),
 		staleHead: staleLine ? staleLine.slice(stalePrefix.length) : null,
-		...(incrementalFrom ? { incrementalFrom } : {})
+		...(incrementalFrom ? { incrementalFrom } : {}),
+		...(scope ? { scope } : {})
 	};
+}
+
+/** Findings the settlement rebuild turns back into the summary comment. Dismissed ones are omitted. */
+export async function loadSummaryFindings(
+	db: Database,
+	input: { organizationId: string; repositoryId: number; pullNumber: number }
+): Promise<FindingRow[]> {
+	const { organizationId, repositoryId, pullNumber } = input;
+	return db
+		.select({
+			reviewId: schema.reviewFindings.reviewId,
+			path: schema.reviewFindings.path,
+			startLine: schema.reviewFindings.startLine,
+			endLine: schema.reviewFindings.endLine,
+			severity: schema.reviewFindings.severity,
+			category: schema.reviewFindings.category,
+			title: schema.reviewFindings.title,
+			body: schema.reviewFindings.body,
+			suggestion: schema.reviewFindings.suggestion,
+			status: schema.reviewFindings.status,
+			dropReason: schema.reviewFindings.dropReason
+		})
+		.from(schema.reviewFindings)
+		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
+		.where(
+			and(
+				eq(schema.reviews.repositoryId, repositoryId),
+				eq(schema.reviews.pullNumber, pullNumber),
+				eq(schema.reviews.status, 'completed'),
+				eq(schema.reviews.organizationId, organizationId),
+				ne(schema.reviewFindings.status, 'dismissed')
+			)
+		)
+		.limit(200);
 }
 
 /** Rebuilds the summary comment after a finding is resolved or dismissed in a thread. */
@@ -92,31 +132,7 @@ export async function refreshSummaryAfterSettlement(input: {
 		.limit(1);
 	if (!last?.summary || !last.verdict) return;
 
-	const rows = await db
-		.select({
-			reviewId: schema.reviewFindings.reviewId,
-			path: schema.reviewFindings.path,
-			startLine: schema.reviewFindings.startLine,
-			endLine: schema.reviewFindings.endLine,
-			severity: schema.reviewFindings.severity,
-			category: schema.reviewFindings.category,
-			title: schema.reviewFindings.title,
-			body: schema.reviewFindings.body,
-			suggestion: schema.reviewFindings.suggestion,
-			status: schema.reviewFindings.status,
-			dropReason: schema.reviewFindings.dropReason
-		})
-		.from(schema.reviewFindings)
-		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
-		.where(
-			and(
-				eq(schema.reviews.repositoryId, repositoryId),
-				eq(schema.reviews.pullNumber, pullNumber),
-				eq(schema.reviews.status, 'completed'),
-				ne(schema.reviewFindings.status, 'dismissed')
-			)
-		)
-		.limit(200);
+	const rows = await loadSummaryFindings(db, { organizationId, repositoryId, pullNumber });
 
 	const existing = await getMarkedComment(octokit, ref, pullNumber, SUMMARY_MARKER);
 	const extras = existing ? summaryExtrasFromBody(existing.body) : {};
@@ -216,6 +232,7 @@ export function summaryAfterSettlement(
 		filesTooLargeForPrompt: input.filesTooLargeForPrompt,
 		staleHead: input.staleHead,
 		incrementalFrom: input.incrementalFrom,
+		scope: input.scope,
 		detailsUrl: input.detailsUrl,
 		mention: input.mention
 	};

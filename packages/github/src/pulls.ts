@@ -22,6 +22,8 @@ export async function getPullRequest(octokit: Octokit, ref: RepoRef, pullNumber:
 		authorAssociation: data.author_association,
 		draft: data.draft ?? false,
 		state: data.state,
+		/** True once the pull request has been merged. Closed-without-merge stays false. */
+		merged: data.merged,
 		baseRef: data.base.ref,
 		baseSha: data.base.sha,
 		headSha: data.head.sha,

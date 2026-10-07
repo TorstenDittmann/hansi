@@ -2,6 +2,13 @@
 
 export interface ReviewJobPayload {
 	reviewId: string;
+	/**
+	 * The comment that asked for this review. Set for `@slug review` mentions, absent for
+	 * pushes and manual retries. The worker reacts on it and replies there when it skips.
+	 */
+	commentId?: number;
+	/** Whether that comment is on the pull request conversation or a review thread. */
+	commentKind?: 'issue' | 'review';
 }
 
 export interface ChatJobPayload {
