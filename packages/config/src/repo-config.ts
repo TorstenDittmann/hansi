@@ -97,7 +97,34 @@ export const repoConfigSchema = z
 			)
 			.default([])
 			.describe('Review instructions for specific files.'),
-		language: z.string().default('en').describe('Language for review comments, e.g. "en" or "de".')
+		language: z.string().default('en').describe('Language for review comments, e.g. "en" or "de".'),
+		sandbox: z
+			.object({
+				enabled: z
+					.boolean()
+					.default(false)
+					.describe(
+						'Let Hansi run commands, such as a single test, against the pull request in an isolated VM. Only works when the Hansi instance has a sandbox backend, and never for pull requests from people without write access.'
+					),
+				image: z
+					.string()
+					.default('node:22')
+					.describe(
+						'OCI image to run commands in, e.g. "node:22", "python:3.12", or "golang:1.24".'
+					),
+				setup: z
+					.string()
+					.default('')
+					.describe('Shell command that runs once before the review, e.g. "npm ci".'),
+				network: z
+					.enum(['public', 'none'])
+					.default('public')
+					.describe(
+						'public allows the public internet (for installing dependencies) but never private networks or cloud metadata. none removes the network.'
+					)
+			})
+			.prefault({})
+			.describe('Running code during reviews.')
 	})
 	.meta({ title: 'Hansi configuration', description: 'Configures Hansi for a repository.' });
 

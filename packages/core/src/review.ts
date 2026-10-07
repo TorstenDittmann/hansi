@@ -6,7 +6,7 @@ import {
 	type RepoConfig,
 	type Severity
 } from '@hans/config';
-import { generateText, isStepCount, tool, type LanguageModel } from 'ai';
+import { generateText, isStepCount, tool, type LanguageModel, type ToolSet } from 'ai';
 import { z } from 'zod';
 import {
 	commentableLines,
@@ -42,6 +42,7 @@ import {
 	verifierInstructions
 } from './prompts';
 import { presentReview } from './present';
+import { createSandboxTools, SANDBOX_GUIDANCE, type CommandRunner } from './sandbox';
 import { tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
 import { decideVerdict, openDefectApprovalReason, type Verdict } from './verdict';
@@ -101,6 +102,8 @@ export interface ReviewInput {
 	onModelError?: (failure: ModelFailure) => void | Promise<void>;
 	signal?: AbortSignal;
 	limits?: { maxDiffChars?: number; maxReviewSteps?: number; maxVerifySteps?: number };
+	/** Lets the review and verify passes run commands against the PR head. Off when absent. */
+	sandbox?: CommandRunner;
 }
 
 export interface LinkedIssue {
@@ -262,10 +265,13 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: [];
 	});
 
-	const tools = createRepoTools(input.repoDir, emit, {
-		token: input.trustedSource?.token,
-		baseRef: input.trustedSource?.ref
-	});
+	const tools: ToolSet = {
+		...createRepoTools(input.repoDir, emit, {
+			token: input.trustedSource?.token,
+			baseRef: input.trustedSource?.ref
+		}),
+		...(input.sandbox ? createSandboxTools(input.sandbox, emit) : {})
+	};
 	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
@@ -296,7 +302,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		generateText({
 			model: input.models.review.model,
 			...reasoningCallOptions(input.models.review),
-			instructions: reviewerInstructions(config),
+			instructions: withSandboxGuidance(reviewerInstructions(config), input),
 			prompt: cachedPrompt(input.models.review, prompt),
 			tools: { ...tools, submit_review: submitReview },
 			stopWhen: [isStepCount(limits.maxReviewSteps), validCall('submit_review')],
@@ -651,7 +657,7 @@ async function verifyFindings(
 	findings: Finding[],
 	{ files, rules }: { files: FileDiff[]; rules: string[] },
 	input: ReviewInput,
-	tools: ReturnType<typeof createRepoTools>,
+	tools: ToolSet,
 	maxSteps: number,
 	dropped: DroppedFinding[],
 	place: (finding: Finding) => Finding | null
@@ -686,7 +692,7 @@ async function verifyFindings(
 		generateText({
 			model: verifyModel.model,
 			...reasoningCallOptions(verifyModel),
-			instructions: verifierInstructions(input.config.reviews.profile),
+			instructions: withSandboxGuidance(verifierInstructions(input.config.reviews.profile), input),
 			prompt: cachedPrompt(
 				verifyModel,
 				[`Pull request: ${input.pullRequest.title}`, ...rules, ...listing].join('\n\n')
@@ -726,6 +732,10 @@ async function verifyFindings(
 		}
 		return [finding];
 	});
+}
+
+function withSandboxGuidance(instructions: string, input: ReviewInput): string {
+	return input.sandbox ? `${instructions}\n\n${SANDBOX_GUIDANCE}` : instructions;
 }
 
 async function codeContext(repoDir: string, path: string, start: number, end: number) {

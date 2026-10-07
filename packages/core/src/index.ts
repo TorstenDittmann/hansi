@@ -7,6 +7,7 @@ export * from './git';
 export * from './model-call';
 export * from './present';
 export * from './review';
+export * from './sandbox';
 export * from './suggestions';
 export * from './tier';
 export * from './verdict';

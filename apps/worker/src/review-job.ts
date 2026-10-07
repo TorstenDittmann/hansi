@@ -46,6 +46,7 @@ import type { Job, ReviewJobPayload } from '@hans/queue';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { REVIEW_FAILURE_SUMMARY } from './public-failure';
+import { openSandbox, sandboxSkipReason, type ReviewSandbox } from './sandbox';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -379,6 +380,12 @@ async function executeReview(
 				}
 			});
 
+			const sandbox = await reviewSandbox(ctx, connection, pr, config, {
+				repoDir,
+				name: `hansi-review-${review.id}`,
+				record,
+				log
+			});
 			const result = await runReview({
 				repoDir,
 				diff: reviewDiff,
@@ -397,8 +404,9 @@ async function executeReview(
 				models,
 				onEvent: record,
 				onModelCall: usage.record,
-				onModelError: usage.recordError
-			});
+				onModelError: usage.recordError,
+				sandbox: sandbox?.runner
+			}).finally(() => sandbox?.close());
 			await pendingWrites;
 			await db.update(schema.reviews).set(usage.totals).where(eq(schema.reviews.id, review.id));
 
@@ -600,6 +608,42 @@ async function loadPullRequestContext(
 		})
 	]);
 	return { linkedIssues, failedChecks };
+}
+
+/**
+ * A VM the review can run commands in, when the instance and the repository allow it. It boots
+ * on the first command, so reviews that never run one pay nothing. A VM that fails to start is
+ * recorded, and the model gets the error instead of a result.
+ */
+async function reviewSandbox(
+	ctx: WorkerContext,
+	{ octokit, ref }: RepositoryConnection,
+	pr: { author: string; authorAssociation: string },
+	config: RepoConfig,
+	options: { repoDir: string; name: string; record: (event: TraceEvent) => void; log: Logger }
+): Promise<ReviewSandbox | undefined> {
+	const { record, log } = options;
+	const skip =
+		sandboxSkipReason(ctx.env, config) ??
+		((await isTrustedAuthor(octokit, ref, pr)) ? null : 'the author does not have write access');
+	if (skip) {
+		if (config.sandbox.enabled) record({ type: 'sandbox.skipped', data: { reason: skip } });
+		return undefined;
+	}
+	let opened: Promise<ReviewSandbox> | undefined;
+	const open = () =>
+		(opened ??= openSandbox({ env: ctx.env, config, emit: record, ...options }).catch((error) => {
+			log.warn({ err: error }, 'sandbox failed to start');
+			record({ type: 'sandbox.failed', data: { error: (error as Error).message } });
+			throw new Error(`The sandbox failed to start: ${(error as Error).message}`);
+		}));
+	return {
+		runner: { run: async (command, options) => (await open()).runner.run(command, options) },
+		close: async () => {
+			const sandbox = await opened?.catch(() => undefined);
+			await sandbox?.close();
+		}
+	};
 }
 
 /**

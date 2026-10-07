@@ -55,7 +55,14 @@ export const envSchema = z.object({
 
 	WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
 	/** Directory for temporary repository checkouts. */
-	WORKER_WORKDIR: optional
+	WORKER_WORKDIR: optional,
+
+	/**
+	 * Where reviews run commands (`sandbox` in `.hansi.json`): `off`, `local` microsandbox VMs
+	 * (needs /dev/kvm), or microsandbox `cloud` with MSB_API_KEY.
+	 */
+	SANDBOX: z.enum(['off', 'local', 'cloud']).default('off'),
+	MSB_API_KEY: optional
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -73,3 +73,21 @@ test('the JSON Schema describes every field and makes all of them optional', () 
 		});
 	}
 });
+
+test('running code is off by default and opts in per repository', () => {
+	expect(defaultRepoConfig.sandbox).toEqual({
+		enabled: false,
+		image: 'node:22',
+		setup: '',
+		network: 'public'
+	});
+	const result = parseRepoConfig(
+		'{ "sandbox": { "enabled": true, "image": "python:3.12", "network": "none" } }'
+	);
+	expect(result.ok).toBe(true);
+	expect(result.config.sandbox).toMatchObject({
+		enabled: true,
+		image: 'python:3.12',
+		network: 'none'
+	});
+});
