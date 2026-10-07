@@ -135,7 +135,7 @@ Fetch the summary comment again (the command in step 2). Hansi edits that same c
 
 - **Tier**, from the heading `Tier S` through `Tier F`. **S** means ready to merge. Open findings cap it: a minor finding means at most **A**, a major one at most **B**, a critical one at most **D**. Informational notes do not lower it.
 - **Still open**, the section `Still open from earlier reviews`, and the findings table of comments posted on this review.
-- **Approval withheld**, a `> [!NOTE]` block. Hansi will not approve in that case (for example, the author has no write access). Clearing comments does not change that.
+- **Approval withheld**, a `> [!NOTE]` block. Hansi will not approve in that case. A note about an open bug finding clears once that finding is fixed or dismissed. A note about write access or an incomplete diff does not.
 
 Then list unresolved review threads and keep the ones whose first comment is from `<slug>[bot]`:
 
