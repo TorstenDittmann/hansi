@@ -119,6 +119,7 @@ describe('summaryExtrasFromBody', () => {
 		expect(summaryExtrasFromBody(body)).toEqual({
 			latestChanges: 'Adds pageCount.',
 			approvalWithheld: '@stranger does not have write access.',
+			filesTooLargeForPrompt: null,
 			incrementalFrom: 'abcdef1'
 		});
 	});
@@ -128,7 +129,32 @@ describe('summaryExtrasFromBody', () => {
 			summaryExtrasFromBody(formatSummaryComment(summaryAfterSettlement({ ...base, findings: [] })))
 		).toEqual({
 			latestChanges: null,
-			approvalWithheld: null
+			approvalWithheld: null,
+			filesTooLargeForPrompt: null
+		});
+	});
+
+	test('keeps the prompt-coverage note and unattached findings through a rebuild', () => {
+		const input = summaryAfterSettlement({
+			...base,
+			findings: [
+				{
+					...earlierFinding,
+					reviewId: 'review-2',
+					status: 'dropped',
+					dropReason: 'Not on a changed line',
+					title: 'Caption manifest mixes formats'
+				}
+			],
+			filesTooLargeForPrompt: { omitted: 3, total: 12 }
+		});
+		const body = formatSummaryComment(input);
+		expect(body).toContain('3 of 12 changed files were too large to include in full.');
+		expect(body).toContain("### Couldn't attach to a line");
+		expect(body).toContain('Caption manifest mixes formats');
+		expect(body).not.toContain('| Caption manifest mixes formats | Not on a changed line |');
+		expect(summaryExtrasFromBody(body)).toMatchObject({
+			filesTooLargeForPrompt: { omitted: 3, total: 12 }
 		});
 	});
 

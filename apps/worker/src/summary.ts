@@ -1,4 +1,5 @@
 import {
+	filesTooLargeFromBody,
 	formatSummaryComment,
 	standingFromOpenFindings,
 	SUMMARY_MARKER,
@@ -30,6 +31,8 @@ export type SummaryExtras = {
 	latestChanges?: string | null;
 	approvalWithheld?: string | null;
 	incrementalFrom?: string;
+	/** Reviewable files that did not fit in the prompt. Null when the summary does not say so. */
+	filesTooLargeForPrompt?: { omitted: number; total: number } | null;
 };
 
 /**
@@ -45,6 +48,7 @@ export function summaryExtrasFromBody(body: string): SummaryExtras {
 	return {
 		latestChanges,
 		approvalWithheld,
+		filesTooLargeForPrompt: filesTooLargeFromBody(body),
 		...(incrementalFrom ? { incrementalFrom } : {})
 	};
 }
@@ -203,6 +207,7 @@ export function summaryAfterSettlement(
 		walkthrough: input.walkthrough,
 		latestChanges: input.latestChanges,
 		approvalWithheld: input.approvalWithheld,
+		filesTooLargeForPrompt: input.filesTooLargeForPrompt,
 		incrementalFrom: input.incrementalFrom,
 		detailsUrl: input.detailsUrl,
 		mention: input.mention

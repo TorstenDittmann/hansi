@@ -181,6 +181,17 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 		pendingWrites = pendingWrites.then(() =>
 			db.insert(schema.reviewEvents).values({ reviewId: review.id, ...event })
 		);
+		if (event.type !== 'anchoring.suspicious') return;
+		const submitted = event.data?.submitted;
+		const unattached = event.data?.unattached;
+		log.warn({ submitted, unattached }, 'most findings could not be attached to a changed line');
+		// Counts only: the trace row holds paths and titles, which are the customer's code.
+		ctx.analytics.capture({
+			distinctId: `organization:${review.organizationId}`,
+			event: 'anchoring suspicious',
+			organizationId: review.organizationId,
+			properties: { submitted, unattached }
+		});
 	};
 	if (!configResult.ok) record({ type: 'config.invalid', data: { errors: configResult.errors } });
 
@@ -304,6 +315,7 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 					walkthrough: result.walkthrough,
 					latestChanges: result.latestChanges,
 					approvalWithheld: result.approvalWithheld,
+					filesTooLargeForPrompt: result.filesTooLargeForPrompt,
 					incrementalFrom,
 					detailsUrl,
 					mention: connection.mention

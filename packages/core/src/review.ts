@@ -29,6 +29,7 @@ import {
 	findingSchema,
 	isDuplicateFinding,
 	omittable,
+	UNATTACHED_DROP_REASON,
 	type DroppedFinding,
 	type Finding,
 	type PreviousFinding
@@ -150,6 +151,11 @@ export type ReviewResult =
 			latestChanges: string | null;
 			/** Why Hansi did not approve although it found nothing blocking. */
 			approvalWithheld: string | null;
+			/**
+			 * Reviewable changed files that did not fit in the prompt, out of how many were
+			 * considered. Null when every reviewable file was included.
+			 */
+			filesTooLargeForPrompt: { omitted: number; total: number } | null;
 	  };
 
 const submissionSchema = z.object({
@@ -317,7 +323,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const positioned = findings.flatMap((finding) => {
 		const placed = place(finding);
 		if (!placed) {
-			dropped.push({ ...finding, dropReason: 'Not on a changed line' });
+			dropped.push({ ...finding, dropReason: UNATTACHED_DROP_REASON });
 			return [];
 		}
 		if (isDuplicateFinding(placed, previousFindings)) {
@@ -326,6 +332,25 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		}
 		return [placed];
 	});
+
+	// A few findings on the wrong line is normal. Most of them missing is the large-PR failure
+	// mode where the posted review would otherwise hide what the model found.
+	const unattached = dropped.filter((finding) => finding.dropReason === UNATTACHED_DROP_REASON);
+	if (anchoringIsSuspicious(findings.length, unattached.length)) {
+		emit({
+			type: 'anchoring.suspicious',
+			data: {
+				submitted: findings.length,
+				unattached: unattached.length,
+				findings: unattached.map((finding) => ({
+					path: finding.path,
+					startLine: finding.startLine,
+					endLine: finding.endLine,
+					title: finding.title
+				}))
+			}
+		});
+	}
 
 	// 3. Severity threshold from `.hansi.json`.
 	const relevant = positioned.filter((finding) => {
@@ -443,8 +468,20 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			pullRequestFiles?.map((f) => f.path)
 		),
 		latestChanges: input.incrementalFrom ? (submitted.latest_changes ?? null) : null,
-		approvalWithheld
+		approvalWithheld,
+		filesTooLargeForPrompt:
+			shown.length < included.length
+				? { omitted: included.length - shown.length, total: included.length }
+				: null
 	};
+}
+
+/**
+ * At least half of the submitted findings, and at least two, could not be placed on a changed
+ * line. One miss is ordinary; this is the signal that anchoring itself failed.
+ */
+export function anchoringIsSuspicious(submitted: number, unattached: number): boolean {
+	return unattached >= 2 && unattached * 2 >= submitted;
 }
 
 /**

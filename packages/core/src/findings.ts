@@ -48,6 +48,12 @@ export interface DroppedFinding extends Finding {
 	dropReason: string;
 }
 
+/**
+ * A finding that could not be placed on a changed line. The summary lists these on their own;
+ * other drop reasons stay under "Filtered out".
+ */
+export const UNATTACHED_DROP_REASON = 'Not on a changed line';
+
 export function compareSeverity(a: { severity: Severity }, b: { severity: Severity }) {
 	return severities.indexOf(b.severity) - severities.indexOf(a.severity);
 }

@@ -1,5 +1,5 @@
 import type { Severity, Tier, Verdict } from '@hans/config';
-import type { DroppedFinding, Finding } from './findings';
+import { UNATTACHED_DROP_REASON, type DroppedFinding, type Finding } from './findings';
 import { tierMeaning } from './tier';
 
 /** Hidden marker that identifies Hansi's summary comment, so each review edits it in place. */
@@ -153,6 +153,11 @@ export interface SummaryInput {
 	latestChanges?: string | null;
 	/** Why Hansi did not approve although nothing is blocking. */
 	approvalWithheld?: string | null;
+	/**
+	 * Reviewable changed files that did not fit in the prompt, out of how many were considered.
+	 * Absent or null when every reviewable file was included.
+	 */
+	filesTooLargeForPrompt?: { omitted: number; total: number } | null;
 	incrementalFrom?: string;
 	detailsUrl?: string;
 	/** The bot's handle, e.g. `@hansi-codes`. */
@@ -170,6 +175,10 @@ export function formatSummaryComment(input: SummaryInput): string {
 	];
 	if (input.tierReason) parts.push(`> ${cell(input.tierReason)}`);
 	parts.push(input.summary);
+	const omitted = input.filesTooLargeForPrompt;
+	if (omitted && omitted.omitted > 0) {
+		parts.push(filesTooLargeSentence(omitted.omitted, omitted.total));
+	}
 	if (input.latestChanges) parts.push(`**Latest changes:** ${input.latestChanges}`);
 
 	parts.push(
@@ -191,6 +200,19 @@ export function formatSummaryComment(input: SummaryInput): string {
 					(f) =>
 						`| ${severityIcon[f.severity]} | ${cell(f.title)} | ${lineLink(f.path, f.startLine, f.endLine)} |`
 				)
+			].join('\n')
+		);
+	}
+
+	const unattached = input.dropped.filter((f) => f.dropReason === UNATTACHED_DROP_REASON);
+	if (unattached.length) {
+		parts.push(
+			[
+				"### Couldn't attach to a line",
+				'',
+				'These findings could not be placed on a changed line, so they were not posted as inline comments.',
+				'',
+				...unattached.map((f) => `- ${cell(f.title)} · ${lineLink(f.path, f.startLine, f.endLine)}`)
 			].join('\n')
 		);
 	}
@@ -246,17 +268,18 @@ export function formatSummaryComment(input: SummaryInput): string {
 			)
 		);
 	}
-	if (input.dropped.length) {
+	const filtered = input.dropped.filter((f) => f.dropReason !== UNATTACHED_DROP_REASON);
+	if (filtered.length) {
 		parts.push(
 			section(
 				'🔇 Filtered out',
-				input.dropped.length,
+				filtered.length,
 				[
 					'Findings Hansi considered but did not post.',
 					'',
 					'| Finding | Why |',
 					'| :-- | :-- |',
-					...input.dropped.map((f) => `| ${cell(f.title)} | ${cell(f.dropReason)} |`)
+					...filtered.map((f) => `| ${cell(f.title)} | ${cell(f.dropReason)} |`)
 				].join('\n')
 			)
 		);
@@ -270,6 +293,27 @@ export function formatSummaryComment(input: SummaryInput): string {
 		`---\n<sub>Reviewed ${scope}${details} · Comment <code>${input.mention} review</code> to re-run, or mention <code>${input.mention}</code> with a question.</sub>`
 	);
 	return parts.join('\n\n');
+}
+
+/** One sentence for the summary when some reviewable files did not fit in the prompt. */
+export function filesTooLargeSentence(omitted: number, total: number): string {
+	const verb = omitted === 1 ? 'was' : 'were';
+	return `${omitted} of ${total} changed files ${verb} too large to include in full.`;
+}
+
+const filesTooLargeLine =
+	/^(\d+) of (\d+) changed files (?:was|were) too large to include in full\.$/;
+
+/** Reads the coverage sentence back out of a summary comment. Null when it is not there. */
+export function filesTooLargeFromBody(body: string): { omitted: number; total: number } | null {
+	for (const line of body.split('\n')) {
+		const match = filesTooLargeLine.exec(line);
+		const omitted = match?.[1];
+		const total = match?.[2];
+		if (omitted === undefined || total === undefined) continue;
+		return { omitted: Number(omitted), total: Number(total) };
+	}
+	return null;
 }
 
 /** The body of the GitHub review itself; the summary comment carries the details. */
