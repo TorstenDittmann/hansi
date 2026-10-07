@@ -202,7 +202,7 @@ describe('runReview', () => {
 		expect(result.summary).toBe('Refactors divide.');
 		expect(result.posted.map((f) => f.title)).toEqual(['Division by zero']);
 		expect(Object.fromEntries(result.dropped.map((f) => [f.title, f.dropReason]))).toEqual({
-			'Outside diff': 'Not on a changed line',
+			'Outside diff': 'Lines outside the changed hunks',
 			Nit: 'Below minSeverity (minor)',
 			'False positive': 'Verifier: not a bug'
 		});
@@ -998,6 +998,270 @@ ${upstream}`;
 		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
 		expect(prompt).toContain('previous_summary');
 		expect(prompt).toContain('All files in the pull request: src/math.ts, bun.lock');
+	});
+
+	test('keeps findings in files the prompt budget left out', async () => {
+		// Same cutoff as a large pull request: the first file fills the budget, so src/ is listed
+		// but not shown. Those lines are still part of the diff and must be commentable.
+		const filler = `diff --git a/docs/filler.md b/docs/filler.md
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/docs/filler.md
+@@ -0,0 +1 @@
++${'x'.repeat(2_000)}
+`;
+		const late = `diff --git a/src/late.ts b/src/late.ts
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/src/late.ts
+@@ -0,0 +1,3 @@
++export function late(n: number) {
++  return lateOnly(n);
++}
+`;
+		const edited = `diff --git a/src/edited.ts b/src/edited.ts
+index 3333333..4444444 100644
+--- a/src/edited.ts
++++ b/src/edited.ts
+@@ -1,3 +1,3 @@
+ export function edited(n: number) {
+-  return n;
++  return n / 0;
+ }
+`;
+		const removed = `diff --git a/src/gone.ts b/src/gone.ts
+deleted file mode 100644
+index 5555555..0000000
+--- a/src/gone.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export const gone = true;
+`;
+		const lock = `diff --git a/bun.lock b/bun.lock
+index 6666666..7777777 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -1 +1 @@
+-old
++new
+`;
+		const big = [filler, late, edited, removed, lock].join('');
+		const parsed = parseUnifiedDiff(big);
+		const fillerFile = parsed.find((file) => file.path === 'docs/filler.md');
+		if (!fillerFile) throw new Error('expected the filler file');
+		const on = (path: string, startLine: number, title: string) => ({
+			path,
+			startLine,
+			endLine: startLine,
+			severity: 'major' as const,
+			category: 'bug' as const,
+			title,
+			body: 'Explained.'
+		});
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Adds a late bug.',
+					findings: [
+						on('docs/filler.md', 1, 'Filler note'),
+						on('src/late.ts', 2, 'Bug in a new file'),
+						on('src/edited.ts', 2, 'Divides by zero'),
+						on('src/late.ts', 40, 'Off the new file'),
+						on('src/nowhere.ts', 1, 'Invented file'),
+						on('bun.lock', 1, 'Lockfile note'),
+						on('src/gone.ts', 1, 'Deleted file')
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real' },
+						{ id: 'F3', keep: true, reason: 'real' }
+					]
+				})
+			]
+		});
+		await writeFile(
+			join(repoDir, 'src/late.ts'),
+			'export function late(n: number) {\n  return lateOnly(n);\n}\n'
+		);
+		await writeFile(
+			join(repoDir, 'src/edited.ts'),
+			'export function edited(n: number) {\n  return n / 0;\n}\n'
+		);
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const result = await runReview({
+			repoDir,
+			diff: big,
+			pullRequest: { title: 'Large', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			limits: { maxDiffChars: renderFileDiff(fillerFile).length },
+			onEvent: (event) => void events.push(event)
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.path, f.title])).toEqual([
+			['docs/filler.md', 'Filler note'],
+			['src/late.ts', 'Bug in a new file'],
+			['src/edited.ts', 'Divides by zero']
+		]);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			['Off the new file', 'Lines outside the changed hunks'],
+			['Invented file', 'File not in this pull request'],
+			['Lockfile note', 'File excluded by path filters'],
+			['Deleted file', 'File has no commentable lines']
+		]);
+		expect(events.find((event) => event.type === 'files.prompt')?.data).toEqual({
+			shown: ['docs/filler.md'],
+			notShown: ['src/late.ts', 'src/edited.ts']
+		});
+		const placements = events.filter((event) => event.type === 'finding.placement');
+		expect(placements.map((event) => event.data)).toEqual([
+			{
+				path: 'src/late.ts',
+				title: 'Bug in a new file',
+				startLine: 2,
+				endLine: 2,
+				kept: true,
+				code: 'not_shown',
+				reason: 'File not shown in the prompt',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/edited.ts',
+				title: 'Divides by zero',
+				startLine: 2,
+				endLine: 2,
+				kept: true,
+				code: 'not_shown',
+				reason: 'File not shown in the prompt',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/late.ts',
+				title: 'Off the new file',
+				startLine: 40,
+				endLine: 40,
+				kept: false,
+				code: 'outside_hunk',
+				reason: 'Lines outside the changed hunks',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/nowhere.ts',
+				title: 'Invented file',
+				startLine: 1,
+				endLine: 1,
+				kept: false,
+				code: 'not_in_diff',
+				reason: 'File not in this pull request',
+				shownInPrompt: false
+			},
+			{
+				path: 'bun.lock',
+				title: 'Lockfile note',
+				startLine: 1,
+				endLine: 1,
+				kept: false,
+				code: 'path_filtered',
+				reason: 'File excluded by path filters',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/gone.ts',
+				title: 'Deleted file',
+				startLine: 1,
+				endLine: 1,
+				kept: false,
+				code: 'no_commentable_lines',
+				reason: 'File has no commentable lines',
+				shownInPrompt: false
+			}
+		]);
+		// The review prompt omits the late files; the verifier still sees their diff.
+		const reviewPrompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+		expect(reviewPrompt).toContain('src/late.ts (too large to show)');
+		expect(reviewPrompt).not.toContain('return lateOnly(n)');
+		expect(reviewPrompt).not.toContain('return n / 0');
+		const verifyPrompt = JSON.stringify(model.doGenerateCalls[1]?.prompt);
+		expect(verifyPrompt).toContain('return lateOnly(n)');
+		expect(verifyPrompt).toContain('      -   return n;');
+		expect(verifyPrompt).toContain('    2 +   return n / 0;');
+	});
+
+	test('names why an incremental finding is not on the pull request diff', async () => {
+		const increment = `diff --git a/src/math.ts b/src/math.ts
+--- a/src/math.ts
++++ b/src/math.ts
+@@ -2,3 +2,3 @@
+   const result = a / b;
+-  return result;
++  return result ?? 0;
+ }
+@@ -49,3 +49,3 @@
+   const before = 1;
+-  const mid = 1;
++  const mid = 2;
+   const after = 1;
+diff --git a/src/upstream.ts b/src/upstream.ts
+--- a/src/upstream.ts
++++ b/src/upstream.ts
+@@ -1 +1 @@
+-export const upstream = 1;
++export const upstream = 2;
+`;
+		const on = (path: string, startLine: number, title: string) => ({
+			path,
+			startLine,
+			endLine: startLine,
+			severity: 'major' as const,
+			category: 'bug' as const,
+			title,
+			body: 'Explained.'
+		});
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Adds a fallback.',
+					findings: [
+						on('src/math.ts', 3, 'Nullish fallback hides NaN'),
+						on('src/math.ts', 22, 'Old hunk'),
+						on('src/math.ts', 50, 'Brought in from main'),
+						on('src/upstream.ts', 1, 'Upstream only')
+					]
+				}),
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: true, reason: 'real' }] })
+			]
+		});
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const result = await runReview({
+			repoDir,
+			diff: increment,
+			pullRequestDiff: diff,
+			incrementalFrom: 'abc1234def',
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			onEvent: (event) => void events.push(event)
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => f.title)).toEqual(['Nullish fallback hides NaN']);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			['Old hunk', 'Lines outside the changed hunks'],
+			['Brought in from main', 'Lines outside the pull request diff'],
+			['Upstream only', 'File not in this pull request']
+		]);
+		expect(
+			events
+				.filter((event) => event.type === 'finding.placement')
+				.map((event) => [event.data?.title, event.data?.code, event.data?.shownInPrompt])
+		).toEqual([
+			['Old hunk', 'outside_hunk', true],
+			['Brought in from main', 'outside_pr_diff', true],
+			['Upstream only', 'not_in_diff', false]
+		]);
 	});
 
 	test('incremental reviews skip when the increment has nothing reviewable', async () => {
