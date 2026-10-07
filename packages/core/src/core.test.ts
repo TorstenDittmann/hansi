@@ -9,7 +9,7 @@ import { filterFiles } from './filters';
 import { isDuplicateFinding, titleSimilarity } from './findings';
 import { formatFindingComment, formatSummaryComment } from './format';
 import type { ModelCall } from './model-call';
-import { placeFinding, runReview } from './review';
+import { anchoringIsSuspicious, placeFinding, runReview } from './review';
 import { resolveRepoPath } from './tools';
 
 const diff = `diff --git a/src/math.ts b/src/math.ts
@@ -206,6 +206,7 @@ describe('runReview', () => {
 			Nit: 'Below minSeverity (minor)',
 			'False positive': 'Verifier: not a bug'
 		});
+		expect(result.filesTooLargeForPrompt).toBeNull();
 		expect(calls.map((c) => [c.role, c.usage.inputTokens])).toEqual([
 			['review', 100],
 			['verify', 100]
@@ -949,6 +950,58 @@ ${upstream}`;
 		if (truncated.status !== 'completed') throw new Error('expected a completed review');
 		expect(truncated.verdict).toBe('comment');
 		expect(truncated.approvalWithheld).toContain('too large');
+		expect(truncated.filesTooLargeForPrompt).toEqual({ omitted: 1, total: 2 });
+		expect(trusted.filesTooLargeForPrompt).toBeNull();
+	});
+
+	test('warns when most findings cannot be attached to a changed line', async () => {
+		const off = (title: string) => ({
+			path: 'src/math.ts',
+			startLine: 999,
+			endLine: 999,
+			severity: 'major' as const,
+			category: 'bug' as const,
+			title,
+			body: 'Explained.'
+		});
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const review = (findings: ReturnType<typeof off>[]) => {
+			events.length = 0;
+			return runReview({
+				repoDir,
+				diff,
+				pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+				config: parseRepoConfig('').config,
+				models: {
+					review: {
+						model: new MockLanguageModelV4({
+							doGenerate: [toolCall('submit_review', { summary: 'Fine.', findings })]
+						}),
+						provider: 'mock',
+						modelId: 'mock-1'
+					}
+				},
+				onEvent: (event) => void events.push(event)
+			});
+		};
+
+		const suspicious = await review([off('First miss'), off('Second miss')]);
+		if (suspicious.status !== 'completed') throw new Error('expected a completed review');
+		// Unattached findings stay out of the verdict: nothing was posted, so this still approves.
+		expect(suspicious.posted).toEqual([]);
+		expect(suspicious.verdict).toBe('approve');
+		expect(events.find((event) => event.type === 'anchoring.suspicious')?.data).toEqual({
+			submitted: 2,
+			unattached: 2,
+			findings: [
+				{ path: 'src/math.ts', startLine: 999, endLine: 999, title: 'First miss' },
+				{ path: 'src/math.ts', startLine: 999, endLine: 999, title: 'Second miss' }
+			]
+		});
+
+		const single = await review([off('Only one')]);
+		if (single.status !== 'completed') throw new Error('expected a completed review');
+		expect(events.some((event) => event.type === 'anchoring.suspicious')).toBe(false);
 	});
 
 	test('incremental reviews keep a whole-PR summary', async () => {
@@ -1231,6 +1284,10 @@ index 6666666..7777777 100644
 			['Lockfile note', 'File excluded by path filters'],
 			['Deleted file', 'File has no commentable lines']
 		]);
+		expect(events.find((event) => event.type === 'anchoring.suspicious')?.data).toMatchObject({
+			submitted: 7,
+			unattached: 4
+		});
 		expect(events.find((event) => event.type === 'files.prompt')?.data).toEqual({
 			shown: ['docs/filler.md'],
 			notShown: ['src/late.ts', 'src/edited.ts']
@@ -1395,6 +1452,18 @@ diff --git a/src/upstream.ts b/src/upstream.ts
 			status: 'skipped',
 			reason: 'No new reviewable changes since the last review'
 		});
+	});
+});
+
+describe('anchoringIsSuspicious', () => {
+	test('flags when at least half of two or more findings cannot be attached', () => {
+		expect(anchoringIsSuspicious(0, 0)).toBe(false);
+		expect(anchoringIsSuspicious(1, 1)).toBe(false);
+		expect(anchoringIsSuspicious(2, 1)).toBe(false);
+		expect(anchoringIsSuspicious(5, 2)).toBe(false);
+		expect(anchoringIsSuspicious(4, 2)).toBe(true);
+		expect(anchoringIsSuspicious(2, 2)).toBe(true);
+		expect(anchoringIsSuspicious(8, 7)).toBe(true);
 	});
 });
 

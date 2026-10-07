@@ -48,6 +48,36 @@ export interface DroppedFinding extends Finding {
 	dropReason: string;
 }
 
+/**
+ * Why a finding could not be placed on a commentable line. The summary lists these under
+ * "Couldn't attach to a line"; other drop reasons stay under "Filtered out".
+ */
+export const PLACEMENT_FAILURES = {
+	outside_pr_diff: 'Lines outside the pull request diff',
+	outside_hunk: 'Lines outside the changed hunks',
+	not_in_diff: 'File not in this pull request',
+	path_filtered: 'File excluded by path filters',
+	no_commentable_lines: 'File has no commentable lines'
+} as const;
+
+export type PlacementFailureCode = keyof typeof PLACEMENT_FAILURES;
+
+/**
+ * Older reviews stored this single reason for every placement miss. Settlement still lists it
+ * with the placement failures above.
+ */
+export const UNATTACHED_DROP_REASON = 'Not on a changed line';
+
+const unattachedDropReasons = new Set<string>([
+	...Object.values(PLACEMENT_FAILURES),
+	UNATTACHED_DROP_REASON
+]);
+
+/** True when this drop is a placement miss, not a severity, duplicate, or verifier filter. */
+export function isUnattachedDrop(reason: string): boolean {
+	return unattachedDropReasons.has(reason);
+}
+
 export function compareSeverity(a: { severity: Severity }, b: { severity: Severity }) {
 	return severities.indexOf(b.severity) - severities.indexOf(a.severity);
 }

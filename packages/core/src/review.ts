@@ -28,7 +28,9 @@ import {
 	compareSeverity,
 	findingSchema,
 	isDuplicateFinding,
+	isUnattachedDrop,
 	omittable,
+	PLACEMENT_FAILURES,
 	type DroppedFinding,
 	type Finding,
 	type PreviousFinding
@@ -154,6 +156,11 @@ export type ReviewResult =
 			latestChanges: string | null;
 			/** Why Hansi did not approve although it found nothing blocking. */
 			approvalWithheld: string | null;
+			/**
+			 * Reviewable changed files that did not fit in the prompt, out of how many were
+			 * considered. Null when every reviewable file was included.
+			 */
+			filesTooLargeForPrompt: { omitted: number; total: number } | null;
 	  };
 
 const submissionSchema = z.object({
@@ -371,6 +378,25 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		return [placed];
 	});
 
+	// A few findings on the wrong line is normal. Most of them missing is the large-PR failure
+	// mode where the posted review would otherwise hide what the model found.
+	const unattached = dropped.filter((finding) => isUnattachedDrop(finding.dropReason));
+	if (anchoringIsSuspicious(findings.length, unattached.length)) {
+		emit({
+			type: 'anchoring.suspicious',
+			data: {
+				submitted: findings.length,
+				unattached: unattached.length,
+				findings: unattached.map((finding) => ({
+					path: finding.path,
+					startLine: finding.startLine,
+					endLine: finding.endLine,
+					title: finding.title
+				}))
+			}
+		});
+	}
+
 	// 3. Severity threshold from `.hansi.json`.
 	const relevant = positioned.filter((finding) => {
 		const keep = severityAtLeast(finding.severity, config.reviews.minSeverity);
@@ -480,8 +506,20 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			pullRequestFiles?.map((f) => f.path)
 		),
 		latestChanges: input.incrementalFrom ? (submitted.latest_changes ?? null) : null,
-		approvalWithheld
+		approvalWithheld,
+		filesTooLargeForPrompt:
+			shown.length < included.length
+				? { omitted: included.length - shown.length, total: included.length }
+				: null
 	};
+}
+
+/**
+ * At least half of the submitted findings, and at least two, could not be placed on a changed
+ * line. One miss is ordinary; this is the signal that anchoring itself failed.
+ */
+export function anchoringIsSuspicious(submitted: number, unattached: number): boolean {
+	return unattached >= 2 && unattached * 2 >= submitted;
 }
 
 /**
@@ -575,20 +613,21 @@ function placementFailure(
 	if (reviewFile) {
 		const onReview = placeFinding(finding, included);
 		if (onReview && pullRequestFiles && !placeFinding(onReview, pullRequestFiles)) {
-			return { reason: 'Lines outside the pull request diff', code: 'outside_pr_diff' };
+			return { reason: PLACEMENT_FAILURES.outside_pr_diff, code: 'outside_pr_diff' };
 		}
-		return { reason: 'Lines outside the changed hunks', code: 'outside_hunk' };
+		return { reason: PLACEMENT_FAILURES.outside_hunk, code: 'outside_hunk' };
 	}
 
 	const skipped = excluded.find((file) => file.path === finding.path);
 	if (skipped?.reason === 'not part of the pull request diff') {
-		return { reason: 'File not in this pull request', code: 'not_in_diff' };
+		return { reason: PLACEMENT_FAILURES.not_in_diff, code: 'not_in_diff' };
 	}
 	if (skipped && PATH_FILTER_REASONS.has(skipped.reason)) {
-		return { reason: 'File excluded by path filters', code: 'path_filtered' };
+		return { reason: PLACEMENT_FAILURES.path_filtered, code: 'path_filtered' };
 	}
-	if (skipped) return { reason: 'File has no commentable lines', code: 'no_commentable_lines' };
-	return { reason: 'File not in this pull request', code: 'not_in_diff' };
+	if (skipped)
+		return { reason: PLACEMENT_FAILURES.no_commentable_lines, code: 'no_commentable_lines' };
+	return { reason: PLACEMENT_FAILURES.not_in_diff, code: 'not_in_diff' };
 }
 
 /** Clamps a finding onto commentable lines of a single hunk, or returns null. */

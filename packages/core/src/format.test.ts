@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { UNATTACHED_DROP_REASON } from './findings';
 import {
 	absolutizeLinks,
+	filesTooLargeFromBody,
+	filesTooLargeSentence,
 	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
@@ -68,6 +71,67 @@ describe('formatSummaryComment', () => {
 		expect(body).not.toContain('Still open from earlier reviews');
 		expect(body).not.toContain('Latest changes');
 		expect(body).not.toContain('[!NOTE]');
+		expect(body).not.toContain("Couldn't attach to a line");
+		expect(body).not.toContain('too large to include in full');
+	});
+
+	test('lists findings that could not be attached, apart from other filters', () => {
+		const body = formatSummaryComment({
+			...base,
+			dropped: [
+				...base.dropped,
+				{
+					path: 'src/Videos/Captions.php',
+					startLine: 99,
+					endLine: 104,
+					severity: 'major',
+					category: 'bug',
+					title: 'Distinguish CMAF-DASH captions',
+					body: 'cmaf falls through to the HLS branch.',
+					dropReason: 'Lines outside the changed hunks'
+				},
+				{
+					path: 'src/old.php',
+					startLine: 4,
+					endLine: 4,
+					severity: 'minor',
+					category: 'bug',
+					title: 'Old placement miss',
+					body: 'Stored before placement reasons were split.',
+					dropReason: UNATTACHED_DROP_REASON
+				}
+			]
+		});
+		const section = body.slice(body.indexOf("### Couldn't attach to a line"));
+		expect(section).toContain(
+			'These findings could not be placed on a changed line, so they were not posted as inline comments.'
+		);
+		expect(section).toContain(
+			'- Distinguish CMAF-DASH captions · [`src/Videos/Captions.php:99`](https://github.com/acme/api/blob/abcdef1234567890/src/Videos/Captions.php#L99-L104) · Lines outside the changed hunks'
+		);
+		expect(section).toContain(
+			'- Old placement miss · [`src/old.php:4`](https://github.com/acme/api/blob/abcdef1234567890/src/old.php#L4) · Not on a changed line'
+		);
+		expect(section).not.toContain('cmaf falls through');
+		expect(body).toContain('| Naming | Below minSeverity (minor) |');
+		expect(body).not.toContain('| Distinguish CMAF-DASH captions |');
+		expect(body).not.toContain(`| Old placement miss | ${UNATTACHED_DROP_REASON} |`);
+	});
+
+	test('says how many changed files did not fit in the prompt', () => {
+		const plural = formatSummaryComment({
+			...base,
+			filesTooLargeForPrompt: { omitted: 3, total: 12 }
+		});
+		expect(plural).toContain(
+			'Adds pagination to the items endpoint.\n\n3 of 12 changed files were too large to include in full.'
+		);
+		expect(filesTooLargeFromBody(plural)).toEqual({ omitted: 3, total: 12 });
+
+		const singular = filesTooLargeSentence(1, 4);
+		expect(singular).toBe('1 of 4 changed files was too large to include in full.');
+		expect(filesTooLargeFromBody(singular)).toEqual({ omitted: 1, total: 4 });
+		expect(filesTooLargeFromBody('No coverage note here.')).toBeNull();
 	});
 
 	test('shows the latest changes and why approval was withheld', () => {
