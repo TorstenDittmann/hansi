@@ -34,16 +34,16 @@ The container listens on port 3000, stores its database in the `hans-data` volum
 database migrations on every start. Put a reverse proxy with TLS in front of it (Caddy, Traefik,
 nginx), then continue with [Set up the GitHub App](#set-up-the-github-app).
 
-Compose also starts `sandbox`, the Docker daemon each review runs its commands on: a fresh
-[gVisor](https://gvisor.dev) container per review, where Hansi can install dependencies and run
-tests. It needs a privileged container but no KVM, so it runs on ordinary cloud VMs. To review by
-reading code only, remove the service and set `SANDBOX=off`.
+Each review runs its commands, such as installing dependencies and running tests, in a
+[gVisor](https://gvisor.dev) sandbox inside the container. It needs no KVM, no Docker socket, and
+no privileges, but the container must run with `seccomp=unconfined` and `apparmor=unconfined`
+(see `docker/compose.yml`), because gVisor installs its own syscall filters. Without that, reviews
+read code only; set `SANDBOX=off` to turn sandboxes off.
 
-To use the prebuilt images instead of building them, replace the `build:` sections in
-`docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest` and
-`image: ghcr.io/torstendittmann/hansi-sandbox:latest`. New images are published for amd64 and arm64
-with every [release](https://github.com/TorstenDittmann/hansi/releases), tagged with its version
-(e.g. `1.2.3` and `1.2`) and `latest`.
+To use the prebuilt image instead of building it, replace the `build:` section in
+`docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
+for amd64 and arm64 with every [release](https://github.com/TorstenDittmann/hansi/releases), tagged
+with its version (e.g. `1.2.3` and `1.2`) and `latest`.
 
 ## Set up the GitHub App
 

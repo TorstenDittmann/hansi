@@ -58,13 +58,13 @@ export const envSchema = z.object({
 	WORKER_WORKDIR: optional,
 
 	/**
-	 * Every review runs commands in a fresh container under gVisor. `off` reviews by reading code
-	 * only. The Docker daemon is normally the `sandbox` sidecar in docker/compose.yml.
+	 * Every review runs commands in a gVisor sandbox inside this container. `off` reviews by
+	 * reading code only.
 	 */
 	SANDBOX: z.enum(['on', 'off']).default('on'),
-	SANDBOX_DOCKER_HOST: z.string().default('unix:///var/run/hansi-sandbox/docker.sock'),
-	/** The container runtime for review sandboxes. Only change it for local development. */
-	SANDBOX_RUNTIME: z.string().default('runsc')
+	/** The gVisor runtime binary and the sandbox's root filesystem; the Docker image ships both. */
+	SANDBOX_RUNSC: z.string().default('runsc'),
+	SANDBOX_ROOTFS: z.string().default('/opt/hansi-sandbox/rootfs')
 });
 
 export type Env = z.infer<typeof envSchema>;

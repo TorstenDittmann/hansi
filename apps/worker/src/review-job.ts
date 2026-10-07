@@ -611,8 +611,8 @@ async function loadPullRequestContext(
 }
 
 /**
- * The container this review runs commands in. It starts before the review. When it cannot start
- * (no sandbox daemon, a bad image), the failure is recorded and the review reads code only.
+ * The sandbox this review runs commands in. It starts before the review. When it cannot start,
+ * the failure is recorded and the review reads code only.
  */
 async function reviewSandbox(
 	ctx: WorkerContext,

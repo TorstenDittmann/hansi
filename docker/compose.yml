@@ -1,4 +1,4 @@
-# Web + worker share a libSQL file on a volume; reviews run commands on the `sandbox` daemon.
+# Single container: web + worker share a libSQL file on a volume.
 #   cp .env.example .env   # fill in the secrets
 #   docker compose -f docker/compose.yml up -d
 services:
@@ -15,21 +15,11 @@ services:
       - '3000:3000'
     volumes:
       - hans-data:/data
-      - sandbox-socket:/var/run/hansi-sandbox
-    depends_on:
-      - sandbox
-    restart: unless-stopped
-
-  # The Docker daemon each review runs its commands on, in a fresh gVisor container. Only this
-  # container is privileged; hansi reaches it through a socket on a shared volume, never over the
-  # network, and its containers can reach the public internet but not hansi or private ranges.
-  # Without it (or with SANDBOX=off), reviews only read code.
-  sandbox:
-    build: sandbox
-    privileged: true
-    volumes:
-      - sandbox-socket:/var/run/hansi-sandbox
-      - sandbox-data:/var/lib/docker
+    # Reviews run commands in gVisor sandboxes inside this container. runsc installs its own
+    # seccomp filters, which Docker's default profile blocks; the container stays unprivileged.
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
     restart: unless-stopped
 
   # To run web and worker as separate containers, they need a networked database instead of a
@@ -43,5 +33,3 @@ services:
 
 volumes:
   hans-data:
-  sandbox-socket:
-  sandbox-data:

@@ -100,27 +100,21 @@ export const repoConfigSchema = z
 		language: z.string().default('en').describe('Language for review comments, e.g. "en" or "de".'),
 		sandbox: z
 			.object({
-				image: z
-					.string()
-					.default('node:22')
-					.describe(
-						'Container image each review runs commands in, e.g. "node:22", "python:3.12", or "golang:1.24". Hansi can install anything else it needs.'
-					),
 				setup: z
 					.string()
 					.default('')
 					.describe(
-						'Shell command that runs in the container before the review starts, e.g. "npm ci".'
+						'Shell command that runs in the sandbox before the review starts, e.g. "npm ci".'
 					),
 				network: z
 					.enum(['public', 'none'])
 					.default('public')
 					.describe(
-						'public allows the public internet (for installing dependencies) but never private networks or cloud metadata. none removes the network.'
+						'public allows HTTP and HTTPS to public hosts (for installing dependencies), never private networks or cloud metadata. none removes the network.'
 					)
 			})
 			.prefault({})
-			.describe('The container each review runs commands in.')
+			.describe('The sandbox each review runs commands in.')
 	})
 	.meta({ title: 'Hansi configuration', description: 'Configures Hansi for a repository.' });
 

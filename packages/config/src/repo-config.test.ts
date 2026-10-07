@@ -74,9 +74,9 @@ test('the JSON Schema describes every field and makes all of them optional', () 
 	}
 });
 
-test('every review gets a VM; the repository can pick its image and network', () => {
-	expect(defaultRepoConfig.sandbox).toEqual({ image: 'node:22', setup: '', network: 'public' });
-	const result = parseRepoConfig('{ "sandbox": { "image": "python:3.12", "network": "none" } }');
+test('every review gets a sandbox; the repository can add setup or turn the network off', () => {
+	expect(defaultRepoConfig.sandbox).toEqual({ setup: '', network: 'public' });
+	const result = parseRepoConfig('{ "sandbox": { "setup": "npm ci", "network": "none" } }');
 	expect(result.ok).toBe(true);
-	expect(result.config.sandbox).toMatchObject({ image: 'python:3.12', network: 'none' });
+	expect(result.config.sandbox).toEqual({ setup: 'npm ci', network: 'none' });
 });
