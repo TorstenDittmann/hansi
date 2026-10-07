@@ -9,10 +9,11 @@ import {
 import {
 	absolutizeLinks,
 	checkoutPullRequest,
-	diffSince,
 	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
+	mergeSecondParent,
+	pullRequestDelta,
 	runReview,
 	SUMMARY_MARKER,
 	tierMeaning,
@@ -30,6 +31,7 @@ import {
 	getFileContent,
 	getInstallationToken,
 	getLinkedIssues,
+	getMarkedComment,
 	getPullRequest,
 	isTrustedAuthor,
 	listReviewComments,
@@ -59,6 +61,13 @@ import {
 	sameHeadCoalesce,
 	sameHeadSkipSummary
 } from './same-head';
+import {
+	carriedReview,
+	carriedSummaryInput,
+	decideIncrementalReview,
+	type IncrementalDecision
+} from './merge-only';
+import { loadSummaryFindings, summaryExtrasFromBody } from './summary';
 import { shouldSubmitReview, submissionForCurrentHead } from './submit-review';
 
 type Review = typeof schema.reviews.$inferSelect;
@@ -188,8 +197,6 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 		return { status: 'skipped', summary };
 	}
 
-	const models = await loadModels(ctx, review.organizationId);
-
 	await db
 		.update(schema.reviews)
 		.set({ status: 'running', headSha: pr.headSha, startedAt: new Date(), error: null })
@@ -222,12 +229,6 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 	};
 	if (!configResult.ok) record({ type: 'config.invalid', data: { errors: configResult.errors } });
 
-	const usage = await createUsageRecorder(ctx, {
-		organizationId: review.organizationId,
-		reviewId: review.id,
-		traceId: review.id
-	});
-
 	try {
 		return await withWorkdir(env, async (repoDir) => {
 			const token = await getInstallationToken(octokit);
@@ -240,22 +241,64 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				headSha: pr.headSha
 			});
 
-			// On a push, review only the new commits when the last reviewed head is still an ancestor.
+			// On a push, review only what this pull request itself changed since the last review.
+			// A merge of the base branch is not that: its files belong to main, not to the PR.
 			const history = await loadReviewHistory(db, review);
 			let reviewDiff = diff;
 			let incrementalFrom: string | undefined;
 			if (review.trigger === 'synchronize' && history.lastHeadSha) {
-				const since = await diffSince({
+				const delta = await pullRequestDelta({
 					dir: repoDir,
-					fromSha: history.lastHeadSha,
+					baseSha: pr.baseSha,
+					lastHead: history.lastHeadSha,
 					headSha: pr.headSha,
 					token
 				});
-				if (since !== null) {
-					reviewDiff = since;
+				const previous = carriedReview({
+					id: history.lastReviewId,
+					headSha: history.lastHeadSha,
+					summary: history.previousSummaryText,
+					verdict: history.previousVerdict,
+					tier: history.previousTier,
+					tierReason: history.previousTierReason,
+					walkthrough: history.previousWalkthrough
+				});
+				const mergedSha =
+					delta.status === 'unchanged'
+						? ((await mergeSecondParent(repoDir, pr.headSha)) ?? pr.baseSha)
+						: pr.baseSha;
+				const decision = decideIncrementalReview({
+					delta,
+					baseRef: pr.baseRef,
+					mergedSha,
+					sinceSha: history.lastHeadSha,
+					previous
+				});
+				log.info({ delta: delta.status, decision: decision.kind }, 'incremental review range');
+				if (decision.kind === 'merge-only') {
+					return finishMergeOnly({
+						db,
+						connection,
+						review,
+						pullNumber: pr.number,
+						checkRunId,
+						detailsUrl,
+						decision,
+						record,
+						flush: () => pendingWrites
+					});
+				}
+				if (decision.kind === 'incremental') {
+					reviewDiff = decision.diff;
 					incrementalFrom = history.lastHeadSha;
 				}
 			}
+			const models = await loadModels(ctx, review.organizationId);
+			const usage = await createUsageRecorder(ctx, {
+				organizationId: review.organizationId,
+				reviewId: review.id,
+				traceId: review.id
+			});
 			const learnings = await loadLearnings(db, review.organizationId, review.repositoryId);
 			const { linkedIssues, failedChecks } = await loadPullRequestContext(connection, pr, log);
 			record({
@@ -586,10 +629,13 @@ async function loadReviewHistory(db: Database, review: Review) {
 	);
 	const [last] = await db
 		.select({
+			id: schema.reviews.id,
 			headSha: schema.reviews.headSha,
 			summary: schema.reviews.summary,
 			walkthrough: schema.reviews.walkthrough,
-			tier: schema.reviews.tier
+			tier: schema.reviews.tier,
+			tierReason: schema.reviews.tierReason,
+			verdict: schema.reviews.verdict
 		})
 		.from(schema.reviews)
 		.where(samePullRequest)
@@ -625,8 +671,13 @@ async function loadReviewHistory(db: Database, review: Review) {
 	// Resolved findings may be reported again if the problem comes back; dismissed ones may not.
 	const findings = rows.filter((f) => f.status !== 'resolved');
 	return {
+		lastReviewId: last?.id,
 		lastHeadSha: last?.headSha || undefined,
 		previousTier: last?.tier,
+		previousTierReason: last?.tierReason ?? '',
+		previousVerdict: last?.verdict ?? undefined,
+		previousSummaryText: last?.summary ?? undefined,
+		previousWalkthrough: last?.walkthrough ?? [],
 		previousSummary:
 			last?.summary && last.walkthrough
 				? { summary: last.summary, walkthrough: last.walkthrough }
@@ -634,5 +685,82 @@ async function loadReviewHistory(db: Database, review: Review) {
 		lastDecisiveVerdict: decisive?.verdict ?? undefined,
 		findings,
 		open
+	};
+}
+
+/**
+ * A merge of the base branch that did not change the pull request. Keep the previous verdict,
+ * grade, findings, and walkthrough; rewrite only the summary footer. No model call, no new
+ * GitHub review. The check run repeats the previous conclusion.
+ */
+async function finishMergeOnly(input: {
+	db: Database;
+	connection: RepositoryConnection;
+	review: Review;
+	pullNumber: number;
+	checkRunId: number;
+	detailsUrl?: string;
+	decision: Extract<IncrementalDecision, { kind: 'merge-only' }>;
+	record: (event: TraceEvent) => void;
+	flush: () => Promise<unknown>;
+}): Promise<Outcome> {
+	const { connection, decision } = input;
+	const { octokit, ref } = connection;
+	const carried = decision.review;
+	input.record({
+		type: 'review.mode',
+		data: { incremental: true, mergeOnly: true, from: decision.sinceSha }
+	});
+	input.record({
+		type: 'review.merge_only',
+		data: {
+			baseRef: decision.baseRef,
+			mergedSha: decision.mergedSha,
+			since: decision.sinceSha,
+			verdict: carried.verdict,
+			tier: carried.tier,
+			submittedReview: false
+		}
+	});
+
+	const existing = await getMarkedComment(octokit, ref, input.pullNumber, SUMMARY_MARKER);
+	const findings = await loadSummaryFindings(input.db, {
+		organizationId: input.review.organizationId,
+		repositoryId: input.review.repositoryId,
+		pullNumber: input.review.pullNumber
+	});
+	const summaryInput = carriedSummaryInput({
+		repository: connection.repository.fullName,
+		mention: connection.mention,
+		detailsUrl: input.detailsUrl,
+		scope: decision.scope,
+		review: carried,
+		findings,
+		extras: existing ? summaryExtrasFromBody(existing.body) : {}
+	});
+	await upsertMarkedComment(
+		octokit,
+		ref,
+		input.pullNumber,
+		SUMMARY_MARKER,
+		formatSummaryComment(summaryInput)
+	);
+	await input.flush();
+	await completeCheckRun(octokit, ref, input.checkRunId, {
+		conclusion: checkConclusions[carried.verdict],
+		title: `Tier ${carried.tier}: ${tierMeaning[carried.tier]}`,
+		summary: absolutizeLinks(
+			[carried.tierReason, carried.summary].filter(Boolean).join('\n\n'),
+			connection.repository.fullName,
+			carried.headSha
+		)
+	});
+	return {
+		status: 'completed',
+		summary: carried.summary,
+		verdict: carried.verdict,
+		tier: carried.tier,
+		tierReason: carried.tierReason,
+		walkthrough: carried.walkthrough
 	};
 }
