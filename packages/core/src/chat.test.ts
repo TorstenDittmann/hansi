@@ -55,6 +55,8 @@ test('answers, remembers preferences, and records finding outcomes', async () =>
 	const roles: string[] = [];
 	const reply = await runChat({
 		repoDir,
+		repository: 'acme/api',
+		headSha: 'abc123def',
 		pullRequest: { title: 'Config', body: '', author: 'octocat' },
 		diff: '',
 		thread: [
@@ -71,6 +73,9 @@ test('answers, remembers preferences, and records finding outcomes', async () =>
 	});
 
 	expect(reply).toBe('Got it, I will skip those from now on.');
+	expect(JSON.stringify(model.doGenerateCalls)).toContain(
+		'https://github.com/acme/api/blob/abc123def/<path>#L<start>-L<end>'
+	);
 	expect(remembered).toEqual(['Do not flag magic numbers in config files.']);
 	expect(marked).toEqual(['dismissed']);
 	expect(roles).toEqual(['chat']);
@@ -87,6 +92,8 @@ test('mark_finding is only offered for threads about a finding', async () => {
 	});
 	await runChat({
 		repoDir,
+		repository: 'acme/api',
+		headSha: 'abc123def',
 		pullRequest: { title: 'x', body: '', author: 'octocat' },
 		diff: '',
 		thread: [{ author: 'octocat', body: '@hans what does a return?', fromBot: false }],
@@ -106,6 +113,8 @@ test('sends the chat model its reasoning effort', async () => {
 	});
 	await runChat({
 		repoDir,
+		repository: 'acme/api',
+		headSha: 'abc123def',
 		pullRequest: { title: 'x', body: '', author: 'octocat' },
 		diff: '',
 		thread: [{ author: 'octocat', body: '@hans what does a return?', fromBot: false }],

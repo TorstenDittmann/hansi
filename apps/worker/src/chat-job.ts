@@ -1,5 +1,5 @@
 import { parseRepoConfig, REPO_CONFIG_FILE } from '@hans/config';
-import { checkoutPullRequest, runChat, type ThreadMessage } from '@hans/core';
+import { absolutizeLinks, checkoutPullRequest, runChat, type ThreadMessage } from '@hans/core';
 import { schema } from '@hans/db';
 import {
 	acknowledgeComment,
@@ -40,22 +40,25 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		);
 	}
 
+	const files = { repository: connection.repository.fullName, headSha: '' };
 	const reply = async (body: string) => {
+		const text = files.headSha ? absolutizeLinks(body, files.repository, files.headSha) : body;
 		if (payload.kind === 'review') {
 			await replyToReviewComment(
 				octokit,
 				ref,
 				payload.pullNumber,
 				payload.rootCommentId ?? payload.commentId,
-				body
+				text
 			);
 		} else {
-			await createIssueComment(octokit, ref, payload.pullNumber, body);
+			await createIssueComment(octokit, ref, payload.pullNumber, text);
 		}
 	};
 
 	try {
 		const pr = await getPullRequest(octokit, ref, payload.pullNumber);
+		files.headSha = pr.headSha;
 		// Settings and guidelines come from the base branch, which the PR author cannot change.
 		const { config } = parseRepoConfig(
 			await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.baseSha)
@@ -116,6 +119,8 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 			});
 			return runChat({
 				repoDir,
+				repository: files.repository,
+				headSha: pr.headSha,
 				pullRequest: pr,
 				diff,
 				thread,

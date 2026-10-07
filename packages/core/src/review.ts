@@ -28,7 +28,9 @@ import {
 	compareSeverity,
 	findingSchema,
 	isDuplicateFinding,
+	isUnattachedDrop,
 	omittable,
+	PLACEMENT_FAILURES,
 	type DroppedFinding,
 	type Finding,
 	type PreviousFinding
@@ -39,7 +41,8 @@ import {
 	reviewRules,
 	verifierInstructions
 } from './prompts';
-import { finalTier, tierCap, tiers, type Tier } from './tier';
+import { presentReview } from './present';
+import { tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
 import { decideVerdict, openDefectApprovalReason, type Verdict } from './verdict';
 import {
@@ -153,6 +156,11 @@ export type ReviewResult =
 			latestChanges: string | null;
 			/** Why Hansi did not approve although it found nothing blocking. */
 			approvalWithheld: string | null;
+			/**
+			 * Reviewable changed files that did not fit in the prompt, out of how many were
+			 * considered. Null when every reviewable file was included.
+			 */
+			filesTooLargeForPrompt: { omitted: number; total: number } | null;
 	  };
 
 const submissionSchema = z.object({
@@ -236,6 +244,16 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		shown.push(file);
 	}
 	if (shown.length === 0) return { status: 'skipped', reason: 'Diff too large to review' };
+	// `shown` is only the prompt. Placement uses `included`, so record which files the model
+	// had to read with tools instead of seeing in the diff.
+	const omittedFromPrompt = notShown.filter((file) => file.reason === 'too large to show');
+	emit({
+		type: 'files.prompt',
+		data: {
+			shown: shown.map((file) => file.path),
+			notShown: omittedFromPrompt.map((file) => file.path)
+		}
+	});
 
 	const pathInstructions = config.pathInstructions.flatMap((entry) => {
 		const glob = new Bun.Glob(entry.path);
@@ -310,18 +328,48 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		data: { findings: findings.length, resolved, tier: submitted.tier ?? null }
 	});
 
-	// 2. Validate positions: GitHub rejects comments outside the PR diff. For incremental reviews
-	//    the finding must be on a newly changed line *and* on a line of the full PR diff.
+	// 2. Validate positions against every reviewable file, not only the ones that fit in the
+	//    prompt. GitHub rejects comments outside the pull request diff. For incremental reviews
+	//    the finding must be on a newly changed line and on a line of the full pull request diff.
 	const dropped: DroppedFinding[] = [];
+	const shownPaths = new Set(shown.map((file) => file.path));
 	const place = (finding: Finding) => {
-		const placed = placeFinding(finding, shown);
+		const placed = placeFinding(finding, included);
 		return placed && pullRequestFiles ? placeFinding(placed, pullRequestFiles) : placed;
+	};
+	const recordPlacement = (
+		finding: Finding,
+		outcome: { kept: boolean; code: string; reason: string }
+	) => {
+		emit({
+			type: 'finding.placement',
+			data: {
+				path: finding.path,
+				title: finding.title,
+				startLine: finding.startLine,
+				endLine: finding.endLine,
+				kept: outcome.kept,
+				code: outcome.code,
+				reason: outcome.reason,
+				shownInPrompt: shownPaths.has(finding.path)
+			}
+		});
 	};
 	const positioned = findings.flatMap((finding) => {
 		const placed = place(finding);
 		if (!placed) {
-			dropped.push({ ...finding, dropReason: 'Not on a changed line' });
+			const failure = placementFailure(finding, included, excluded, pullRequestFiles);
+			dropped.push({ ...finding, dropReason: failure.reason });
+			recordPlacement(finding, { kept: false, ...failure });
 			return [];
+		}
+		// The file was past the prompt budget. Keep the finding; say so in the trace.
+		if (!shownPaths.has(placed.path)) {
+			recordPlacement(placed, {
+				kept: true,
+				code: 'not_shown',
+				reason: 'File not shown in the prompt'
+			});
 		}
 		if (isDuplicateFinding(placed, previousFindings)) {
 			dropped.push({ ...placed, dropReason: 'Already reported in an earlier review' });
@@ -329,6 +377,25 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		}
 		return [placed];
 	});
+
+	// A few findings on the wrong line is normal. Most of them missing is the large-PR failure
+	// mode where the posted review would otherwise hide what the model found.
+	const unattached = dropped.filter((finding) => isUnattachedDrop(finding.dropReason));
+	if (anchoringIsSuspicious(findings.length, unattached.length)) {
+		emit({
+			type: 'anchoring.suspicious',
+			data: {
+				submitted: findings.length,
+				unattached: unattached.length,
+				findings: unattached.map((finding) => ({
+					path: finding.path,
+					startLine: finding.startLine,
+					endLine: finding.endLine,
+					title: finding.title
+				}))
+			}
+		});
+	}
 
 	// 3. Severity threshold from `.hansi.json`.
 	const relevant = positioned.filter((finding) => {
@@ -355,7 +422,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const verified = distinct.length
 		? await verifyFindings(
 				distinct,
-				{ files: shown, rules },
+				{ files: included, rules },
 				input,
 				tools,
 				limits.maxVerifySteps,
@@ -387,7 +454,10 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		dropped.push({ ...finding, dropReason: `Over maxComments (${config.reviews.maxComments})` });
 	}
 
-	// 8. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
+	// 8. Verdict from findings that will be shown. The model wrote the summary and the grade in
+	// the same call as its findings, before any of them were filtered or left unattached, so
+	// reconcile both against what was actually posted or is still open. Placement misses stay in
+	// `dropped` for that reconciliation; the summary comment lists them on their own.
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
@@ -400,24 +470,15 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 				(truncated ? 'Part of the diff was too large to review, so Hansi did not approve.' : null))
 			: openDefectApprovalReason([...posted, ...stillOpen], config);
 	if (verdict === 'approve' && approvalWithheld) verdict = 'comment';
-	const open = [...posted, ...stillOpen].sort(compareSeverity);
-	// The model grades before its findings are verified and placed, so its grade may rest on
-	// findings that were dropped. With nothing open, the PR is mergeable: S. Otherwise the model's
-	// grade stands, but never better than the open findings allow. When approving, also soften a
-	// model grade of B+ to A first — "needs changes" would contradict the verdict — then still
-	// apply the cap so an open major (e.g. with requestChanges: critical) keeps the grade at B.
-	const cap = open.length ? tierCap(open.map((f) => f.severity)) : 'S';
-	let modelTier = submitted.tier;
-	if (verdict === 'approve' && modelTier && tiers.indexOf(modelTier) > tiers.indexOf('A')) {
-		modelTier = 'A';
-	}
-	const tier = open.length ? finalTier(modelTier, cap) : 'S';
-	const limitedBy = open.length && tier !== submitted.tier ? open[0] : undefined;
-	const tierReason = limitedBy
-		? `Limited by an open ${limitedBy.severity} finding: ${limitedBy.title}`
-		: tier === submitted.tier
-			? (submitted.tier_reason ?? '')
-			: '';
+	const presented = presentReview({
+		summary,
+		modelTier: submitted.tier,
+		modelTierReason: submitted.tier_reason,
+		verdict,
+		posted,
+		stillOpen,
+		dropped
+	});
 
 	emit({
 		type: 'review.completed',
@@ -426,28 +487,40 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			dropped: dropped.length,
 			stillOpen: stillOpen.length,
 			verdict,
-			tier
+			tier: presented.tier
 		}
 	});
 	return {
 		status: 'completed',
-		summary,
+		summary: presented.summary,
 		reviewedFiles: shown.map((f) => f.path),
 		posted,
 		dropped,
 		resolved,
 		stillOpenBlocking,
 		verdict,
-		tier,
-		tierReason,
+		tier: presented.tier,
+		tierReason: presented.tierReason,
 		walkthrough: mergeWalkthrough(
 			submitted.walkthrough,
 			input.incrementalFrom ? input.previousSummary?.walkthrough : undefined,
 			pullRequestFiles?.map((f) => f.path)
 		),
 		latestChanges: input.incrementalFrom ? (submitted.latest_changes ?? null) : null,
-		approvalWithheld
+		approvalWithheld,
+		filesTooLargeForPrompt:
+			shown.length < included.length
+				? { omitted: included.length - shown.length, total: included.length }
+				: null
 	};
+}
+
+/**
+ * At least half of the submitted findings, and at least two, could not be placed on a changed
+ * line. One miss is ordinary; this is the signal that anchoring itself failed.
+ */
+export function anchoringIsSuspicious(submitted: number, unattached: number): boolean {
+	return unattached >= 2 && unattached * 2 >= submitted;
 }
 
 /**
@@ -523,6 +596,39 @@ function relocate(
 	});
 	// A suggestion replaces exactly the lines it was written for.
 	return withoutSuggestion(placed);
+}
+
+const PATH_FILTER_REASONS = new Set(['path filter', 'not in path filters', 'ignored by default']);
+
+/**
+ * Why a finding could not be anchored. The prompt only shows files that fit in the character
+ * budget; that is not a reason to drop a finding whose lines are in the diff.
+ */
+function placementFailure(
+	finding: Finding,
+	included: FileDiff[],
+	excluded: { path: string; reason: string }[],
+	pullRequestFiles: FileDiff[] | null
+): { reason: string; code: string } {
+	const reviewFile = included.find((file) => file.path === finding.path);
+	if (reviewFile) {
+		const onReview = placeFinding(finding, included);
+		if (onReview && pullRequestFiles && !placeFinding(onReview, pullRequestFiles)) {
+			return { reason: PLACEMENT_FAILURES.outside_pr_diff, code: 'outside_pr_diff' };
+		}
+		return { reason: PLACEMENT_FAILURES.outside_hunk, code: 'outside_hunk' };
+	}
+
+	const skipped = excluded.find((file) => file.path === finding.path);
+	if (skipped?.reason === 'not part of the pull request diff') {
+		return { reason: PLACEMENT_FAILURES.not_in_diff, code: 'not_in_diff' };
+	}
+	if (skipped && PATH_FILTER_REASONS.has(skipped.reason)) {
+		return { reason: PLACEMENT_FAILURES.path_filtered, code: 'path_filtered' };
+	}
+	if (skipped)
+		return { reason: PLACEMENT_FAILURES.no_commentable_lines, code: 'no_commentable_lines' };
+	return { reason: PLACEMENT_FAILURES.not_in_diff, code: 'not_in_diff' };
 }
 
 /** Clamps a finding onto commentable lines of a single hunk, or returns null. */

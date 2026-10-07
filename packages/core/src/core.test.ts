@@ -7,9 +7,9 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { commentableLines, parseUnifiedDiff, renderDiffExcerpt, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { isDuplicateFinding, titleSimilarity } from './findings';
-import { formatFindingComment } from './format';
+import { formatFindingComment, formatSummaryComment } from './format';
 import type { ModelCall } from './model-call';
-import { placeFinding, runReview } from './review';
+import { anchoringIsSuspicious, placeFinding, runReview } from './review';
 import { resolveRepoPath } from './tools';
 
 const diff = `diff --git a/src/math.ts b/src/math.ts
@@ -202,10 +202,11 @@ describe('runReview', () => {
 		expect(result.summary).toBe('Refactors divide.');
 		expect(result.posted.map((f) => f.title)).toEqual(['Division by zero']);
 		expect(Object.fromEntries(result.dropped.map((f) => [f.title, f.dropReason]))).toEqual({
-			'Outside diff': 'Not on a changed line',
+			'Outside diff': 'Lines outside the changed hunks',
 			Nit: 'Below minSeverity (minor)',
 			'False positive': 'Verifier: not a bug'
 		});
+		expect(result.filesTooLargeForPrompt).toBeNull();
 		expect(calls.map((c) => [c.role, c.usage.inputTokens])).toEqual([
 			['review', 100],
 			['verify', 100]
@@ -949,6 +950,58 @@ ${upstream}`;
 		if (truncated.status !== 'completed') throw new Error('expected a completed review');
 		expect(truncated.verdict).toBe('comment');
 		expect(truncated.approvalWithheld).toContain('too large');
+		expect(truncated.filesTooLargeForPrompt).toEqual({ omitted: 1, total: 2 });
+		expect(trusted.filesTooLargeForPrompt).toBeNull();
+	});
+
+	test('warns when most findings cannot be attached to a changed line', async () => {
+		const off = (title: string) => ({
+			path: 'src/math.ts',
+			startLine: 999,
+			endLine: 999,
+			severity: 'major' as const,
+			category: 'bug' as const,
+			title,
+			body: 'Explained.'
+		});
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const review = (findings: ReturnType<typeof off>[]) => {
+			events.length = 0;
+			return runReview({
+				repoDir,
+				diff,
+				pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+				config: parseRepoConfig('').config,
+				models: {
+					review: {
+						model: new MockLanguageModelV4({
+							doGenerate: [toolCall('submit_review', { summary: 'Fine.', findings })]
+						}),
+						provider: 'mock',
+						modelId: 'mock-1'
+					}
+				},
+				onEvent: (event) => void events.push(event)
+			});
+		};
+
+		const suspicious = await review([off('First miss'), off('Second miss')]);
+		if (suspicious.status !== 'completed') throw new Error('expected a completed review');
+		// Unattached findings stay out of the verdict: nothing was posted, so this still approves.
+		expect(suspicious.posted).toEqual([]);
+		expect(suspicious.verdict).toBe('approve');
+		expect(events.find((event) => event.type === 'anchoring.suspicious')?.data).toEqual({
+			submitted: 2,
+			unattached: 2,
+			findings: [
+				{ path: 'src/math.ts', startLine: 999, endLine: 999, title: 'First miss' },
+				{ path: 'src/math.ts', startLine: 999, endLine: 999, title: 'Second miss' }
+			]
+		});
+
+		const single = await review([off('Only one')]);
+		if (single.status !== 'completed') throw new Error('expected a completed review');
+		expect(events.some((event) => event.type === 'anchoring.suspicious')).toBe(false);
 	});
 
 	test('incremental reviews keep a whole-PR summary', async () => {
@@ -1000,6 +1053,451 @@ ${upstream}`;
 		expect(prompt).toContain('All files in the pull request: src/math.ts, bun.lock');
 	});
 
+	test('a filtered finding does not set the headline or pull the grade down', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary:
+						'Adds a Videos service. Child-resource mutations bypass write authorization, and several playback and build paths need fixes.',
+					findings: [
+						finding(2, 'Division by zero'),
+						{
+							...finding(999, 'Require mutation permission before changing video children'),
+							severity: 'critical',
+							category: 'security'
+						}
+					],
+					tier: 'D',
+					tier_reason: 'Child-resource mutations bypass write authorization.'
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [{ id: 'F1', keep: true, reason: 'b can be 0' }]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Videos', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => f.title)).toEqual(['Division by zero']);
+		expect(result.dropped.map((f) => f.title)).toContain(
+			'Require mutation permission before changing video children'
+		);
+		// The posted major caps the grade at B. The model's D came from the filtered finding.
+		expect(result.verdict).toBe('request_changes');
+		expect(result.tier).toBe('B');
+		expect(result.tierReason).toBe('Limited by an open major finding: Division by zero');
+		expect(result.summary).toBe('Adds a Videos service.');
+
+		const body = formatSummaryComment({
+			repository: 'acme/api',
+			headSha: 'abcdef1234567890',
+			summary: result.summary,
+			tier: result.tier,
+			tierReason: result.tierReason,
+			verdict: result.verdict,
+			posted: result.posted,
+			resolved: [],
+			stillOpen: [],
+			dropped: result.dropped,
+			walkthrough: [],
+			mention: '@hansi-codes'
+		});
+		const title = 'Require mutation permission before changing video children';
+		const attachAt = body.indexOf("### Couldn't attach to a line");
+		expect(attachAt).toBeGreaterThan(0);
+		// The unattached list sits above the collapsed sections. It is not the headline.
+		const headline = body.slice(0, attachAt);
+		expect(headline).toContain('Tier B');
+		expect(headline).toContain('Division by zero');
+		expect(headline.toLowerCase()).not.toContain('bypass');
+		expect(headline).not.toContain('Require mutation permission');
+		expect(body.split(title).length - 1).toBe(1);
+	});
+
+	test('an unattached finding does not set the headline or the grade', async () => {
+		const title = 'Require mutation permission before changing video children';
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Child-resource mutations bypass write authorization.',
+					findings: [{ ...finding(999, title), severity: 'critical', category: 'security' }],
+					tier: 'D',
+					tier_reason: 'Child-resource mutations bypass write authorization.'
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Videos', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted).toEqual([]);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			[title, 'Lines outside the changed hunks']
+		]);
+		// Nothing was posted, so the model's D and its reason do not stand.
+		expect(result.verdict).toBe('approve');
+		expect(result.tier).toBe('S');
+		expect(result.tierReason).toBe('');
+		expect(result.summary).toBe('Reviewed the changes in this pull request.');
+
+		const body = formatSummaryComment({
+			repository: 'acme/api',
+			headSha: 'abcdef1234567890',
+			summary: result.summary,
+			tier: result.tier,
+			tierReason: result.tierReason,
+			verdict: result.verdict,
+			posted: result.posted,
+			resolved: [],
+			stillOpen: [],
+			dropped: result.dropped,
+			walkthrough: [],
+			mention: '@hansi-codes'
+		});
+		const attachAt = body.indexOf("### Couldn't attach to a line");
+		expect(attachAt).toBeGreaterThan(0);
+		const headline = body.slice(0, attachAt);
+		expect(headline).toContain('Tier S');
+		expect(headline.toLowerCase()).not.toContain('bypass');
+		expect(headline).not.toContain(title);
+		expect(body.slice(attachAt)).toContain(title);
+		expect(body.split(title).length - 1).toBe(1);
+		expect(body).not.toContain('Filtered out');
+	});
+
+	test('a filtered finding does not lead the summary when an earlier finding is still open', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary:
+						'The new mail error path discards failed jobs rather than retaining them for diagnosis or recovery, and the previously reported prohibited worker regression remains present.',
+					findings: [
+						{
+							...finding(
+								999,
+								'Retain thrown mail failures instead of acknowledging them as success'
+							),
+							severity: 'major'
+						}
+					],
+					tier: 'D',
+					tier_reason: 'The new mail error path discards failed jobs.'
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			openFindings: [
+				{
+					id: 'f-worker',
+					path: 'src/math.ts',
+					startLine: 2,
+					endLine: 2,
+					severity: 'minor',
+					category: 'bug',
+					title: 'Prohibited worker regression',
+					body: 'The worker still accepts the old payload.'
+				}
+			],
+			pullRequest: { title: 'Mail', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted).toEqual([]);
+		// The filtered major is not posted, so it does not block or explain the verdict.
+		// The still-open minor bug does withhold approval.
+		expect(result.verdict).toBe('comment');
+		expect(result.approvalWithheld).toBe(
+			'Not approving while a bug finding is open: Prohibited worker regression'
+		);
+		expect(result.tier).toBe('A');
+		expect(result.tierReason).toBe(
+			'Limited by an open minor finding: Prohibited worker regression'
+		);
+		expect(result.summary.toLowerCase()).toContain('prohibited worker regression');
+		expect(result.summary.toLowerCase()).not.toContain('mail');
+		expect(result.summary.toLowerCase()).not.toContain('discard');
+	});
+
+	test('keeps findings in files the prompt budget left out', async () => {
+		// Same cutoff as a large pull request: the first file fills the budget, so src/ is listed
+		// but not shown. Those lines are still part of the diff and must be commentable.
+		const filler = `diff --git a/docs/filler.md b/docs/filler.md
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/docs/filler.md
+@@ -0,0 +1 @@
++${'x'.repeat(2_000)}
+`;
+		const late = `diff --git a/src/late.ts b/src/late.ts
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/src/late.ts
+@@ -0,0 +1,3 @@
++export function late(n: number) {
++  return lateOnly(n);
++}
+`;
+		const edited = `diff --git a/src/edited.ts b/src/edited.ts
+index 3333333..4444444 100644
+--- a/src/edited.ts
++++ b/src/edited.ts
+@@ -1,3 +1,3 @@
+ export function edited(n: number) {
+-  return n;
++  return n / 0;
+ }
+`;
+		const removed = `diff --git a/src/gone.ts b/src/gone.ts
+deleted file mode 100644
+index 5555555..0000000
+--- a/src/gone.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export const gone = true;
+`;
+		const lock = `diff --git a/bun.lock b/bun.lock
+index 6666666..7777777 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -1 +1 @@
+-old
++new
+`;
+		const big = [filler, late, edited, removed, lock].join('');
+		const parsed = parseUnifiedDiff(big);
+		const fillerFile = parsed.find((file) => file.path === 'docs/filler.md');
+		if (!fillerFile) throw new Error('expected the filler file');
+		const on = (path: string, startLine: number, title: string) => ({
+			path,
+			startLine,
+			endLine: startLine,
+			severity: 'major' as const,
+			category: 'bug' as const,
+			title,
+			body: 'Explained.'
+		});
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Adds a late bug.',
+					findings: [
+						on('docs/filler.md', 1, 'Filler note'),
+						on('src/late.ts', 2, 'Bug in a new file'),
+						on('src/edited.ts', 2, 'Divides by zero'),
+						on('src/late.ts', 40, 'Off the new file'),
+						on('src/nowhere.ts', 1, 'Invented file'),
+						on('bun.lock', 1, 'Lockfile note'),
+						on('src/gone.ts', 1, 'Deleted file')
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real' },
+						{ id: 'F3', keep: true, reason: 'real' }
+					]
+				})
+			]
+		});
+		await writeFile(
+			join(repoDir, 'src/late.ts'),
+			'export function late(n: number) {\n  return lateOnly(n);\n}\n'
+		);
+		await writeFile(
+			join(repoDir, 'src/edited.ts'),
+			'export function edited(n: number) {\n  return n / 0;\n}\n'
+		);
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const result = await runReview({
+			repoDir,
+			diff: big,
+			pullRequest: { title: 'Large', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			limits: { maxDiffChars: renderFileDiff(fillerFile).length },
+			onEvent: (event) => void events.push(event)
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.path, f.title])).toEqual([
+			['docs/filler.md', 'Filler note'],
+			['src/late.ts', 'Bug in a new file'],
+			['src/edited.ts', 'Divides by zero']
+		]);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			['Off the new file', 'Lines outside the changed hunks'],
+			['Invented file', 'File not in this pull request'],
+			['Lockfile note', 'File excluded by path filters'],
+			['Deleted file', 'File has no commentable lines']
+		]);
+		expect(events.find((event) => event.type === 'anchoring.suspicious')?.data).toMatchObject({
+			submitted: 7,
+			unattached: 4
+		});
+		expect(events.find((event) => event.type === 'files.prompt')?.data).toEqual({
+			shown: ['docs/filler.md'],
+			notShown: ['src/late.ts', 'src/edited.ts']
+		});
+		const placements = events.filter((event) => event.type === 'finding.placement');
+		expect(placements.map((event) => event.data)).toEqual([
+			{
+				path: 'src/late.ts',
+				title: 'Bug in a new file',
+				startLine: 2,
+				endLine: 2,
+				kept: true,
+				code: 'not_shown',
+				reason: 'File not shown in the prompt',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/edited.ts',
+				title: 'Divides by zero',
+				startLine: 2,
+				endLine: 2,
+				kept: true,
+				code: 'not_shown',
+				reason: 'File not shown in the prompt',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/late.ts',
+				title: 'Off the new file',
+				startLine: 40,
+				endLine: 40,
+				kept: false,
+				code: 'outside_hunk',
+				reason: 'Lines outside the changed hunks',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/nowhere.ts',
+				title: 'Invented file',
+				startLine: 1,
+				endLine: 1,
+				kept: false,
+				code: 'not_in_diff',
+				reason: 'File not in this pull request',
+				shownInPrompt: false
+			},
+			{
+				path: 'bun.lock',
+				title: 'Lockfile note',
+				startLine: 1,
+				endLine: 1,
+				kept: false,
+				code: 'path_filtered',
+				reason: 'File excluded by path filters',
+				shownInPrompt: false
+			},
+			{
+				path: 'src/gone.ts',
+				title: 'Deleted file',
+				startLine: 1,
+				endLine: 1,
+				kept: false,
+				code: 'no_commentable_lines',
+				reason: 'File has no commentable lines',
+				shownInPrompt: false
+			}
+		]);
+		// The review prompt omits the late files; the verifier still sees their diff.
+		const reviewPrompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+		expect(reviewPrompt).toContain('src/late.ts (too large to show)');
+		expect(reviewPrompt).not.toContain('return lateOnly(n)');
+		expect(reviewPrompt).not.toContain('return n / 0');
+		const verifyPrompt = JSON.stringify(model.doGenerateCalls[1]?.prompt);
+		expect(verifyPrompt).toContain('return lateOnly(n)');
+		expect(verifyPrompt).toContain('      -   return n;');
+		expect(verifyPrompt).toContain('    2 +   return n / 0;');
+	});
+
+	test('names why an incremental finding is not on the pull request diff', async () => {
+		const increment = `diff --git a/src/math.ts b/src/math.ts
+--- a/src/math.ts
++++ b/src/math.ts
+@@ -2,3 +2,3 @@
+   const result = a / b;
+-  return result;
++  return result ?? 0;
+ }
+@@ -49,3 +49,3 @@
+   const before = 1;
+-  const mid = 1;
++  const mid = 2;
+   const after = 1;
+diff --git a/src/upstream.ts b/src/upstream.ts
+--- a/src/upstream.ts
++++ b/src/upstream.ts
+@@ -1 +1 @@
+-export const upstream = 1;
++export const upstream = 2;
+`;
+		const on = (path: string, startLine: number, title: string) => ({
+			path,
+			startLine,
+			endLine: startLine,
+			severity: 'major' as const,
+			category: 'bug' as const,
+			title,
+			body: 'Explained.'
+		});
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Adds a fallback.',
+					findings: [
+						on('src/math.ts', 3, 'Nullish fallback hides NaN'),
+						on('src/math.ts', 22, 'Old hunk'),
+						on('src/math.ts', 50, 'Brought in from main'),
+						on('src/upstream.ts', 1, 'Upstream only')
+					]
+				}),
+				toolCall('submit_verdicts', { verdicts: [{ id: 'F1', keep: true, reason: 'real' }] })
+			]
+		});
+		const events: { type: string; data?: Record<string, unknown> }[] = [];
+		const result = await runReview({
+			repoDir,
+			diff: increment,
+			pullRequestDiff: diff,
+			incrementalFrom: 'abc1234def',
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			onEvent: (event) => void events.push(event)
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => f.title)).toEqual(['Nullish fallback hides NaN']);
+		expect(result.dropped.map((f) => [f.title, f.dropReason])).toEqual([
+			['Old hunk', 'Lines outside the changed hunks'],
+			['Brought in from main', 'Lines outside the pull request diff'],
+			['Upstream only', 'File not in this pull request']
+		]);
+		expect(
+			events
+				.filter((event) => event.type === 'finding.placement')
+				.map((event) => [event.data?.title, event.data?.code, event.data?.shownInPrompt])
+		).toEqual([
+			['Old hunk', 'outside_hunk', true],
+			['Brought in from main', 'outside_pr_diff', true],
+			['Upstream only', 'not_in_diff', false]
+		]);
+	});
+
 	test('incremental reviews skip when the increment has nothing reviewable', async () => {
 		const result = await runReview({
 			repoDir,
@@ -1013,6 +1511,18 @@ ${upstream}`;
 			status: 'skipped',
 			reason: 'No new reviewable changes since the last review'
 		});
+	});
+});
+
+describe('anchoringIsSuspicious', () => {
+	test('flags when at least half of two or more findings cannot be attached', () => {
+		expect(anchoringIsSuspicious(0, 0)).toBe(false);
+		expect(anchoringIsSuspicious(1, 1)).toBe(false);
+		expect(anchoringIsSuspicious(2, 1)).toBe(false);
+		expect(anchoringIsSuspicious(5, 2)).toBe(false);
+		expect(anchoringIsSuspicious(4, 2)).toBe(true);
+		expect(anchoringIsSuspicious(2, 2)).toBe(true);
+		expect(anchoringIsSuspicious(8, 7)).toBe(true);
 	});
 });
 
