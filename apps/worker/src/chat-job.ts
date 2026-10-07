@@ -13,7 +13,8 @@ import {
 	resolveReviewThreads
 } from '@hans/github';
 import type { ChatJobPayload, Job } from '@hans/queue';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { chatReplyFields, loadChatFinding } from './chat-finding';
 import { chatFailureReply } from './public-failure';
 import {
 	connectRepository,
@@ -85,18 +86,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				: undefined;
 
 		// Replies on a finding Hansi posted can resolve or dismiss that finding.
-		const [finding] = payload.rootCommentId
-			? await db
-					.select({ id: schema.reviewFindings.id })
-					.from(schema.reviewFindings)
-					.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
-					.where(
-						and(
-							eq(schema.reviewFindings.githubCommentId, payload.rootCommentId),
-							eq(schema.reviews.organizationId, payload.organizationId)
-						)
-					)
-			: [];
+		const finding = await loadChatFinding(db, payload.organizationId, payload.rootCommentId);
 
 		let settled = false;
 		const { review: model } = await loadModels(ctx, payload.organizationId);
@@ -128,6 +118,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				learnings,
 				trustedSource: { ref: pr.baseSha, token },
 				language: config.language,
+				...chatReplyFields(payload, finding),
 				model,
 				onModelCall: usage.record,
 				onModelError: usage.recordError,

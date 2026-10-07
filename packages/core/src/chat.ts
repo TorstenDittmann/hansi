@@ -2,10 +2,16 @@ import { generateText, isStepCount, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
-import { chatInstructions } from './prompts';
+import { chatInstructions, formatChatContext, type ChatReplyContext } from './prompts';
 import { callModel, reasoningCallOptions, type ModelCall, type ModelFailure } from './model-call';
 import type { ReviewModel } from './review';
-import { createRepoTools, loadRepoGuidelines, type EmitEvent, type TrustedSource } from './tools';
+import {
+	changedGuidelineFiles,
+	createRepoTools,
+	loadRepoGuidelines,
+	type EmitEvent,
+	type TrustedSource
+} from './tools';
 
 export interface ThreadMessage {
 	author: string;
@@ -29,6 +35,10 @@ export interface ChatInput {
 	focus?: { path: string; line?: number; diffHunk?: string };
 	learnings: string[];
 	language: string;
+	/** GitHub `author_association` of the comment being answered. Missing means untrusted. */
+	authorAssociation?: string;
+	/** Set when this thread is a reply on a finding Hansi posted. */
+	finding?: { severity: string; category: string; title: string };
 	/** Where to read repository guidelines from; defaults to the (untrusted) PR checkout. */
 	trustedSource?: TrustedSource;
 	model: ReviewModel;
@@ -69,7 +79,7 @@ export async function runChat(input: ChatInput): Promise<string> {
 		const onMarkFinding = input.onMarkFinding;
 		tools.mark_finding = tool({
 			description:
-				'Record the outcome of the finding this thread is about: resolved (the author fixed it) or dismissed (it was wrong or not wanted).',
+				'Record the outcome of the finding this thread is about: resolved (the author fixed it) or dismissed (it was wrong, not wanted, or settled by a trusted maintainer declining a minor testing, documentation, or maintainability note).',
 			inputSchema: z.object({
 				status: z.enum(['resolved', 'dismissed']),
 				reason: z.string()
@@ -82,7 +92,13 @@ export async function runChat(input: ChatInput): Promise<string> {
 		});
 	}
 
-	let diff = filterFiles(parseUnifiedDiff(input.diff)).included.map(renderFileDiff).join('\n\n');
+	const parsed = parseUnifiedDiff(input.diff);
+	const replyContext: ChatReplyContext = {
+		authorAssociation: input.authorAssociation,
+		finding: input.finding,
+		changedGuidelines: changedGuidelineFiles(parsed)
+	};
+	let diff = filterFiles(parsed).included.map(renderFileDiff).join('\n\n');
 	if (diff.length > MAX_DIFF_CHARS) {
 		diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n… diff truncated; use the tools to read files.`;
 	}
@@ -98,6 +114,8 @@ export async function runChat(input: ChatInput): Promise<string> {
 		);
 	}
 	parts.push(`<diff>\n${diff}\n</diff>`);
+	const context = formatChatContext(replyContext);
+	if (context) parts.push(context);
 	if (input.focus) {
 		parts.push(
 			`<code_location path="${input.focus.path}"${input.focus.line ? ` line="${input.focus.line}"` : ''}>\n${input.focus.diffHunk ?? ''}\n</code_location>`
@@ -116,10 +134,15 @@ export async function runChat(input: ChatInput): Promise<string> {
 		generateText({
 			model: input.model.model,
 			...reasoningCallOptions(input.model),
-			instructions: chatInstructions(input.language, !!input.onMarkFinding, {
-				repository: input.repository,
-				headSha: input.headSha
-			}),
+			instructions: chatInstructions(
+				input.language,
+				!!input.onMarkFinding,
+				{
+					repository: input.repository,
+					headSha: input.headSha
+				},
+				replyContext
+			),
 			prompt: parts.join('\n\n'),
 			tools,
 			stopWhen: isStepCount(20),

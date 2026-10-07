@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { createTestDatabase, schema, type Database } from '@hans/db';
-import { Queue } from '@hans/queue';
-import { enqueueReview, retryFailedReview } from './jobs';
+import { Queue, chatJobFromComment } from '@hans/queue';
+import { enqueueChat, enqueueReview, retryFailedReview } from './jobs';
 
 const now = new Date('2026-09-01T00:00:00Z');
 
@@ -46,6 +46,61 @@ async function addReview(
 		createdAt: now
 	});
 }
+
+test('a review-comment webhook job keeps the commenter association', async () => {
+	const db = await setup();
+	const queue = new Queue(db);
+	await enqueueChat(
+		queue,
+		chatJobFromComment({
+			organizationId: 'org-a',
+			repositoryId: 10,
+			pullNumber: 14168,
+			kind: 'review',
+			rootCommentId: 4195124056,
+			comment: {
+				id: 4203558030,
+				html_url: 'https://github.com/appwrite/appwrite/pull/14168#discussion_r4203558030',
+				author_association: 'MEMBER',
+				user: { login: 'eldadfux' }
+			}
+		})
+	);
+
+	const [job] = await db.select().from(schema.jobs);
+	expect(job).toMatchObject({
+		queue: 'chat',
+		maxAttempts: 2,
+		payload: {
+			organizationId: 'org-a',
+			repositoryId: 10,
+			pullNumber: 14168,
+			commentId: 4203558030,
+			kind: 'review',
+			rootCommentId: 4195124056,
+			author: 'eldadfux',
+			authorAssociation: 'MEMBER',
+			commentUrl: 'https://github.com/appwrite/appwrite/pull/14168#discussion_r4203558030'
+		}
+	});
+});
+
+test('an untrusted commenter is stored as given, not promoted', () => {
+	expect(
+		chatJobFromComment({
+			organizationId: 'org-a',
+			repositoryId: 10,
+			pullNumber: 7,
+			kind: 'issue',
+			comment: {
+				id: 3,
+				html_url: 'https://github.com/acme/web/pull/7#issuecomment-3',
+				author_association: 'CONTRIBUTOR',
+				user: { login: 'outsider' }
+			}
+		}).authorAssociation
+	).toBe('CONTRIBUTOR');
+});
 
 test('retry queues a new review and leaves the failed one in place', async () => {
 	const db = await setup();

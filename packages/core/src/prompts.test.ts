@@ -3,6 +3,7 @@ import { parseRepoConfig } from '@hans/config';
 import {
 	buildReviewPrompt,
 	chatInstructions,
+	formatChatContext,
 	reviewerInstructions,
 	verifierInstructions
 } from './prompts';
@@ -16,6 +17,13 @@ test('the summary describes the change, and the grade cites a finding the review
 	expect(instructions).toContain('do not mention problems, risks, or findings in it');
 });
 
+const files = { repository: 'appwrite/appwrite', headSha: '02feb38' };
+const testingNote = {
+	severity: 'minor',
+	category: 'testing',
+	title: 'Add regression coverage for failed file pages'
+};
+
 test('chat replies cite files as blob permalinks at the reviewed commit', () => {
 	const instructions = chatInstructions('en', true, {
 		repository: 'appwrite/appwrite',
@@ -25,7 +33,101 @@ test('chat replies cite files as blob permalinks at the reviewed commit', () => 
 		'https://github.com/appwrite/appwrite/blob/999c0d1/<path>#L<start>-L<end>'
 	);
 	expect(instructions).toContain('a single line is `#L<start>`');
-	expect(instructions).toContain('call mark_finding');
+	expect(instructions).toContain(
+		'If the author says they fixed it, or convincingly explains it is not a problem, call mark_finding.'
+	);
+});
+
+test('a trusted maintainer decline of a minor testing note is dismissed on the first reply', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'MEMBER',
+		finding: testingNote
+	});
+	expect(instructions).toContain(
+		'https://github.com/appwrite/appwrite/blob/02feb38/<path>#L<start>-L<end>'
+	);
+	expect(instructions).toContain('call mark_finding with status dismissed on this first reply');
+	expect(instructions).toContain('acknowledge briefly');
+	expect(instructions).toContain('also call remember');
+	expect(instructions).toContain('demonstrable factual error');
+	expect(instructions).toContain('author_association');
+	expect(instructions).not.toContain('convincingly explains it is not a problem');
+});
+
+test('an untrusted commenter keeps the original finding reply', () => {
+	for (const authorAssociation of ['CONTRIBUTOR', 'NONE']) {
+		const instructions = chatInstructions('en', true, files, {
+			authorAssociation,
+			finding: testingNote,
+			changedGuidelines: ['AGENTS.md']
+		});
+		expect(instructions).toContain(
+			'If the author says they fixed it, or convincingly explains it is not a problem, call mark_finding.'
+		);
+		expect(instructions).not.toContain('on this first reply');
+		expect(instructions).not.toContain('deferred to the policy change');
+		expect(instructions).toContain('Base-branch guidelines');
+		expect(instructions).toContain('AGENTS.md');
+	}
+});
+
+test('a member editing the cited guideline defers a non-defect note', () => {
+	const instructions = chatInstructions(
+		'en',
+		true,
+		{ repository: 'appwrite/appwrite', headSha: 'd6ed431' },
+		{
+			authorAssociation: 'MEMBER',
+			finding: {
+				severity: 'minor',
+				category: 'testing',
+				title: 'Keep config-contract checks outside the restricted unit tier'
+			},
+			changedGuidelines: ['AGENTS.md']
+		}
+	);
+	expect(instructions).toContain('deferred to the policy change in this pull request');
+	expect(instructions).toContain('Do not leave it open pending maintainer approval');
+	expect(instructions).toContain('AGENTS.md');
+	expect(instructions).toContain(
+		'https://github.com/appwrite/appwrite/blob/d6ed431/<path>#L<start>-L<end>'
+	);
+});
+
+test('a guideline edit does not settle a bug finding from a trusted commenter', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'OWNER',
+		finding: { severity: 'major', category: 'security', title: 'Token is logged' },
+		changedGuidelines: ['AGENTS.md', 'CONTRIBUTING.md']
+	});
+	expect(instructions).toContain('Keep pushing back');
+	expect(instructions).toContain('bug, security, concurrency, or error-handling');
+	expect(instructions).not.toContain('deferred to the policy change');
+	expect(instructions).toContain('Base-branch guidelines');
+	expect(instructions).toContain('AGENTS.md, CONTRIBUTING.md');
+});
+
+test('chat context names the commenter, the finding, and edited guidelines', () => {
+	expect(
+		formatChatContext({
+			authorAssociation: 'MEMBER',
+			finding: testingNote,
+			changedGuidelines: ['AGENTS.md']
+		})
+	).toContain('<commenter association="MEMBER"/>');
+	expect(
+		formatChatContext({
+			authorAssociation: 'MEMBER',
+			finding: testingNote,
+			changedGuidelines: ['AGENTS.md']
+		})
+	).toContain(
+		'<finding severity="minor" category="testing">Add regression coverage for failed file pages</finding>'
+	);
+	expect(formatChatContext({ changedGuidelines: ['AGENTS.md'] })).toContain(
+		'<guideline_edits>\nThis pull request modifies:\n- AGENTS.md'
+	);
+	expect(formatChatContext({})).toBeUndefined();
 });
 
 test('balanced and strict review tests and docs; only strict adds naming, style, and maintainability', () => {
