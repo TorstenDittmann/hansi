@@ -39,7 +39,8 @@ import {
 	reviewRules,
 	verifierInstructions
 } from './prompts';
-import { finalTier, tierCap, tiers, type Tier } from './tier';
+import { presentReview } from './present';
+import { tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
 import { decideVerdict, openDefectApprovalReason, type Verdict } from './verdict';
 import {
@@ -427,7 +428,9 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		dropped.push({ ...finding, dropReason: `Over maxComments (${config.reviews.maxComments})` });
 	}
 
-	// 8. Verdict and tier reflect the whole PR: new findings plus earlier ones still open.
+	// 8. Verdict from findings that will be shown. The model wrote the summary and the grade in
+	// the same call as its findings, before any of them were filtered, so reconcile both against
+	// what was actually posted or is still open.
 	const stillOpen = openFindings.filter((f) => !resolved.includes(f.id));
 	const threshold = blockingSeverity(config);
 	const stillOpenBlocking = stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
@@ -440,24 +443,15 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 				(truncated ? 'Part of the diff was too large to review, so Hansi did not approve.' : null))
 			: openDefectApprovalReason([...posted, ...stillOpen], config);
 	if (verdict === 'approve' && approvalWithheld) verdict = 'comment';
-	const open = [...posted, ...stillOpen].sort(compareSeverity);
-	// The model grades before its findings are verified and placed, so its grade may rest on
-	// findings that were dropped. With nothing open, the PR is mergeable: S. Otherwise the model's
-	// grade stands, but never better than the open findings allow. When approving, also soften a
-	// model grade of B+ to A first — "needs changes" would contradict the verdict — then still
-	// apply the cap so an open major (e.g. with requestChanges: critical) keeps the grade at B.
-	const cap = open.length ? tierCap(open.map((f) => f.severity)) : 'S';
-	let modelTier = submitted.tier;
-	if (verdict === 'approve' && modelTier && tiers.indexOf(modelTier) > tiers.indexOf('A')) {
-		modelTier = 'A';
-	}
-	const tier = open.length ? finalTier(modelTier, cap) : 'S';
-	const limitedBy = open.length && tier !== submitted.tier ? open[0] : undefined;
-	const tierReason = limitedBy
-		? `Limited by an open ${limitedBy.severity} finding: ${limitedBy.title}`
-		: tier === submitted.tier
-			? (submitted.tier_reason ?? '')
-			: '';
+	const presented = presentReview({
+		summary,
+		modelTier: submitted.tier,
+		modelTierReason: submitted.tier_reason,
+		verdict,
+		posted,
+		stillOpen,
+		dropped
+	});
 
 	emit({
 		type: 'review.completed',
@@ -466,20 +460,20 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			dropped: dropped.length,
 			stillOpen: stillOpen.length,
 			verdict,
-			tier
+			tier: presented.tier
 		}
 	});
 	return {
 		status: 'completed',
-		summary,
+		summary: presented.summary,
 		reviewedFiles: shown.map((f) => f.path),
 		posted,
 		dropped,
 		resolved,
 		stillOpenBlocking,
 		verdict,
-		tier,
-		tierReason,
+		tier: presented.tier,
+		tierReason: presented.tierReason,
 		walkthrough: mergeWalkthrough(
 			submitted.walkthrough,
 			input.incrementalFrom ? input.previousSummary?.walkthrough : undefined,

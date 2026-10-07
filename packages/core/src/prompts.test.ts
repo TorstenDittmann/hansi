@@ -10,6 +10,12 @@ import {
 const withProfile = (profile: string) =>
 	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
 
+test('the summary describes the change, and the grade cites a finding the review will show', () => {
+	const instructions = reviewerInstructions(parseRepoConfig('').config);
+	expect(instructions).toContain('for a finding you are submitting or one that is still open');
+	expect(instructions).toContain('do not mention problems, risks, or findings in it');
+});
+
 test('chat replies cite files as blob permalinks at the reviewed commit', () => {
 	const instructions = chatInstructions('en', true, {
 		repository: 'appwrite/appwrite',

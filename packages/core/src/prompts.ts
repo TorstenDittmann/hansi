@@ -73,9 +73,9 @@ B = needs changes before merging.
 C = significant problems.
 D = serious problems.
 F = do not merge (broken, dangerous, or destroys data).
-Only grade below S for a concrete reason, and state that reason in one sentence as tier_reason.
+Only grade below S for a finding you are submitting or one that is still open, and state that reason in one sentence as tier_reason.
 
-When done, call submit_review exactly once with a short summary of the change (2-4 sentences, what it does, not a judgement), a walkthrough (one short line per changed file), and your findings.`;
+When done, call submit_review exactly once with a short summary of the change (2-4 sentences, what it does, not a judgement), a walkthrough (one short line per changed file), and your findings. The summary describes the change only: do not mention problems, risks, or findings in it.`;
 }
 
 export function verifierInstructions(profile: ReviewProfile): string {
