@@ -7,6 +7,7 @@ import {
 	type Severity
 } from '@hans/config';
 import {
+	absolutizeLinks,
 	checkoutPullRequest,
 	diffSince,
 	formatFindingComment,
@@ -407,7 +408,11 @@ async function executeReview(ctx: WorkerContext, review: Review, log: Logger): P
 				title: submission.headMoved
 					? 'Newer commits will be reviewed'
 					: `Tier ${result.tier}: ${tierMeaning[result.tier]}`,
-				summary: [submission.note, result.tierReason, result.summary].filter(Boolean).join('\n\n')
+				summary: absolutizeLinks(
+					[submission.note, result.tierReason, result.summary].filter(Boolean).join('\n\n'),
+					connection.repository.fullName,
+					pr.headSha
+				)
 			});
 			return {
 				status: 'completed',
@@ -477,11 +482,12 @@ async function postReview(
 	log: Logger
 ): Promise<(number | null)[]> {
 	const { body, event } = review;
+	const permalink = { repository: `${ref.owner}/${ref.repo}`, headSha: pr.headSha };
 	const comments = findings.map((finding) => ({
 		path: finding.path,
 		line: finding.endLine,
 		startLine: finding.startLine,
-		body: formatFindingComment(finding)
+		body: formatFindingComment(finding, permalink)
 	}));
 
 	try {
@@ -513,7 +519,10 @@ async function postReview(
 		}
 		log.warn({ err: error }, 'inline comments rejected, posting findings in the review body');
 		const inline = findings
-			.map((f) => `#### \`${f.path}:${f.startLine}-${f.endLine}\`\n\n${formatFindingComment(f)}`)
+			.map(
+				(f) =>
+					`#### \`${f.path}:${f.startLine}-${f.endLine}\`\n\n${formatFindingComment(f, permalink)}`
+			)
 			.join('\n\n---\n\n');
 		await createReview(octokit, ref, {
 			pullNumber: pr.number,

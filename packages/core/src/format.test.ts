@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	absolutizeLinks,
 	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
@@ -177,6 +178,120 @@ describe('agent fix prompts', () => {
 		expect(body).not.toContain('Fix with agent prompt');
 		expect(body).not.toContain('Prompt To Fix With AI');
 	});
+});
+
+const REPO = 'appwrite/appwrite';
+const SHA = '999c0d1';
+const blob = (path: string) => `https://github.com/${REPO}/blob/${SHA}/${path}`;
+
+describe('absolutizeLinks', () => {
+	test('rewrites relative repo paths, ./ prefixes, and line anchors', () => {
+		const body = [
+			'See [ConfigTest.php:148–163](packages/config/tests/ConfigTest.php#L148) and [lines 286–307](packages/config/tests/ConfigTest.php#L286).',
+			'[packages/config/README.md:104](./packages/config/README.md#L104)',
+			'[README.md:122–135](packages/config/README.md#L122-L135)',
+			'[GitHub.php](packages/vcs/src/Adapter/Git/GitHub.php#L772-L779)',
+			'[GitHubTest.php](<./packages/vcs/tests/GitHubTest.php#L282-L343>)',
+			'[range](./src/app.ts#L10-L20)'
+		].join('\n');
+		const linked = absolutizeLinks(body, REPO, SHA);
+		expect(linked).toContain(
+			`[ConfigTest.php:148–163](${blob('packages/config/tests/ConfigTest.php')}#L148)`
+		);
+		expect(linked).toContain(
+			`[lines 286–307](${blob('packages/config/tests/ConfigTest.php')}#L286)`
+		);
+		expect(linked).toContain(
+			`[packages/config/README.md:104](${blob('packages/config/README.md')}#L104)`
+		);
+		expect(linked).toContain(`[README.md:122–135](${blob('packages/config/README.md')}#L122-L135)`);
+		expect(linked).toContain(
+			`[GitHub.php](${blob('packages/vcs/src/Adapter/Git/GitHub.php')}#L772-L779)`
+		);
+		expect(linked).toContain(
+			`[GitHubTest.php](${blob('packages/vcs/tests/GitHubTest.php')}#L282-L343)`
+		);
+		expect(linked).toContain(`[range](${blob('src/app.ts')}#L10-L20)`);
+		expect(linked).not.toContain('](packages/');
+		expect(linked).not.toContain('](./');
+	});
+
+	test('leaves absolute, external, anchor, and root-absolute links alone', () => {
+		const body = [
+			`[blob](${blob('README.md')}#L1)`,
+			'[docs](https://example.com/packages/config/README.md#L10-L20)',
+			'[mail](mailto:dev@example.com)',
+			'[section](#discussion)',
+			'[root](/appwrite/appwrite/blob/x)',
+			'[issue](../issues/72)'
+		].join(' ');
+		expect(absolutizeLinks(body, REPO, SHA)).toBe(body);
+	});
+
+	test('rewrites paths that contain parentheses', () => {
+		const body = [
+			'[file](src/foo(bar).ts#L10-L20)',
+			'[both](./src/foo(bar)(baz).ts)',
+			'[angled](<src/foo(bar).ts#L2>)',
+			'[titled](src/foo(bar).ts "the helper")',
+			'[docs](https://example.com/foo(bar).ts#L10-L20)'
+		].join('\n');
+		const linked = absolutizeLinks(body, REPO, SHA);
+		expect(linked).toContain(`[file](${blob('src/foo%28bar%29.ts')}#L10-L20)`);
+		expect(linked).toContain(`[both](${blob('src/foo%28bar%29%28baz%29.ts')})`);
+		expect(linked).toContain(`[angled](${blob('src/foo%28bar%29.ts')}#L2)`);
+		expect(linked).toContain(`[titled](${blob('src/foo%28bar%29.ts')} "the helper")`);
+		expect(linked).toContain('[docs](https://example.com/foo(bar).ts#L10-L20)');
+		expect(linked).not.toContain('](src/foo(bar');
+	});
+
+	test('keeps a link title and does not rewrite code or images', () => {
+		const body = [
+			'[file](./src/a.ts#L10-L20 "the helper")',
+			'![diagram](docs/diagram.png)',
+			'Mention `[file](./src/a.ts#L1)` in prose, then [open it](src/a.ts#L2).',
+			'```ts',
+			'const sample = "[file](packages/foo.ts#L10-L20)";',
+			'```'
+		].join('\n');
+		const linked = absolutizeLinks(body, REPO, SHA);
+		expect(linked).toContain(`[file](${blob('src/a.ts')}#L10-L20 "the helper")`);
+		expect(linked).toContain('![diagram](docs/diagram.png)');
+		expect(linked).toContain('`[file](./src/a.ts#L1)`');
+		expect(linked).toContain(`[open it](${blob('src/a.ts')}#L2)`);
+		expect(linked).toContain('const sample = "[file](packages/foo.ts#L10-L20)";');
+	});
+});
+
+test('posted summaries and finding comments rewrite relative file links', () => {
+	const summary = formatSummaryComment({
+		...base,
+		summary: 'See [paginate](./src/paginate.ts#L3-L4) for the loop.'
+	});
+	expect(summary).toContain(
+		'[paginate](https://github.com/acme/api/blob/abcdef1234567890/src/paginate.ts#L3-L4)'
+	);
+	expect(summary).toContain(
+		'[`src/paginate.ts:3`](https://github.com/acme/api/blob/abcdef1234567890/src/paginate.ts#L3-L4)'
+	);
+
+	const comment = formatFindingComment(
+		{
+			path: 'src/db.ts',
+			startLine: 10,
+			endLine: 12,
+			severity: 'major',
+			category: 'bug',
+			title: 'Query is not parameterized',
+			body: 'See [the caller](src/caller.ts#L10-L20).',
+			suggestion: 'db.query("[keep](src/a.ts)", [id]);\n'
+		},
+		{ repository: 'acme/api', headSha: 'abcdef1234567890' }
+	);
+	expect(comment).toContain(
+		'[the caller](https://github.com/acme/api/blob/abcdef1234567890/src/caller.ts#L10-L20)'
+	);
+	expect(comment).toContain('db.query("[keep](src/a.ts)", [id]);');
 });
 
 test('the review body is one line that points to the summary', () => {
