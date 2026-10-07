@@ -7,7 +7,7 @@ import type { Logger } from 'pino';
 const WORKSPACE = '/workspace';
 const SETUP_TIMEOUT_MS = 10 * 60_000;
 /** The VM is stopped after this long even if the review is still running. */
-const MAX_LIFETIME_SECONDS = 30 * 60;
+const MAX_LIFETIME_SECONDS = 60 * 60;
 
 export interface ReviewSandbox {
 	runner: CommandRunner;
@@ -15,16 +15,12 @@ export interface ReviewSandbox {
 }
 
 /**
- * Why a review runs without a sandbox, or null when it may get one. The worker also checks the
- * author: pull requests from people without write access never get one, since their code would
- * run on this instance's hardware.
+ * Why reviews on this instance run without a VM, or null when they get one. The worker also
+ * checks the author: pull requests from people without write access never get one, since their
+ * code would run on this instance's hardware.
  */
-export function sandboxSkipReason(
-	env: Pick<Env, 'SANDBOX' | 'MSB_API_KEY'>,
-	config: RepoConfig
-): string | null {
-	if (!config.sandbox.enabled) return 'disabled in .hansi.json';
-	if (env.SANDBOX === 'off') return 'no sandbox backend on this instance';
+export function sandboxSkipReason(env: Pick<Env, 'SANDBOX' | 'MSB_API_KEY'>): string | null {
+	if (env.SANDBOX === 'off') return 'SANDBOX=off on this instance';
 	if (env.SANDBOX === 'cloud' && !env.MSB_API_KEY) return 'SANDBOX=cloud without MSB_API_KEY';
 	return null;
 }

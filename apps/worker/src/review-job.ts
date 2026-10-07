@@ -611,9 +611,8 @@ async function loadPullRequestContext(
 }
 
 /**
- * A VM the review can run commands in, when the instance and the repository allow it. It boots
- * on the first command, so reviews that never run one pay nothing. A VM that fails to start is
- * recorded, and the model gets the error instead of a result.
+ * The VM this review runs commands in. It boots before the review starts. When it cannot start
+ * (no KVM, a bad image), the failure is recorded and the review goes ahead by reading code only.
  */
 async function reviewSandbox(
 	ctx: WorkerContext,
@@ -624,26 +623,19 @@ async function reviewSandbox(
 ): Promise<ReviewSandbox | undefined> {
 	const { record, log } = options;
 	const skip =
-		sandboxSkipReason(ctx.env, config) ??
+		sandboxSkipReason(ctx.env) ??
 		((await isTrustedAuthor(octokit, ref, pr)) ? null : 'the author does not have write access');
 	if (skip) {
-		if (config.sandbox.enabled) record({ type: 'sandbox.skipped', data: { reason: skip } });
+		record({ type: 'sandbox.skipped', data: { reason: skip } });
 		return undefined;
 	}
-	let opened: Promise<ReviewSandbox> | undefined;
-	const open = () =>
-		(opened ??= openSandbox({ env: ctx.env, config, emit: record, ...options }).catch((error) => {
-			log.warn({ err: error }, 'sandbox failed to start');
-			record({ type: 'sandbox.failed', data: { error: (error as Error).message } });
-			throw new Error(`The sandbox failed to start: ${(error as Error).message}`);
-		}));
-	return {
-		runner: { run: async (command, options) => (await open()).runner.run(command, options) },
-		close: async () => {
-			const sandbox = await opened?.catch(() => undefined);
-			await sandbox?.close();
-		}
-	};
+	try {
+		return await openSandbox({ env: ctx.env, config, emit: record, ...options });
+	} catch (error) {
+		log.warn({ err: error }, 'sandbox failed to start');
+		record({ type: 'sandbox.failed', data: { error: (error as Error).message } });
+		return undefined;
+	}
 }
 
 /**

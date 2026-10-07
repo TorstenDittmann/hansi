@@ -58,10 +58,10 @@ export const envSchema = z.object({
 	WORKER_WORKDIR: optional,
 
 	/**
-	 * Where reviews run commands (`sandbox` in `.hansi.json`): `off`, `local` microsandbox VMs
-	 * (needs /dev/kvm), or microsandbox `cloud` with MSB_API_KEY.
+	 * Where each review's VM runs: microsandbox `local` (default; needs /dev/kvm), microsandbox
+	 * `cloud` with MSB_API_KEY, or `off` to review by reading code only.
 	 */
-	SANDBOX: z.enum(['off', 'local', 'cloud']).default('off'),
+	SANDBOX: z.enum(['off', 'local', 'cloud']).default('local'),
 	MSB_API_KEY: optional
 });
 
