@@ -14,12 +14,13 @@ export interface PresentationFinding {
 
 /**
  * The model writes the summary and the grade in the same call as its findings, before placement,
- * the severity filter, and the verifier can drop any of them. Reconcile both so a filtered
- * finding cannot set the headline or pull the grade down.
+ * the severity filter, and the verifier can drop any of them. Reconcile both so a finding that
+ * was not posted (filtered, or left unattached because it could not be placed) cannot set the
+ * headline or pull the grade down.
  *
  * The grade is the cap from findings that will be shown. A worse grade from the model is kept
- * only when nothing was filtered, because then it is a judgement about visible findings. When
- * something was filtered, that worse grade is not separable from the hidden findings, so it is
+ * only when every finding was posted, because then it is a judgement about visible findings. When
+ * something was not posted, that worse grade is not separable from the hidden findings, so it is
  * discarded. Rewriting the summary with another model call is unnecessary: a clause that copies
  * or paraphrases a dropped finding, or that passes judgement without matching a visible one, is
  * removed here.
@@ -69,9 +70,9 @@ function gradeVisibleFindings(input: {
 	}
 
 	const standing = standingFromOpenFindings(visible);
-	// Anything filtered makes a worse model grade untrustworthy: it was chosen together with
+	// Anything not posted makes a worse model grade untrustworthy: it was chosen together with
 	// findings the reader will not see. The reason is always the visible finding, never the
-	// model's sentence, which may name a dropped one.
+	// model's sentence, which may name a dropped one. Unattached findings are in `dropped` too.
 	if (hasDropped) return standing;
 
 	const tier = finalTier(modelTier, standing.tier);
