@@ -7,7 +7,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { commentableLines, parseUnifiedDiff, renderDiffExcerpt, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
 import { isDuplicateFinding, titleSimilarity } from './findings';
-import { formatFindingComment } from './format';
+import { formatFindingComment, formatSummaryComment } from './format';
 import type { ModelCall } from './model-call';
 import { placeFinding, runReview } from './review';
 import { resolveRepoPath } from './tools';
@@ -927,6 +927,119 @@ ${upstream}`;
 		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
 		expect(prompt).toContain('previous_summary');
 		expect(prompt).toContain('All files in the pull request: src/math.ts, bun.lock');
+	});
+
+	test('a filtered finding does not set the headline or pull the grade down', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary:
+						'Adds a Videos service. Child-resource mutations bypass write authorization, and several playback and build paths need fixes.',
+					findings: [
+						finding(2, 'Division by zero'),
+						{
+							...finding(999, 'Require mutation permission before changing video children'),
+							severity: 'critical',
+							category: 'security'
+						}
+					],
+					tier: 'D',
+					tier_reason: 'Child-resource mutations bypass write authorization.'
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [{ id: 'F1', keep: true, reason: 'b can be 0' }]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Videos', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => f.title)).toEqual(['Division by zero']);
+		expect(result.dropped.map((f) => f.title)).toContain(
+			'Require mutation permission before changing video children'
+		);
+		// The posted major caps the grade at B. The model's D came from the filtered finding.
+		expect(result.verdict).toBe('request_changes');
+		expect(result.tier).toBe('B');
+		expect(result.tierReason).toBe('Limited by an open major finding: Division by zero');
+		expect(result.summary).toBe('Adds a Videos service.');
+
+		const body = formatSummaryComment({
+			repository: 'acme/api',
+			headSha: 'abcdef1234567890',
+			summary: result.summary,
+			tier: result.tier,
+			tierReason: result.tierReason,
+			verdict: result.verdict,
+			posted: result.posted,
+			resolved: [],
+			stillOpen: [],
+			dropped: result.dropped,
+			walkthrough: [],
+			mention: '@hansi-codes'
+		});
+		const headline = body.split('<details>')[0] ?? '';
+		expect(headline).toContain('Tier B');
+		expect(headline).toContain('Division by zero');
+		expect(headline.toLowerCase()).not.toContain('bypass');
+		expect(headline).not.toContain('Require mutation permission');
+		expect(body).toContain('Require mutation permission before changing video children');
+	});
+
+	test('a filtered finding does not lead the summary when an earlier finding is still open', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary:
+						'The new mail error path discards failed jobs rather than retaining them for diagnosis or recovery, and the previously reported prohibited worker regression remains present.',
+					findings: [
+						{
+							...finding(
+								999,
+								'Retain thrown mail failures instead of acknowledging them as success'
+							),
+							severity: 'major'
+						}
+					],
+					tier: 'D',
+					tier_reason: 'The new mail error path discards failed jobs.'
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			openFindings: [
+				{
+					id: 'f-worker',
+					path: 'src/math.ts',
+					startLine: 2,
+					endLine: 2,
+					severity: 'minor',
+					title: 'Prohibited worker regression',
+					body: 'The worker still accepts the old payload.'
+				}
+			],
+			pullRequest: { title: 'Mail', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted).toEqual([]);
+		// The filtered major is not posted, so it does not block. The open minor does not either.
+		expect(result.verdict).toBe('approve');
+		expect(result.tier).toBe('A');
+		expect(result.tierReason).toBe(
+			'Limited by an open minor finding: Prohibited worker regression'
+		);
+		expect(result.summary.toLowerCase()).toContain('prohibited worker regression');
+		expect(result.summary.toLowerCase()).not.toContain('mail');
+		expect(result.summary.toLowerCase()).not.toContain('discard');
 	});
 
 	test('incremental reviews skip when the increment has nothing reviewable', async () => {

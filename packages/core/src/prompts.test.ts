@@ -5,6 +5,12 @@ import { buildReviewPrompt, reviewerInstructions, verifierInstructions } from '.
 const withProfile = (profile: string) =>
 	parseRepoConfig(JSON.stringify({ reviews: { profile } })).config;
 
+test('the summary describes the change, and the grade cites a finding the review will show', () => {
+	const instructions = reviewerInstructions(parseRepoConfig('').config);
+	expect(instructions).toContain('for a finding you are submitting or one that is still open');
+	expect(instructions).toContain('do not mention problems, risks, or findings in it');
+});
+
 test('balanced and strict review tests and docs; only strict adds naming, style, and maintainability', () => {
 	for (const profile of ['balanced', 'strict'] as const) {
 		const instructions = reviewerInstructions(withProfile(profile));
