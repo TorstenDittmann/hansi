@@ -15,6 +15,7 @@ import {
 import type { ChatJobPayload, Job } from '@hans/queue';
 import { eq } from 'drizzle-orm';
 import { chatReplyFields, loadChatFinding } from './chat-finding';
+import { repliesToBot } from './chat-reply';
 import { chatFailureReply } from './public-failure';
 import {
 	connectRepository,
@@ -34,6 +35,23 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 	const connection = await connectRepository(ctx, payload.repositoryId);
 	if (!connection) return;
 	const { octokit, ref } = connection;
+
+	const threadOf = () =>
+		payload.kind === 'review'
+			? getReviewThread(
+					octokit,
+					ref,
+					payload.pullNumber,
+					payload.rootCommentId ?? payload.commentId
+				)
+			: getRecentIssueComments(octokit, ref, payload.pullNumber);
+	// A reply without a mention is answered only when it replies to Hansi. Checked before the 👀,
+	// so people talking among themselves in a review thread see nothing from Hansi.
+	const early = payload.unmentioned ? await threadOf() : undefined;
+	if (early && !repliesToBot(early, payload.commentId, connection.mention)) {
+		log.info('review-thread reply is not to Hansi, skipping');
+		return;
+	}
 
 	if (job.attempts === 1) {
 		await acknowledgeComment(octokit, ref, { id: payload.commentId, kind: payload.kind }).catch(
@@ -65,15 +83,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 			await getFileContent(octokit, ref, REPO_CONFIG_FILE, pr.baseSha)
 		);
 
-		const comments =
-			payload.kind === 'review'
-				? await getReviewThread(
-						octokit,
-						ref,
-						payload.pullNumber,
-						payload.rootCommentId ?? payload.commentId
-					)
-				: await getRecentIssueComments(octokit, ref, payload.pullNumber);
+		const comments = early ?? (await threadOf());
 		const thread: ThreadMessage[] = comments.map((c) => ({
 			author: c.author,
 			body: c.body,
