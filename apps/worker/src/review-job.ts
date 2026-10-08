@@ -242,8 +242,9 @@ async function executeReview(
 
 	// A follow-up trigger (a mention while this commit is in review, or another event after it
 	// finished) would otherwise run next and submit again. The queue only replaces queued jobs.
-	// Skip when this commit is already covered. A new commit has a different head and still runs.
-	const covered = sameHeadCoalesce(pr.headSha, await otherPullReviews(db, review));
+	// Skip when this commit is already covered. A new commit has a different head and still runs,
+	// and an explicit `@slug review` re-reviews a commit that was already reviewed.
+	const covered = sameHeadCoalesce(pr.headSha, await otherPullReviews(db, review), review.trigger);
 	if (covered) {
 		const summary = sameHeadSkipSummary(covered, pr.headSha);
 		log.info({ reason: covered, headSha: pr.headSha }, 'commit already reviewed, skipping');
