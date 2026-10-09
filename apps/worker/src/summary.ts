@@ -9,9 +9,11 @@ import {
 } from '@hans/core';
 import { schema, type Database } from '@hans/db';
 import { getMarkedComment, upsertMarkedComment } from '@hans/github';
-import type { Severity, Verdict } from '@hans/config';
+import { severityAtLeast, type Severity, type Verdict } from '@hans/config';
+import type { Logger } from 'pino';
 import { and, desc, eq, ne } from 'drizzle-orm';
-import { reviewDetailsUrlFor, type RepositoryConnection } from './shared';
+import { CHANGE_REQUEST_DISMISSAL } from './submit-review';
+import { reviewDetailsUrlFor, withdrawChangeRequests, type RepositoryConnection } from './shared';
 
 type FindingRow = {
 	reviewId: string;
@@ -107,6 +109,9 @@ export async function refreshSummaryAfterSettlement(input: {
 	organizationId: string;
 	repositoryId: number;
 	pullNumber: number;
+	/** Findings at or above this severity block the pull request (`reviews.requestChanges`). */
+	blockingSeverity: Severity;
+	log: Logger;
 }): Promise<void> {
 	const { db, env, connection, organizationId, repositoryId, pullNumber } = input;
 	const { octokit, ref, mention, repository } = connection;
@@ -133,6 +138,11 @@ export async function refreshSummaryAfterSettlement(input: {
 	if (!last?.summary || !last.verdict) return;
 
 	const rows = await loadSummaryFindings(db, { organizationId, repositoryId, pullNumber });
+	const blockingOpen = hasBlockingOpen(rows, input.blockingSeverity);
+	// A change request stands while a blocking finding is open; after that the latest verdict
+	// becomes a comment. A conversation is not a review of the code, so it never approves.
+	const verdict =
+		last.verdict === 'request_changes' && !blockingOpen ? 'comment' : (last.verdict as Verdict);
 
 	const existing = await getMarkedComment(octokit, ref, pullNumber, SUMMARY_MARKER);
 	const extras = existing ? summaryExtrasFromBody(existing.body) : {};
@@ -141,7 +151,7 @@ export async function refreshSummaryAfterSettlement(input: {
 		repository: repository.fullName,
 		headSha: last.headSha,
 		summary: last.summary,
-		verdict: last.verdict as Verdict,
+		verdict,
 		walkthrough: last.walkthrough ?? [],
 		latestReviewId: last.id,
 		findings: rows,
@@ -161,6 +171,21 @@ export async function refreshSummaryAfterSettlement(input: {
 		.update(schema.reviews)
 		.set({ tier: summaryInput.tier, tierReason: summaryInput.tierReason })
 		.where(eq(schema.reviews.id, last.id));
+	// No blocking finding is left: withdraw any change request, including one an earlier review
+	// left in place. Dismissing finds nothing to do when there is none.
+	if (!blockingOpen) {
+		await withdrawChangeRequests(connection, pullNumber, CHANGE_REQUEST_DISMISSAL, input.log);
+	}
+}
+
+/** Whether a finding at or above the blocking severity is still open on the pull request. */
+export function hasBlockingOpen(
+	findings: Pick<FindingRow, 'status' | 'severity'>[],
+	blockingSeverity: Severity
+): boolean {
+	return findings.some(
+		(f) => f.status === 'posted' && severityAtLeast(f.severity as Severity, blockingSeverity)
+	);
 }
 
 /**

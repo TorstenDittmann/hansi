@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test';
 import type { Octokit } from './app';
-import { getFailedChecks, getLinkedIssues, resolveReviewThreads } from './pulls';
+import {
+	dismissChangeRequests,
+	getFailedChecks,
+	getLinkedIssues,
+	resolveReviewThreads
+} from './pulls';
 
 const thread = (id: string, root: number, isResolved = false) => ({
 	id,
@@ -110,4 +115,36 @@ test('getFailedChecks returns failed runs of other apps with their annotations',
 			annotations: [{ path: 'a.ts', line: 3, message: 'boom' }]
 		}
 	]);
+});
+
+test("dismissChangeRequests withdraws only the bot's own change requests", async () => {
+	const reviews = [
+		{ id: 1, state: 'CHANGES_REQUESTED', user: { login: 'hansi-codes[bot]' } },
+		{ id: 2, state: 'COMMENTED', user: { login: 'hansi-codes[bot]' } },
+		{ id: 3, state: 'CHANGES_REQUESTED', user: { login: 'alice' } },
+		{ id: 4, state: 'DISMISSED', user: { login: 'hansi-codes[bot]' } },
+		{ id: 5, state: 'CHANGES_REQUESTED', user: { login: 'Hansi-Codes[bot]' } }
+	];
+	const dismissed: { review_id: number; message: string }[] = [];
+	const octokit = {
+		paginate: async () => reviews,
+		rest: {
+			pulls: {
+				listReviews: {},
+				dismissReview: async (input: { review_id: number; message: string }) => {
+					dismissed.push({ review_id: input.review_id, message: input.message });
+				}
+			}
+		}
+	} as unknown as Octokit;
+
+	const count = await dismissChangeRequests(octokit, { owner: 'o', repo: 'r' }, 7, {
+		botLogin: 'hansi-codes[bot]',
+		message: 'Resolved.'
+	});
+	expect(dismissed).toEqual([
+		{ review_id: 1, message: 'Resolved.' },
+		{ review_id: 5, message: 'Resolved.' }
+	]);
+	expect(count).toBe(2);
 });

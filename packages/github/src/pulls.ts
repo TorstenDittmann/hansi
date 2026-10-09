@@ -119,6 +119,37 @@ export async function createReview(
 	return data;
 }
 
+/**
+ * Dismisses the bot's own "changes requested" reviews on a pull request. A later COMMENT review
+ * does not clear that state on GitHub; only an approval or a dismissal does. Returns how many
+ * reviews it dismissed, so calling it when there is nothing to dismiss is harmless.
+ */
+export async function dismissChangeRequests(
+	octokit: Octokit,
+	ref: RepoRef,
+	pullNumber: number,
+	input: { botLogin: string; message: string }
+): Promise<number> {
+	const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+		...ref,
+		pull_number: pullNumber,
+		per_page: 100
+	});
+	const login = input.botLogin.toLowerCase();
+	const open = reviews.filter(
+		(r) => r.state === 'CHANGES_REQUESTED' && r.user?.login.toLowerCase() === login
+	);
+	for (const review of open) {
+		await octokit.rest.pulls.dismissReview({
+			...ref,
+			pull_number: pullNumber,
+			review_id: review.id,
+			message: input.message
+		});
+	}
+	return open.length;
+}
+
 export async function createIssueComment(
 	octokit: Octokit,
 	ref: RepoRef,
