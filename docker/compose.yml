@@ -15,6 +15,11 @@ services:
       - '3000:3000'
     volumes:
       - hans-data:/data
+    # Reviews run commands in gVisor sandboxes inside this container. runsc installs its own
+    # seccomp filters, which Docker's default profile blocks; the container stays unprivileged.
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
     restart: unless-stopped
 
   # To run web and worker as separate containers, they need a networked database instead of a

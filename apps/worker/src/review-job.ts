@@ -46,6 +46,7 @@ import type { Job, ReviewJobPayload } from '@hans/queue';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { REVIEW_FAILURE_SUMMARY } from './public-failure';
+import { openSandbox, sandboxSkipReason, type ReviewSandbox } from './sandbox';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -386,6 +387,12 @@ async function executeReview(
 				}
 			});
 
+			const sandbox = await reviewSandbox(ctx, config, {
+				repoDir,
+				name: `hansi-review-${review.id}`,
+				record,
+				log
+			});
 			const result = await runReview({
 				repoDir,
 				diff: reviewDiff,
@@ -404,8 +411,9 @@ async function executeReview(
 				models,
 				onEvent: record,
 				onModelCall: usage.record,
-				onModelError: usage.recordError
-			});
+				onModelError: usage.recordError,
+				sandbox: sandbox?.runner
+			}).finally(() => sandbox?.close());
 			await pendingWrites;
 			await db.update(schema.reviews).set(usage.totals).where(eq(schema.reviews.id, review.id));
 
@@ -621,6 +629,30 @@ async function loadPullRequestContext(
 		})
 	]);
 	return { linkedIssues, failedChecks };
+}
+
+/**
+ * The sandbox this review runs commands in. It starts before the review. When it cannot start,
+ * the failure is recorded and the review reads code only.
+ */
+async function reviewSandbox(
+	ctx: WorkerContext,
+	config: RepoConfig,
+	options: { repoDir: string; name: string; record: (event: TraceEvent) => void; log: Logger }
+): Promise<ReviewSandbox | undefined> {
+	const { record, log } = options;
+	const skip = sandboxSkipReason(ctx.env);
+	if (skip) {
+		record({ type: 'sandbox.skipped', data: { reason: skip } });
+		return undefined;
+	}
+	try {
+		return await openSandbox({ env: ctx.env, config, emit: record, ...options });
+	} catch (error) {
+		log.warn({ err: error }, 'sandbox failed to start');
+		record({ type: 'sandbox.failed', data: { error: (error as Error).message } });
+		return undefined;
+	}
 }
 
 /**
