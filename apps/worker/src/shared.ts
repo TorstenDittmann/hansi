@@ -7,6 +7,7 @@ import type { ModelCall, ModelFailure, ReviewModel } from '@hans/core';
 import { schema, type Database } from '@hans/db';
 import {
 	botMention,
+	dismissChangeRequests,
 	getInstallationOctokit,
 	loadGitHubAppCredentials,
 	parseFullName,
@@ -229,5 +230,26 @@ export async function withWorkdir<T>(env: Env, fn: (dir: string) => Promise<T>):
 		return await fn(dir);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Withdraws Hansi's own "changes requested" reviews on a pull request. A failure is logged, not
+ * thrown: the review or reply it follows has already been posted.
+ */
+export async function withdrawChangeRequests(
+	{ octokit, ref, mention }: RepositoryConnection,
+	pullNumber: number,
+	message: string,
+	log: Logger
+): Promise<number> {
+	try {
+		return await dismissChangeRequests(octokit, ref, pullNumber, {
+			botLogin: `${mention.replace(/^@/, '')}[bot]`,
+			message
+		});
+	} catch (error) {
+		log.warn({ err: error }, 'could not dismiss earlier change request');
+		return 0;
 	}
 }

@@ -53,6 +53,7 @@ import {
 	loadModels,
 	reviewDetailsUrlFor,
 	withWorkdir,
+	withdrawChangeRequests,
 	type RepositoryConnection,
 	type WorkerContext
 } from './shared';
@@ -79,7 +80,12 @@ import {
 	type IncrementalDecision
 } from './merge-only';
 import { loadSummaryFindings, summaryExtrasFromBody } from './summary';
-import { shouldSubmitReview, submissionForCurrentHead } from './submit-review';
+import {
+	CHANGE_REQUEST_DISMISSAL,
+	shouldDismissChangeRequest,
+	shouldSubmitReview,
+	submissionForCurrentHead
+} from './submit-review';
 
 type Review = typeof schema.reviews.$inferSelect;
 type Outcome = Pick<
@@ -526,12 +532,26 @@ async function executeReview(
 						log
 					)
 				: [];
+			// A COMMENT review leaves an earlier "changes requested" in force on GitHub. Withdraw it
+			// once nothing blocking is open, or the author stays blocked by fixed findings.
+			const blockingOpen =
+				result.posted.filter((f) => severityAtLeast(f.severity, threshold)).length +
+				result.stillOpenBlocking;
+			const dismissedChangeRequests = shouldDismissChangeRequest({
+				verdict: submission.verdict,
+				blockingOpen,
+				lastDecisiveVerdict: history.lastDecisiveVerdict,
+				headMoved: submission.headMoved
+			})
+				? await withdrawChangeRequests(connection, pr.number, CHANGE_REQUEST_DISMISSAL, log)
+				: 0;
 			record({
 				type: 'review.posted',
 				data: {
 					summaryUrl: summary.url,
 					submittedReview: submission.submit,
-					headMoved: submission.headMoved
+					headMoved: submission.headMoved,
+					dismissedChangeRequests
 				}
 			});
 
