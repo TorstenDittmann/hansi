@@ -100,7 +100,7 @@ test('a guideline edit does not settle a bug finding from a trusted commenter', 
 		finding: { severity: 'major', category: 'security', title: 'Token is logged' },
 		changedGuidelines: ['AGENTS.md', 'CONTRIBUTING.md']
 	});
-	expect(instructions).toContain('Keep pushing back');
+	expect(instructions).toContain('keep pushing back on a preference');
 	expect(instructions).toContain('bug, security, concurrency, or error-handling');
 	expect(instructions).not.toContain('deferred to the policy change');
 	expect(instructions).toContain('Base-branch guidelines');
@@ -244,4 +244,16 @@ test('treats repository guidelines as rules the review has to apply', () => {
 	expect(verifierInstructions('balanced')).toContain(
 		'the changed code breaks a concrete rule in <repository_guidelines>'
 	);
+});
+
+test('a trusted factual rebuttal of a bug finding dismisses it', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'MEMBER',
+		finding: { severity: 'major', category: 'bug', title: 'Preserve configured passkey origins' }
+	});
+	expect(instructions).toContain("finding's premise is false");
+	expect(instructions).toContain('list_refs and path_in_refs');
+	expect(instructions).toContain('never call such a claim unverifiable');
+	expect(instructions).toContain('Do not repeat an argument');
+	expect(instructions).not.toContain('demonstrable factual error');
 });
