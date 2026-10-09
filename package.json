@@ -22,7 +22,7 @@
 		"dev": "bun run db:migrate && wsu dev",
 		"build": "wsu build",
 		"check": "wsu run check",
-		"test": "wsu run test",
+		"test": "wsu run test && bun test docker",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"db:generate": "bun run --cwd packages/db generate",

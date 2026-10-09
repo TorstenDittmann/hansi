@@ -1,5 +1,17 @@
-import { redirect, type Handle, type RequestEvent } from '@sveltejs/kit';
+import { redirect, type Handle, type RequestEvent, type ServerInit } from '@sveltejs/kit';
 import { getAuth } from '$lib/server/auth';
+import { exitWhenWebServerCloses } from '$lib/server/shutdown';
+
+export const init: ServerInit = () => {
+	exitWhenWebServerCloses(
+		{
+			on(event, listener) {
+				process.on(event as 'beforeExit', listener);
+			}
+		},
+		process.exit
+	);
+};
 
 export const handle: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/ink/')) return proxyPostHog(event);

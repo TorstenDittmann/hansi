@@ -1,6 +1,8 @@
 // Container entrypoint: applies migrations once, then starts the web server, the worker, or both.
-// In `all` mode, if either process exits the container exits, so the orchestrator restarts it.
+// In `all` mode, if either process crashes the container exits, so the orchestrator restarts it.
+// A deploy is different: the worker finishes a review it already started. See supervise.ts.
 import { createDatabase, runMigrations } from '@hans/db';
+import { supervise, type SupervisedChild } from './supervise';
 
 const mode = process.env.HANS_MODE ?? 'all';
 if (!['all', 'web', 'worker'].includes(mode)) {
@@ -24,15 +26,21 @@ const commands: Record<string, string[]> = {
 	worker: ['bun', 'apps/worker/src/index.ts']
 };
 const names = mode === 'all' ? ['web', 'worker'] : [mode];
-const children = names.map((name) =>
-	Bun.spawn(commands[name]!, { stdio: ['inherit', 'inherit', 'inherit'], env: process.env })
-);
+const children: SupervisedChild[] = names.map((name) => {
+	const child = Bun.spawn(commands[name]!, {
+		stdio: ['inherit', 'inherit', 'inherit'],
+		env: process.env
+	});
+	return {
+		drain: name === 'worker',
+		kill: (signal) => child.kill(signal),
+		exited: child.exited
+	};
+});
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-	process.on(signal, () => children.forEach((child) => child.kill(signal)));
-}
-
-const exitCode = await Promise.race(children.map((child) => child.exited));
-children.forEach((child) => child.kill('SIGTERM'));
-await Promise.all(children.map((child) => child.exited));
+const exitCode = await supervise(children, (onSignal) => {
+	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+		process.on(signal, () => onSignal(signal));
+	}
+});
 process.exit(exitCode);

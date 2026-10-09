@@ -26,6 +26,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 			logger.warn({ signal }, 'second signal, exiting without waiting for in-flight jobs');
 			process.exit(1);
 		}
+		// Stops new claims only. A review already running is not aborted; its lease keeps
+		// another worker from taking it, and the job finishes before this process exits.
 		logger.info({ signal }, 'shutting down after in-flight jobs finish (signal again to force)');
 		controller.abort();
 	});

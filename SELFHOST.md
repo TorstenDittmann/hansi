@@ -146,6 +146,11 @@ machine, both need a networked database instead of a shared file:
 
 Run any number of workers. They claim jobs from the database, so each review runs once.
 
+A new deploy waits for a review that is already running. The worker stops taking new jobs,
+finishes the ones in progress, and then exits. Compose allows 30 minutes for that
+(`stop_grace_period`). Other orchestrators need the same stop timeout, for example Docker
+`--stop-timeout 1800`. Sending SIGTERM a second time stops the worker immediately.
+
 ### Dokploy
 
 1. Create a project with a **libSQL** database. Dokploy protects it with HTTP Basic auth; the user
@@ -157,6 +162,8 @@ Run any number of workers. They claim jobs from the database, so each review run
    `ORIGIN` to the first, and `HANS_MODE=worker` to the second.
 4. Add your domain to the web application on port 3000, with HTTPS.
 5. Deploy the web application first, so it runs the migrations, then the worker.
+6. Give the worker a stop timeout of 30 minutes so a deploy waits for a review that is already
+   running.
 
 Push to `main` and both redeploy.
 
@@ -173,4 +180,4 @@ on `APP_URL`.
 be decrypted.
 
 **Upgrade** by pulling the new release's image (or building from the new code) and restarting. Migrations run automatically when
-the web app starts.
+the web app starts. The restart waits for a review that is already running.
