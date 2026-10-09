@@ -111,9 +111,10 @@ export function titleSimilarity(a: string, b: string): number {
 }
 
 /**
- * Whether a finding repeats one already posted on this PR: same file, and either a similar title
- * on nearby lines (code shifts a little between pushes) or the same category on the same lines.
- * Proximity alone is not enough: a new bug can sit right next to an old one.
+ * Whether a finding repeats one already posted on this pull request. Same file, lines that
+ * overlap or sit a few lines apart (code shifts between pushes), and titles that describe the
+ * same failure. Sharing the lines or the category is not enough: a different failure there
+ * stays. When the titles do not clearly match, this returns false so both findings are kept.
  */
 export function isDuplicateFinding(
 	finding: Finding,
@@ -125,10 +126,9 @@ export function isDuplicateFinding(
 		const nearby =
 			finding.startLine <= prior.endLine + lineTolerance &&
 			finding.endLine >= prior.startLine - lineTolerance;
-		const sameLines = finding.startLine === prior.startLine && finding.endLine === prior.endLine;
-		return (
-			(nearby && titleSimilarity(prior.title, finding.title) >= 0.4) ||
-			(sameLines && prior.category === finding.category)
-		);
+		// 0.4 is a paraphrase of the same failure ("division by zero" / "division by zero when
+		// b is 0"). A second bug that only shares the lines, such as a TTL reset next to an
+		// eviction on a requeue, stays below it.
+		return nearby && titleSimilarity(prior.title, finding.title) >= 0.4;
 	});
 }

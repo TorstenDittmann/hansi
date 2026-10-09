@@ -431,6 +431,89 @@ export function acceptAvatar(filename: string, bytes: Uint8Array): StoredAvatar 
 }
 `;
 
+const reapBefore = `export interface Claim {
+	id: string;
+	publishedAt: number;
+	attempts: number;
+}
+
+/** Requeue a stranded claim. Attempts carry forward; the clock starts over. */
+export function retryPayload(claim: Claim): Claim {
+	return { ...claim, publishedAt: Date.now(), attempts: claim.attempts + 1 };
+}
+
+export function reap(claim: Claim, now: number, olderThan: number): 'requeue' | 'keep' {
+	if (now - claim.publishedAt < olderThan) return 'keep';
+	return 'requeue';
+}
+`;
+
+const reapAfter = `export interface Claim {
+	id: string;
+	publishedAt: number;
+	attempts: number;
+}
+
+/** Requeue a stranded claim. Attempts carry forward; the clock starts over. */
+export function retryPayload(claim: Claim): Claim {
+	return { ...claim, publishedAt: Date.now(), attempts: claim.attempts + 1 };
+}
+
+/**
+ * Dead-letter a claim published longer ago than maxAge.
+ * maxAttempts still bounds a claim that keeps getting requeued.
+ */
+export function reap(
+	claim: Claim,
+	now: number,
+	olderThan: number,
+	maxAge: number,
+	maxAttempts: number
+): 'dead' | 'requeue' | 'keep' {
+	if (now - claim.publishedAt < olderThan) return 'keep';
+	if (claim.attempts >= maxAttempts) return 'dead';
+	if (claim.publishedAt < now - maxAge) return 'dead';
+	return 'requeue';
+}
+`;
+
+const verifySendBefore = `export function resend(accountId: string): Promise<void> {
+	return createEmailVerification(accountId);
+}
+
+function createEmailVerification(accountId: string): Promise<void> {
+	return Promise.resolve(accountId).then(() => undefined);
+}
+`;
+
+const verifySendAfter = `const sentVerifications = new Set<string>();
+
+export function mount(accountId: string, resend: { mutate: () => void }): void {
+	if (claimVerificationSend(accountId)) resend.mutate();
+}
+
+function claimVerificationSend(accountId: string): boolean {
+	const key = 'verify-email-sent:' + accountId;
+	if (sentVerifications.has(accountId) || sessionStorage.getItem(key)) return false;
+	sentVerifications.add(accountId);
+	sessionStorage.setItem(key, '1');
+	return true;
+}
+
+export function onError(): void {
+	toast('Could not send the verification email');
+}
+
+function toast(message: string): void {
+	void message;
+}
+
+declare const sessionStorage: {
+	getItem(key: string): string | null;
+	setItem(key: string, value: string): void;
+};
+`;
+
 const queueBase = `export const MAX_DELIVER = 5;
 
 export function spareDelivery(maxDeliver: number): number {
@@ -887,5 +970,46 @@ export function adapter(_source: string): Adapter {
 		head: { 'src/queue.test.ts': queueTest },
 		pullRequest: { title: 'Cover spare delivery' },
 		expected: []
+	},
+	{
+		name: 'ts-requeue-resets-age',
+		description:
+			'A new max-age dead-letters claims by publishedAt, but every requeue sets publishedAt to now, so the age limit never trips.',
+		base: { 'src/broker.ts': reapBefore },
+		head: { 'src/broker.ts': reapAfter },
+		pullRequest: {
+			title: 'Bound the automatic reap sweep',
+			body: 'reapMaxAge sends claims published longer ago than this to the dead queue. reapMaxAttempts still applies.'
+		},
+		expected: [
+			{
+				path: 'src/broker.ts',
+				lines: lineOf(reapAfter, 'claim.publishedAt < now - maxAge'),
+				description:
+					'retryPayload sets publishedAt to Date.now() on every requeue, so maxAge measures time since the last requeue and a stranded claim is requeued forever until maxAttempts.'
+			}
+		]
+	},
+	{
+		name: 'ts-claim-before-send',
+		description:
+			'The verify page marks the email sent before the request succeeds, and a failure only shows a toast, so the automatic send never retries.',
+		base: { 'src/verify-email.ts': verifySendBefore },
+		head: { 'src/verify-email.ts': verifySendAfter },
+		pullRequest: {
+			title: 'Send the verification email when the page opens',
+			body: 'The page sends one verification email per account when it mounts. The resend button still works.'
+		},
+		expected: [
+			{
+				path: 'src/verify-email.ts',
+				lines: [
+					lineOf(verifySendAfter, 'sentVerifications.add(accountId)')[0],
+					lineOf(verifySendAfter, "toast('Could not send the verification email')")[0]
+				],
+				description:
+					'claimVerificationSend writes the Set and sessionStorage before mutate(), and onError only toasts, so a failed send is never retried.'
+			}
+		]
 	}
 ];

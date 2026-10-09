@@ -408,7 +408,8 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		return keep;
 	});
 
-	// 4. One comment per problem: the model sometimes reports the same bug twice.
+	// 4. One comment per failure: the model sometimes reports the same bug twice. A different
+	//    failure on the same lines stays.
 	const distinct = dropDuplicates(relevant, dropped);
 
 	// 5. Verify: a second, skeptical pass removes false positives. It can move findings, so

@@ -216,6 +216,19 @@ test('says why files are not shown, and asks for callers of deleted files', () =
 	expect(deleted).toContain('Deleted files may still be imported');
 });
 
+test('traces retry and claim lifecycles, including a marker written before the call succeeds', () => {
+	const instructions = reviewerInstructions(parseRepoConfig('').config);
+	expect(instructions).toContain('timestamp reset on every requeue');
+	expect(instructions).toContain("wipe a successor's claim");
+	expect(instructions).toContain('sessionStorage or localStorage flag');
+	expect(instructions).toContain('onError that only shows a toast');
+	expect(instructions).toContain('fails the same way as the primary');
+	expect(instructions).toContain('reserve and claim happen in the same call');
+	expect(instructions).toContain('name that failure in tier_reason');
+	expect(verifierInstructions('balanced')).toContain('marker it does not own');
+	expect(verifierInstructions('chill')).toContain('not cleared on failure');
+});
+
 test('treats repository guidelines as rules the review has to apply', () => {
 	const prompt = buildReviewPrompt({
 		...base,
