@@ -13,6 +13,10 @@ const MAX_GREP_LINES = 100;
 const MAX_LIST_ENTRIES = 300;
 const MAX_HISTORY_COMMITS = 20;
 const MAX_HISTORY_CHARS = 20_000;
+const MAX_LISTED_REFS = 200;
+const MAX_CHECKED_REFS = 20;
+/** Branch or tag names as the model passes them: no options, no revision syntax. */
+const REF_NAME = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/;
 
 /** Resolves a model-supplied path inside the checkout; rejects escapes and `.git`. */
 export function resolveRepoPath(repoDir: string, path: string): string {
@@ -22,6 +26,27 @@ export function resolveRepoPath(repoDir: string, path: string): string {
 		throw new Error(`Path is outside the repository: ${path}`);
 	}
 	return absolute;
+}
+
+/** `*` matches anything; everything else is literal. No pattern matches every ref. */
+export function refMatcher(pattern: string | undefined): (name: string) => boolean {
+	if (!pattern) return () => true;
+	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+	const regex = new RegExp(`^${escaped}$`);
+	return (name) => regex.test(name);
+}
+
+/** Branches and tags from `git ls-remote --heads --tags`, without peeled `^{}` duplicates. */
+export function parseRemoteRefs(output: string): { branches: string[]; tags: string[] } {
+	const branches: string[] = [];
+	const tags: string[] = [];
+	for (const line of output.split('\n')) {
+		const ref = line.split('\t')[1];
+		if (!ref || ref.endsWith('^{}')) continue;
+		if (ref.startsWith('refs/heads/')) branches.push(ref.slice('refs/heads/'.length));
+		else if (ref.startsWith('refs/tags/')) tags.push(ref.slice('refs/tags/'.length));
+	}
+	return { branches, tags };
 }
 
 /** Head path → base path for the renames in `git diff --name-status -z` output. */
@@ -194,6 +219,76 @@ export function createRepoTools(
 					return log.length > MAX_HISTORY_CHARS
 						? `${log.slice(0, MAX_HISTORY_CHARS)}\n… truncated; ask for fewer commits`
 						: log.trimEnd();
+				} catch (error) {
+					return `Error: ${(error as Error).message}`;
+				}
+			}
+		}),
+
+		list_refs: tool({
+			description: `List the repository's branches and tags on GitHub, e.g. release branches and version tags. Use it with path_in_refs to check claims about what was released or deployed, such as "no release contains this code". Pattern is a name glob where * matches anything, e.g. "2.*" or "cl-*".`,
+			inputSchema: z.object({ pattern: z.string().optional() }),
+			execute: async ({ pattern }) => {
+				emit({ type: 'tool.list_refs', data: { pattern } });
+				try {
+					const output = await git(['ls-remote', '--heads', '--tags', 'origin'], {
+						cwd: repoDir,
+						token: options.token
+					});
+					const matches = refMatcher(pattern);
+					const { branches, tags } = parseRemoteRefs(output);
+					const list = (label: string, names: string[]) => {
+						const found = names.filter(matches).sort();
+						if (!found.length) return `${label}: none`;
+						const more =
+							found.length > MAX_LISTED_REFS
+								? `\n… ${found.length - MAX_LISTED_REFS} more; narrow the pattern`
+								: '';
+						return `${label} (${found.length}):\n${found.slice(0, MAX_LISTED_REFS).join('\n')}${more}`;
+					};
+					return `${list('Branches', branches)}\n\n${list('Tags', tags)}`;
+				} catch (error) {
+					return `Error: ${(error as Error).message}`;
+				}
+			}
+		}),
+
+		path_in_refs: tool({
+			description: `Check whether a file or directory exists on other branches or tags (from list_refs), e.g. whether code in this pull request was ever on a release branch or in a release tag. Answers per ref: present or absent.`,
+			inputSchema: z.object({
+				path: z.string(),
+				refs: z.array(z.string()).min(1).max(MAX_CHECKED_REFS)
+			}),
+			execute: async ({ path, refs }) => {
+				emit({ type: 'tool.path_in_refs', data: { path, refs: refs.length } });
+				try {
+					const file = relative(repoDir, resolveRepoPath(repoDir, path));
+					const lines: string[] = [];
+					for (const ref of refs) {
+						if (!REF_NAME.test(ref)) {
+							lines.push(`${ref}: not a branch or tag name`);
+							continue;
+						}
+						// Trees only: whether a path exists needs no file contents. No depth limit, so
+						// history the checkout already has is not cut off.
+						const fetched = await git(
+							['fetch', '--quiet', '--no-tags', '--filter=blob:none', 'origin', ref],
+							{ cwd: repoDir, token: options.token }
+						).then(
+							() => true,
+							() => false
+						);
+						if (!fetched) {
+							lines.push(`${ref}: no such branch or tag`);
+							continue;
+						}
+						const listed = await git(['ls-tree', '--name-only', 'FETCH_HEAD', '--', file], {
+							cwd: repoDir
+						});
+						const present = listed.trim() !== '';
+						lines.push(`${ref}: ${present ? 'present' : 'absent'}`);
+					}
+					return `${file}\n${lines.join('\n')}`;
 				} catch (error) {
 					return `Error: ${(error as Error).message}`;
 				}

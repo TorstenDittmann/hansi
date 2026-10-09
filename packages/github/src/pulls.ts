@@ -46,15 +46,7 @@ export async function isTrustedAuthor(
 	pr: { author: string; authorAssociation: string }
 ): Promise<boolean> {
 	if (TRUSTED_ASSOCIATIONS.has(pr.authorAssociation)) return true;
-	try {
-		const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
-			...ref,
-			username: pr.author
-		});
-		return data.permission === 'admin' || data.permission === 'write';
-	} catch {
-		return false;
-	}
+	return hasWriteAccess(octokit, ref, pr.author);
 }
 
 /** Reads a file at a ref, or `null` when it does not exist. */
@@ -286,10 +278,61 @@ interface ReviewThreadsPage {
 		pullRequest: {
 			reviewThreads: {
 				pageInfo: { hasNextPage: boolean; endCursor: string | null };
-				nodes: { id: string; isResolved: boolean; comments: { nodes: { databaseId: number }[] } }[];
+				nodes: {
+					id: string;
+					isResolved: boolean;
+					resolvedBy?: { login: string } | null;
+					comments: { nodes: { databaseId: number }[] };
+				}[];
 			};
 		} | null;
 	};
+}
+
+export interface ReviewThread {
+	id: string;
+	isResolved: boolean;
+	/** Who resolved the thread, when it is resolved and GitHub still knows the account. */
+	resolvedBy: string | null;
+	/** Database id of the thread's first comment, which is how findings are linked. */
+	rootCommentId: number | undefined;
+}
+
+/** Every review thread on a pull request. GitHub only exposes threads through GraphQL. */
+export async function listReviewThreads(
+	octokit: Octokit,
+	ref: RepoRef,
+	pullNumber: number
+): Promise<ReviewThread[]> {
+	const threads: ReviewThread[] = [];
+	for (let cursor: string | null = null; ;) {
+		const page: ReviewThreadsPage = await octokit.graphql(
+			`query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+				repository(owner: $owner, name: $repo) {
+					pullRequest(number: $number) {
+						reviewThreads(first: 100, after: $cursor) {
+							pageInfo { hasNextPage endCursor }
+							nodes { id isResolved resolvedBy { login } comments(first: 1) { nodes { databaseId } } }
+						}
+					}
+				}
+			}`,
+			{ ...ref, number: pullNumber, cursor }
+		);
+		const connection = page.repository.pullRequest?.reviewThreads;
+		if (!connection) break;
+		for (const thread of connection.nodes) {
+			threads.push({
+				id: thread.id,
+				isResolved: thread.isResolved,
+				resolvedBy: thread.resolvedBy?.login ?? null,
+				rootCommentId: thread.comments.nodes[0]?.databaseId
+			});
+		}
+		if (!connection.pageInfo.hasNextPage) break;
+		cursor = connection.pageInfo.endCursor;
+	}
+	return threads;
 }
 
 /**
@@ -305,32 +348,9 @@ export async function resolveReviewThreads(
 	const wanted = new Set(rootCommentIds);
 	if (wanted.size === 0) return 0;
 
-	// GitHub only exposes thread ids (and resolving) through GraphQL.
-	const threadIds: string[] = [];
-	for (let cursor: string | null = null; ;) {
-		const page: ReviewThreadsPage = await octokit.graphql(
-			`query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
-				repository(owner: $owner, name: $repo) {
-					pullRequest(number: $number) {
-						reviewThreads(first: 100, after: $cursor) {
-							pageInfo { hasNextPage endCursor }
-							nodes { id isResolved comments(first: 1) { nodes { databaseId } } }
-						}
-					}
-				}
-			}`,
-			{ ...ref, number: pullNumber, cursor }
-		);
-		const threads = page.repository.pullRequest?.reviewThreads;
-		if (!threads) break;
-		for (const thread of threads.nodes) {
-			const root = thread.comments.nodes[0]?.databaseId;
-			if (!thread.isResolved && root !== undefined && wanted.has(root)) threadIds.push(thread.id);
-		}
-		if (!threads.pageInfo.hasNextPage) break;
-		cursor = threads.pageInfo.endCursor;
-	}
-
+	const threadIds = (await listReviewThreads(octokit, ref, pullNumber))
+		.filter((t) => !t.isResolved && t.rootCommentId !== undefined && wanted.has(t.rootCommentId))
+		.map((t) => t.id);
 	for (const threadId of threadIds) {
 		await octokit.graphql(
 			`mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id } } }`,
@@ -338,6 +358,20 @@ export async function resolveReviewThreads(
 		);
 	}
 	return threadIds.length;
+}
+
+/** Whether an account can write to the repository. Errors count as no. */
+export async function hasWriteAccess(
+	octokit: Octokit,
+	ref: RepoRef,
+	username: string
+): Promise<boolean> {
+	try {
+		const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({ ...ref, username });
+		return data.permission === 'admin' || data.permission === 'write';
+	} catch {
+		return false;
+	}
 }
 
 /** Acknowledges a comment with 👀 so people know Hansi is working on it. */

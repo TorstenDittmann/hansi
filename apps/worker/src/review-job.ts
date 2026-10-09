@@ -46,6 +46,7 @@ import type { Job, ReviewJobPayload } from '@hans/queue';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { REVIEW_FAILURE_SUMMARY } from './public-failure';
+import { dismissFindingsResolvedOnGitHub } from './resolved-threads';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -315,6 +316,8 @@ async function executeReview(
 
 			// On a push, review only what this pull request itself changed since the last review.
 			// A merge of the base branch is not that: its files belong to main, not to the PR.
+			// A thread a maintainer resolved on GitHub settles its finding before the history is read.
+			await dismissFindingsResolvedOnGitHub(db, connection, review, log);
 			const history = await loadReviewHistory(db, review);
 			let reviewDiff = diff;
 			let incrementalFrom: string | undefined;

@@ -130,6 +130,46 @@ describe('file_history', () => {
 	});
 });
 
+describe('list_refs and path_in_refs', () => {
+	test('checks whether a path was ever on a branch or tag', async () => {
+		await git(['tag', 'v1.0.0', sha.base!], { cwd: origin });
+		const dir = join(root, 'checkout-refs');
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 1,
+			baseSha: sha.base!,
+			headSha: sha.second!
+		});
+		const tools = createRepoTools(dir, () => {});
+		const options = { toolCallId: 't', messages: [] } as never;
+
+		const all = await tools.list_refs.execute!({}, options);
+		expect(all).toContain('Branches (3):\nfeature\nmain\nrewritten');
+		expect(all).toContain('Tags (1):\nv1.0.0');
+		expect(await tools.list_refs.execute!({ pattern: 're*' }, options)).toContain(
+			'Branches (1):\nrewritten'
+		);
+
+		const checked = await tools.path_in_refs.execute!(
+			{ path: 'c.ts', refs: ['main', 'rewritten', 'v1.0.0', 'missing', '--upload-pack=x'] },
+			options
+		);
+		expect(checked).toBe(
+			[
+				'c.ts',
+				'main: absent',
+				'rewritten: present',
+				'v1.0.0: absent',
+				'missing: no such branch or tag',
+				'--upload-pack=x: not a branch or tag name'
+			].join('\n')
+		);
+		// The checkout's own history is untouched by those fetches.
+		expect((await git(['rev-parse', 'HEAD'], { cwd: dir })).trim()).toBe(sha.second!);
+	});
+});
+
 describe('read_file', () => {
 	test('reads a file as it was before the pull request', async () => {
 		const dir = join(root, 'checkout-read-base');
