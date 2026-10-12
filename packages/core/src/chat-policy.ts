@@ -51,6 +51,46 @@ export interface ChatReplyPolicy {
 	 * The model still checks that the finding cites that file.
 	 */
 	deferToGuidelineEdit: boolean;
+	/**
+	 * A trusted commenter has declined a non-security finding with a reason at least twice.
+	 * Security findings stay open when a concrete exploit is still named.
+	 */
+	dropAfterTwoDeclines: boolean;
+}
+
+/** A reply that reports a fix, rather than a reason the finding should not have been raised. */
+const FIX_REPLY = /\b(?:fixed in|i(?:'ve| have) fixed)\b/i;
+
+/**
+ * A comment that gives a reason, long enough to be a decline rather than "no" or "thanks".
+ * A report that the finding was fixed is not a decline.
+ */
+export function isReasonedDecline(body: string): boolean {
+	const text = body.trim();
+	if (text.length < 40) return false;
+	return !FIX_REPLY.test(text);
+}
+
+/** How many non-bot messages in the thread are reasoned declines, including the one being answered. */
+export function countReasonedDeclines(messages: { fromBot: boolean; body: string }[]): number {
+	return messages.filter((message) => !message.fromBot && isReasonedDecline(message.body)).length;
+}
+
+/**
+ * After two reasoned declines, a non-security finding is dropped. A security finding can stay
+ * open when the reply names a concrete exploit; one decline is not enough for a real defect.
+ */
+export function dropsAfterRepeatedDecline(
+	authorAssociation: string | undefined,
+	finding: ChatPolicyFinding | null | undefined,
+	reasonedDeclines: number
+): boolean {
+	return (
+		isTrustedCommenter(authorAssociation) &&
+		!!finding &&
+		finding.category !== 'security' &&
+		reasonedDeclines >= 2
+	);
 }
 
 function isDeclinableNote(
@@ -86,6 +126,8 @@ export function chatReplyPolicy(input: {
 	authorAssociation?: string;
 	finding?: ChatPolicyFinding | null;
 	changedGuidelines?: readonly string[];
+	/** Reasoned declines already in the thread, including the comment being answered. */
+	reasonedDeclines?: number;
 }): ChatReplyPolicy {
 	const finding = input.finding ?? undefined;
 	const trusted = isTrustedCommenter(input.authorAssociation);
@@ -94,6 +136,11 @@ export function chatReplyPolicy(input: {
 		holdDefect: trusted && !!finding && isDefectCategory(finding.category),
 		deferToGuidelineEdit:
 			defersToGuidelineChange(input.authorAssociation, finding) &&
-			(input.changedGuidelines?.length ?? 0) > 0
+			(input.changedGuidelines?.length ?? 0) > 0,
+		dropAfterTwoDeclines: dropsAfterRepeatedDecline(
+			input.authorAssociation,
+			finding,
+			input.reasonedDeclines ?? 0
+		)
 	};
 }

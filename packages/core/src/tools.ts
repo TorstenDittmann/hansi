@@ -28,6 +28,66 @@ export function resolveRepoPath(repoDir: string, path: string): string {
 	return absolute;
 }
 
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/i;
+
+/**
+ * Remote branches and tags that contain `commit`, from `git branch -r --contains` and
+ * `git tag --contains`. The pull-request checkout ref (`pr`) is omitted: it is not a branch.
+ */
+export async function refsContaining(
+	repoDir: string,
+	commit: string,
+	options: { token?: string; pattern?: string } = {}
+): Promise<string> {
+	if (commit !== 'HEAD' && !COMMIT_SHA.test(commit)) {
+		return 'Error: commit must be a SHA or HEAD';
+	}
+	await git(
+		['fetch', '--quiet', '--filter=blob:none', 'origin', '+refs/heads/*:refs/remotes/origin/*'],
+		{ cwd: repoDir, token: options.token }
+	);
+	// A repository with no tags makes this refspec fail. Heads are enough to answer.
+	await git(['fetch', '--quiet', '--filter=blob:none', 'origin', '+refs/tags/*:refs/tags/*'], {
+		cwd: repoDir,
+		token: options.token
+	}).catch((error: unknown) => {
+		if (!(error instanceof GitError)) throw error;
+	});
+
+	let sha: string;
+	try {
+		sha = (await git(['rev-parse', '--verify', `${commit}^{commit}`], { cwd: repoDir })).trim();
+	} catch (error) {
+		if (error instanceof GitError) return 'Error: commit not in this repository';
+		throw error;
+	}
+
+	const [branchOut, tagOut] = await Promise.all([
+		git(['branch', '-r', '--contains', sha], { cwd: repoDir }),
+		git(['tag', '--contains', sha], { cwd: repoDir })
+	]);
+	const matches = refMatcher(options.pattern);
+	const names = (output: string) =>
+		output
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => line && !line.includes('->'))
+			.map((line) => line.replace(/^origin\//, ''))
+			.filter((name) => name !== 'pr' && name !== 'HEAD' && matches(name))
+			.sort();
+	const list = (label: string, found: string[]) => {
+		if (!found.length) return `${label}: none`;
+		const more =
+			found.length > MAX_LISTED_REFS
+				? `\n… ${found.length - MAX_LISTED_REFS} more; narrow the pattern`
+				: '';
+		return `${label} (${found.length}):\n${found.slice(0, MAX_LISTED_REFS).join('\n')}${more}`;
+	};
+	const branches = names(branchOut);
+	const tags = names(tagOut);
+	return `commit ${sha}\n${list('Branches', branches)}\n\n${list('Tags', tags)}`;
+}
+
 /** `*` matches anything; everything else is literal. No pattern matches every ref. */
 export function refMatcher(pattern: string | undefined): (name: string) => boolean {
 	if (!pattern) return () => true;
@@ -253,8 +313,30 @@ export function createRepoTools(
 			}
 		}),
 
+		refs_containing: tool({
+			description: `Which remote branches and tags contain a commit. Runs \`git branch -r --contains\` and \`git tag --contains\`. Use it when a decline says code was never released, never deployed, or exists only on the default branch. Pass the commit that added the code (from file_history), not the unmerged pull request head: a release will not contain that head. Omit commit to check the checkout. Pattern is a name glob, e.g. "2.*" or "cl-*".`,
+			inputSchema: z.object({
+				commit: z
+					.string()
+					.optional()
+					.describe('Commit SHA, or HEAD for the checkout. Not a branch name.'),
+				pattern: z.string().optional().describe('Glob of branch and tag names to keep, e.g. "2.*"')
+			}),
+			execute: async ({ commit, pattern }) => {
+				emit({ type: 'tool.refs_containing', data: { commit, pattern } });
+				try {
+					return await refsContaining(repoDir, commit ?? 'HEAD', {
+						token: options.token,
+						pattern
+					});
+				} catch (error) {
+					return `Error: ${(error as Error).message}`;
+				}
+			}
+		}),
+
 		path_in_refs: tool({
-			description: `Check whether a file or directory exists on other branches or tags (from list_refs), e.g. whether code in this pull request was ever on a release branch or in a release tag. Answers per ref: present or absent.`,
+			description: `Check whether a file or directory exists on other branches or tags (from list_refs), e.g. whether code in this pull request was ever on a release branch or in a release tag. Answers per ref: present or absent. Pair it with refs_containing when the claim is about a commit rather than a path.`,
 			inputSchema: z.object({
 				path: z.string(),
 				refs: z.array(z.string()).min(1).max(MAX_CHECKED_REFS)

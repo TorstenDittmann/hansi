@@ -15,6 +15,7 @@ import {
 	mergeSecondParent,
 	pullRequestDelta,
 	runReview,
+	settlementStanding,
 	SUMMARY_MARKER,
 	tierMeaning,
 	type Finding,
@@ -438,16 +439,66 @@ async function executeReview(
 			}
 
 			// One summary comment per PR, edited in place on every review.
+			// A thread may have dismissed a finding while this review was running. The summary and
+			// verdict follow the findings that are still posted, not the set the model started with.
 			const threshold = blockingSeverity(config);
-			const stillOpen = history.open.filter((f) => !result.resolved.includes(f.id));
+			const live = await loadReviewHistory(db, review);
+			const liveOpen = new Set(live.open.map((finding) => finding.id));
+			const dismissedDuringReview = history.open.filter(
+				(finding) => !liveOpen.has(finding.id) && !result.resolved.includes(finding.id)
+			);
+			const stillOpen = history.open.filter(
+				(finding) => liveOpen.has(finding.id) && !result.resolved.includes(finding.id)
+			);
+			const reconciled =
+				dismissedDuringReview.length > 0
+					? settlementStanding({
+							summary: result.summary,
+							latestReviewId: review.id,
+							config,
+							approvalWithheld: result.approvalWithheld,
+							headMoved: false,
+							findings: [
+								...result.posted.map((finding) => ({
+									reviewId: review.id,
+									status: 'posted' as const,
+									severity: finding.severity,
+									category: finding.category,
+									title: finding.title,
+									body: finding.body
+								})),
+								...stillOpen.map((finding) => ({
+									reviewId: 'earlier',
+									status: 'posted' as const,
+									severity: finding.severity,
+									category: finding.category,
+									title: finding.title,
+									body: finding.body
+								})),
+								...dismissedDuringReview.map((finding) => ({
+									reviewId: 'earlier',
+									status: 'dismissed' as const,
+									severity: finding.severity,
+									category: finding.category,
+									title: finding.title,
+									body: finding.body
+								}))
+							]
+						})
+					: null;
+			const summaryText = reconciled?.summary ?? result.summary;
+			const verdict = reconciled?.verdict ?? result.verdict;
+			const tier = reconciled?.tier ?? result.tier;
+			const tierReason = reconciled?.tierReason ?? result.tierReason;
+			const approvalWithheld = reconciled ? reconciled.approvalWithheld : result.approvalWithheld;
 			// Submit a GitHub review when there are inline comments, the approve/request-changes
 			// state changes, the pull request reaches Tier S, or someone explicitly asked for a
 			// re-review. A clean Tier S used to only edit the summary, so the timeline never
 			// showed the review the earlier grades left.
 			const plannedSubmit = shouldSubmitReview({
 				posted: result.posted.length,
-				verdict: result.verdict,
-				tier: result.tier,
+				verdict,
+				tier,
 				previousTier: history.previousTier,
 				lastDecisiveVerdict: history.lastDecisiveVerdict,
 				trigger: review.trigger
@@ -458,7 +509,7 @@ async function executeReview(
 				submissionForCurrentHead({
 					reviewedSha: pr.headSha,
 					currentHeadSha,
-					verdict: result.verdict,
+					verdict,
 					posted: result.posted.length,
 					shouldSubmit: plannedSubmit
 				});
@@ -467,9 +518,9 @@ async function executeReview(
 					repository: connection.repository.fullName,
 					// Line links stay on the reviewed commit. The new head may have moved them.
 					headSha: pr.headSha,
-					summary: result.summary,
-					tier: result.tier,
-					tierReason: result.tierReason,
+					summary: summaryText,
+					tier,
+					tierReason,
 					verdict: decision.verdict,
 					posted: result.posted,
 					resolved: history.open.filter((f) => result.resolved.includes(f.id)),
@@ -478,7 +529,7 @@ async function executeReview(
 					dropped: result.dropped,
 					walkthrough: result.walkthrough,
 					latestChanges: result.latestChanges,
-					approvalWithheld: result.approvalWithheld,
+					approvalWithheld,
 					filesTooLargeForPrompt: result.filesTooLargeForPrompt,
 					staleHead: decision.note,
 					incrementalFrom,
@@ -522,7 +573,7 @@ async function executeReview(
 						pr,
 						{
 							body: formatReviewBody({
-								tier: result.tier,
+								tier,
 								verdict: submission.verdict,
 								blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
 									.length,
@@ -539,7 +590,7 @@ async function executeReview(
 			// once nothing blocking is open, or the author stays blocked by fixed findings.
 			const blockingOpen =
 				result.posted.filter((f) => severityAtLeast(f.severity, threshold)).length +
-				result.stillOpenBlocking;
+				stillOpen.filter((f) => severityAtLeast(f.severity, threshold)).length;
 			const dismissedChangeRequests = shouldDismissChangeRequest({
 				verdict: submission.verdict,
 				blockingOpen,
@@ -577,19 +628,19 @@ async function executeReview(
 				conclusion: checkConclusions[submission.verdict],
 				title: submission.headMoved
 					? 'Newer commits will be reviewed'
-					: `Tier ${result.tier}: ${tierMeaning[result.tier]}`,
+					: `Tier ${tier}: ${tierMeaning[tier]}`,
 				summary: absolutizeLinks(
-					[submission.note, result.tierReason, result.summary].filter(Boolean).join('\n\n'),
+					[submission.note, tierReason, summaryText].filter(Boolean).join('\n\n'),
 					connection.repository.fullName,
 					pr.headSha
 				)
 			});
 			return {
 				status: 'completed',
-				summary: result.summary,
+				summary: summaryText,
 				verdict: submission.verdict,
-				tier: result.tier,
-				tierReason: result.tierReason,
+				tier,
+				tierReason,
 				walkthrough: result.walkthrough
 			} satisfies Outcome;
 		});

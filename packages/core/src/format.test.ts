@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { UNATTACHED_DROP_REASON } from './findings';
 import {
 	absolutizeLinks,
+	relativeFileLinkTargets,
 	filesTooLargeFromBody,
 	filesTooLargeSentence,
 	formatFindingComment,
@@ -324,6 +325,33 @@ describe('absolutizeLinks', () => {
 		expect(linked).toContain('`[file](./src/a.ts#L1)`');
 		expect(linked).toContain(`[open it](${blob('src/a.ts')}#L2)`);
 		expect(linked).toContain('const sample = "[file](packages/foo.ts#L10-L20)";');
+	});
+
+	test('pins a short SHA and main to the full reviewed commit, and rejects relative targets', () => {
+		const full = `999c0d1${'a'.repeat(33)}`;
+		const body = [
+			'[short](https://github.com/appwrite/appwrite/blob/999c0d1/src/a.ts#L10)',
+			'[main](https://github.com/appwrite/appwrite/blob/main/src/a.ts#L10-L12)',
+			'[tag](https://github.com/appwrite/appwrite/blob/v1.9.6/src/a.ts#L10)',
+			'[other](https://github.com/other/repo/blob/main/src/a.ts)',
+			'[already](https://github.com/appwrite/appwrite/blob/' + full + '/src/a.ts#L2)',
+			'[relative](packages/config/tests/ConfigTest.php#L148)'
+		].join('\n');
+		const linked = absolutizeLinks(body, REPO, full);
+		const pinned = `https://github.com/${REPO}/blob/${full}/src/a.ts`;
+		expect(linked).toContain(`[short](${pinned}#L10)`);
+		expect(linked).toContain(`[main](${pinned}#L10-L12)`);
+		expect(linked).toContain(`[already](${pinned}#L2)`);
+		expect(linked).toContain(
+			`[relative](https://github.com/${REPO}/blob/${full}/packages/config/tests/ConfigTest.php#L148)`
+		);
+		expect(linked).toContain(
+			'[tag](https://github.com/appwrite/appwrite/blob/v1.9.6/src/a.ts#L10)'
+		);
+		expect(linked).toContain('[other](https://github.com/other/repo/blob/main/src/a.ts)');
+		expect(linked).not.toContain('appwrite/appwrite/blob/main/');
+		expect(linked).not.toContain('/blob/999c0d1/src/');
+		expect(relativeFileLinkTargets(linked)).toEqual([]);
 	});
 });
 

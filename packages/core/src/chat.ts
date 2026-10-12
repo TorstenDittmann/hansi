@@ -2,6 +2,7 @@ import { generateText, isStepCount, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
+import { countReasonedDeclines } from './chat-policy';
 import { chatInstructions, formatChatContext, type ChatReplyContext } from './prompts';
 import { callModel, reasoningCallOptions, type ModelCall, type ModelFailure } from './model-call';
 import type { ReviewModel } from './review';
@@ -79,7 +80,7 @@ export async function runChat(input: ChatInput): Promise<string> {
 		const onMarkFinding = input.onMarkFinding;
 		tools.mark_finding = tool({
 			description:
-				'Record the outcome of the finding this thread is about: resolved (the author fixed it) or dismissed (it was wrong, not wanted, or settled by a trusted maintainer declining a minor testing, documentation, or maintainability note).',
+				'Record the outcome of the finding this thread is about: resolved (the author fixed it) or dismissed (it was wrong, not wanted, settled by a trusted maintainer declining a minor testing, documentation, or maintainability note, confirmed with list_refs, path_in_refs, or refs_containing, or dropped after a second reasoned decline of a non-security finding).',
 			inputSchema: z.object({
 				status: z.enum(['resolved', 'dismissed']),
 				reason: z.string()
@@ -93,10 +94,12 @@ export async function runChat(input: ChatInput): Promise<string> {
 	}
 
 	const parsed = parseUnifiedDiff(input.diff);
+	const reasonedDeclines = countReasonedDeclines(input.thread);
 	const replyContext: ChatReplyContext = {
 		authorAssociation: input.authorAssociation,
 		finding: input.finding,
-		changedGuidelines: changedGuidelineFiles(parsed)
+		changedGuidelines: changedGuidelineFiles(parsed),
+		...(reasonedDeclines ? { reasonedDeclines } : {})
 	};
 	let diff = filterFiles(parsed).included.map(renderFileDiff).join('\n\n');
 	if (diff.length > MAX_DIFF_CHARS) {

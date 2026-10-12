@@ -168,6 +168,37 @@ describe('list_refs and path_in_refs', () => {
 		// The checkout's own history is untouched by those fetches.
 		expect((await git(['rev-parse', 'HEAD'], { cwd: dir })).trim()).toBe(sha.second!);
 	});
+
+	test('git branch and tag --contains check a release-history claim', async () => {
+		await git(['tag', 'cl-9', sha.second!], { cwd: origin });
+		const dir = join(root, 'checkout-contains');
+		await checkoutPullRequest({
+			dir,
+			cloneUrl: `file://${origin}`,
+			pullNumber: 1,
+			baseSha: sha.base!,
+			headSha: sha.second!
+		});
+		const tools = createRepoTools(dir, () => {});
+		const options = { toolCallId: 't', messages: [] } as never;
+		const run = (input: { commit?: string; pattern?: string }) =>
+			tools.refs_containing.execute!(input, options);
+
+		const head = await run({});
+		expect(head).toContain(`commit ${sha.second}`);
+		expect(head).toContain('feature');
+		expect(head).toContain('cl-9');
+		expect(head).not.toContain('\nmain\n');
+		expect(head).not.toContain('v1.0.0');
+
+		const releases = await run({ commit: sha.second, pattern: 'cl-*' });
+		expect(releases).toContain('Tags (1):\ncl-9');
+		expect(releases).toContain('Branches: none');
+
+		expect(await run({ commit: '--upload-pack=x' })).toBe('Error: commit must be a SHA or HEAD');
+		expect(await run({ commit: 'deadbeef' })).toBe('Error: commit not in this repository');
+		expect((await git(['rev-parse', 'HEAD'], { cwd: dir })).trim()).toBe(sha.second!);
+	});
 });
 
 describe('read_file', () => {

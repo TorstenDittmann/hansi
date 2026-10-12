@@ -168,6 +168,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				repositoryId: payload.repositoryId,
 				pullNumber: payload.pullNumber,
 				blockingSeverity: blockingSeverity(config),
+				config,
 				log
 			}).catch((error) => log.warn({ err: error }, 'could not refresh summary after settlement'));
 		}
