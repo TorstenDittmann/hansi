@@ -270,6 +270,21 @@ export async function refreshSummaryAfterSettlement(input: {
 	}
 }
 
+/**
+ * A resolved finding counts as fixed for this head when the thread or the review attributed
+ * the fix to this commit. A fix recorded against a different commit stays on that round.
+ * A resolved finding with no commit prefix (a thread confirmation) still counts.
+ */
+export function countsAsFixed(
+	finding: { status: string; dropReason: string | null },
+	shortSha: string
+): boolean {
+	if (finding.status !== 'resolved') return false;
+	const reason = finding.dropReason ?? '';
+	if (reason.startsWith('Fixed by ') && !reason.startsWith(`Fixed by ${shortSha}`)) return false;
+	return true;
+}
+
 /** Whether a finding at or above the blocking severity is still open on the pull request. */
 export function hasBlockingOpen(
 	findings: Pick<FindingRow, 'status' | 'severity'>[],
@@ -328,7 +343,10 @@ export function summaryAfterSettlement(
 			severity: f.severity as Severity
 		}));
 	const resolved = input.findings
-		.filter((f) => f.status === 'resolved' && f.dropReason === `Fixed by ${shortSha}`)
+		.filter((f) => countsAsFixed(f, shortSha))
+		.map((f) => ({ path: f.path, startLine: f.startLine, title: f.title }));
+	const deferred = input.findings
+		.filter((f) => f.status === 'deferred')
 		.map((f) => ({ path: f.path, startLine: f.startLine, title: f.title }));
 	const dropped = input.findings
 		.filter((f) => f.status === 'dropped' && f.reviewId === input.latestReviewId)
@@ -363,6 +381,7 @@ export function summaryAfterSettlement(
 		posted,
 		resolved,
 		stillOpen,
+		deferred,
 		dropped,
 		walkthrough: input.walkthrough,
 		latestChanges: input.latestChanges,

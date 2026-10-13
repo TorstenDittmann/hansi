@@ -386,6 +386,30 @@ test('posted summaries and finding comments rewrite relative file links', () => 
 	expect(comment).toContain('db.query("[keep](src/a.ts)", [id]);');
 });
 
+test('Tier S with nothing open never shows a note that a bug finding is still open', () => {
+	const body = formatSummaryComment({
+		...base,
+		tier: 'S',
+		tierReason: '',
+		verdict: 'approve',
+		posted: [],
+		stillOpen: [],
+		resolved: [
+			{
+				path: 'src/auth.ts',
+				startLine: 40,
+				title: 'Publish revocation before fallible cleanup'
+			}
+		],
+		approvalWithheld:
+			'Not approving while a bug finding is open: Publish revocation before fallible cleanup'
+	});
+	expect(body).toContain('## 🟢 Tier S · Ready to merge');
+	expect(body).toContain('| ✅ Approved | 0 | 1 | 0 |');
+	expect(body).not.toContain('Not approving while a bug finding is open');
+	expect(body).toContain('Publish revocation before fallible cleanup');
+});
+
 test('the review body is one line that points to the summary', () => {
 	expect(
 		formatReviewBody({

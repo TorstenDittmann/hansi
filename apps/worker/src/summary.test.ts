@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { formatSummaryComment, standingAgrees } from '@hans/core';
-import { hasBlockingOpen, summaryAfterSettlement, summaryExtrasFromBody } from './summary';
+import {
+	countsAsFixed,
+	hasBlockingOpen,
+	summaryAfterSettlement,
+	summaryExtrasFromBody
+} from './summary';
 
 const base = {
 	repository: 'acme/api',
@@ -296,6 +301,73 @@ describe('summaryExtrasFromBody', () => {
 		);
 		expect(summaryExtrasFromBody(body).latestChanges).toBe('Adds pageCount.\nMentions the helper.');
 	});
+});
+
+test('a fix on a follow-up commit counts as fixed, and a maintainer deferral does not stay open', () => {
+	expect(
+		countsAsFixed(
+			{
+				status: 'resolved',
+				dropReason: 'Fixed by 267c14f: the example now links the validator directory'
+			},
+			'267c14f'
+		)
+	).toBe(true);
+	expect(countsAsFixed({ status: 'resolved', dropReason: 'Fixed by 245df4c' }, '267c14f')).toBe(
+		false
+	);
+	expect(countsAsFixed({ status: 'dismissed', dropReason: 'Fixed by 267c14f' }, '267c14f')).toBe(
+		false
+	);
+
+	const input = summaryAfterSettlement({
+		...base,
+		headSha: '267c14fabcdef1234567890abcdef1234567890',
+		verdict: 'comment',
+		recompute: true,
+		approvalWithheld:
+			'Not approving while a bug finding is open: Publish revocation before fallible cleanup',
+		summary: 'Updates the Pool example link.',
+		findings: [
+			{
+				...earlierFinding,
+				status: 'resolved',
+				dropReason: 'Fixed by 267c14f: the example now links the validator directory',
+				title: 'Fix the nonexistent Pool example link',
+				category: 'documentation',
+				severity: 'minor'
+			},
+			{
+				...earlierFinding,
+				path: 'src/mqtt.ts',
+				status: 'deferred',
+				dropReason: 'Awaiting a maintainer decision: legacy cursors age out in 7 days',
+				title: 'Treat unbound cursors as stale',
+				category: 'bug',
+				severity: 'minor'
+			}
+		]
+	});
+	expect(input.tier).toBe('S');
+	expect(input.verdict).toBe('approve');
+	expect(input.approvalWithheld).toBeNull();
+	expect(input.stillOpen).toEqual([]);
+	expect(input.resolved.map((finding) => finding.title)).toEqual([
+		'Fix the nonexistent Pool example link'
+	]);
+	expect(input.deferred?.map((finding) => finding.title)).toEqual([
+		'Treat unbound cursors as stale'
+	]);
+	expect(standingAgrees(input.tier, input.verdict)).toBe(true);
+
+	const body = formatSummaryComment(input);
+	expect(body).toContain('| ✅ Approved | 0 | 1 | 0 |');
+	expect(body).toContain('Fix the nonexistent Pool example link');
+	expect(body).toContain('Left for a maintainer');
+	expect(body).toContain('Treat unbound cursors as stale');
+	expect(body).not.toContain('Still open from earlier reviews');
+	expect(body).not.toContain('Not approving while a bug finding is open');
+	expect(body).not.toContain('dismissed as deferred');
 });
 
 test('hasBlockingOpen counts only open findings at the blocking severity', () => {

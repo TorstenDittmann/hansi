@@ -1,4 +1,5 @@
 import type { Severity, Tier, Verdict } from '@hans/config';
+import { DEFECT_NOTE } from './settlement';
 import { isUnattachedDrop, type DroppedFinding, type Finding } from './findings';
 import { tierMeaning } from './tier';
 
@@ -507,10 +508,32 @@ export interface SummaryInput {
 	detailsUrl?: string;
 	/** The bot's handle, e.g. `@hansi-codes`. */
 	mention: string;
+	/** Tradeoffs left for a maintainer. They are not still open and do not hold the verdict. */
+	deferred?: { path: string; startLine: number; title: string }[];
+}
+
+/**
+ * A "bug finding is open" note next to Tier S, or next to a summary with nothing open, is stale.
+ * The rendered comment drops it.
+ */
+export function visibleApprovalNote(
+	note: string | null | undefined,
+	input: { tier: Tier; openCount: number }
+): string | null {
+	if (!note) return null;
+	if (note.startsWith(DEFECT_NOTE) && (input.tier === 'S' || input.openCount === 0)) return null;
+	return note;
 }
 
 /** The summary comment Hansi keeps up to date on every pull request. */
 export function formatSummaryComment(input: SummaryInput): string {
+	input = {
+		...input,
+		approvalWithheld: visibleApprovalNote(input.approvalWithheld, {
+			tier: input.tier,
+			openCount: input.posted.length + input.stillOpen.length
+		})
+	};
 	const permalink = { repository: input.repository, headSha: input.headSha };
 	const link = (text: string) => absolutizeLinks(text, permalink.repository, permalink.headSha);
 	input = {
@@ -631,6 +654,16 @@ export function formatSummaryComment(input: SummaryInput): string {
 				'✅ Fixed since the last review',
 				input.resolved.length,
 				input.resolved.map((f) => `- ~~${f.title}~~ · \`${f.path}:${f.startLine}\``).join('\n')
+			)
+		);
+	}
+	const deferred = input.deferred ?? [];
+	if (deferred.length) {
+		parts.push(
+			section(
+				'⏳ Left for a maintainer',
+				deferred.length,
+				deferred.map((f) => `- ${f.title} · \`${f.path}:${f.startLine}\``).join('\n')
 			)
 		);
 	}

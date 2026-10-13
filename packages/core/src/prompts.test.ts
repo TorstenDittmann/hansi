@@ -296,6 +296,42 @@ test('a review checks release history before reporting a break for existing user
 	);
 });
 
+test('a fix on a guideline edit is resolved, not dismissed as deferred', () => {
+	const instructions = chatInstructions(
+		'en',
+		true,
+		{ repository: 'appwrite/appwrite', headSha: '267c14f' },
+		{
+			authorAssociation: 'MEMBER',
+			finding: {
+				severity: 'minor',
+				category: 'documentation',
+				title: 'Fix the nonexistent Pool example link'
+			},
+			changedGuidelines: ['AGENTS.md'],
+			authorFixed: true
+		}
+	);
+	expect(instructions).toContain('call mark_finding with status resolved');
+	expect(instructions).toContain('say the finding is fixed');
+	expect(instructions).not.toContain('deferred to the policy change');
+	expect(instructions).toContain('Do not say the finding is dismissed');
+	expect(instructions).toContain('https://github.com/appwrite/appwrite/blob/267c14f/');
+});
+
+test('a maintainer handoff is acknowledged once and does not hold the verdict', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'MEMBER',
+		finding: { severity: 'minor', category: 'bug', title: 'Treat unbound cursors as stale' },
+		maintainerHandoff: true
+	});
+	expect(instructions).toContain('Awaiting a maintainer decision');
+	expect(instructions).toContain('status deferred');
+	expect(instructions).toContain('must not hold the verdict');
+	expect(instructions).toContain('If a reply brings new evidence');
+	expect(instructions).toContain('Do not say you are keeping the finding open');
+});
+
 test('chat context records how many reasoned declines are already in the thread', () => {
 	expect(formatChatContext({ reasonedDeclines: 2 })).toBe('<reasoned_declines count="2"/>');
 	expect(formatChatContext({ reasonedDeclines: 0 })).toBeUndefined();

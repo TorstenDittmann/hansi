@@ -14,6 +14,7 @@ import {
 	formatSummaryComment,
 	mergeSecondParent,
 	pullRequestDelta,
+	liftStaleBugHold,
 	runReview,
 	settlementStanding,
 	SUMMARY_MARKER,
@@ -81,7 +82,7 @@ import {
 	decideIncrementalReview,
 	type IncrementalDecision
 } from './merge-only';
-import { loadSummaryFindings, summaryExtrasFromBody } from './summary';
+import { countsAsFixed, loadSummaryFindings, summaryExtrasFromBody } from './summary';
 import {
 	CHANGE_REQUEST_DISMISSAL,
 	shouldDismissChangeRequest,
@@ -442,55 +443,88 @@ async function executeReview(
 			// A thread may have dismissed a finding while this review was running. The summary and
 			// verdict follow the findings that are still posted, not the set the model started with.
 			const threshold = blockingSeverity(config);
+			const shortSha = pr.headSha.slice(0, 7);
 			const live = await loadReviewHistory(db, review);
 			const liveOpen = new Set(live.open.map((finding) => finding.id));
-			const dismissedDuringReview = history.open.filter(
+			const gone = history.open.filter(
 				(finding) => !liveOpen.has(finding.id) && !result.resolved.includes(finding.id)
+			);
+			const statusOf = (id: string) => live.statusById.get(id);
+			const resolvedDuringReview = gone.filter((finding) => statusOf(finding.id) === 'resolved');
+			const deferredDuringReview = gone.filter((finding) => statusOf(finding.id) === 'deferred');
+			const dismissedDuringReview = gone.filter(
+				(finding) => statusOf(finding.id) !== 'resolved' && statusOf(finding.id) !== 'deferred'
 			);
 			const stillOpen = history.open.filter(
 				(finding) => liveOpen.has(finding.id) && !result.resolved.includes(finding.id)
 			);
-			const reconciled =
-				dismissedDuringReview.length > 0
-					? settlementStanding({
-							summary: result.summary,
-							latestReviewId: review.id,
-							config,
-							approvalWithheld: result.approvalWithheld,
-							headMoved: false,
-							findings: [
-								...result.posted.map((finding) => ({
-									reviewId: review.id,
-									status: 'posted' as const,
-									severity: finding.severity,
-									category: finding.category,
-									title: finding.title,
-									body: finding.body
-								})),
-								...stillOpen.map((finding) => ({
-									reviewId: 'earlier',
-									status: 'posted' as const,
-									severity: finding.severity,
-									category: finding.category,
-									title: finding.title,
-									body: finding.body
-								})),
-								...dismissedDuringReview.map((finding) => ({
-									reviewId: 'earlier',
-									status: 'dismissed' as const,
-									severity: finding.severity,
-									category: finding.category,
-									title: finding.title,
-									body: finding.body
-								}))
-							]
-						})
-					: null;
+			const settledDuringReview =
+				resolvedDuringReview.length + deferredDuringReview.length + dismissedDuringReview.length >
+				0;
+			const reconciled = settledDuringReview
+				? settlementStanding({
+						summary: result.summary,
+						latestReviewId: review.id,
+						config,
+						approvalWithheld: result.approvalWithheld,
+						headMoved: false,
+						findings: [
+							...result.posted.map((finding) => ({
+								reviewId: review.id,
+								status: 'posted' as const,
+								severity: finding.severity,
+								category: finding.category,
+								title: finding.title,
+								body: finding.body
+							})),
+							...stillOpen.map((finding) => ({
+								reviewId: 'earlier',
+								status: 'posted' as const,
+								severity: finding.severity,
+								category: finding.category,
+								title: finding.title,
+								body: finding.body
+							})),
+							...resolvedDuringReview.map((finding) => ({
+								reviewId: 'earlier',
+								status: 'resolved' as const,
+								severity: finding.severity,
+								category: finding.category,
+								title: finding.title,
+								body: finding.body
+							})),
+							...deferredDuringReview.map((finding) => ({
+								reviewId: 'earlier',
+								status: 'deferred' as const,
+								severity: finding.severity,
+								category: finding.category,
+								title: finding.title,
+								body: finding.body
+							})),
+							...dismissedDuringReview.map((finding) => ({
+								reviewId: 'earlier',
+								status: 'dismissed' as const,
+								severity: finding.severity,
+								category: finding.category,
+								title: finding.title,
+								body: finding.body
+							}))
+						]
+					})
+				: null;
 			const summaryText = reconciled?.summary ?? result.summary;
-			const verdict = reconciled?.verdict ?? result.verdict;
+			const held = liftStaleBugHold({
+				tier: reconciled?.tier ?? result.tier,
+				verdict: reconciled?.verdict ?? result.verdict,
+				approvalWithheld: reconciled ? reconciled.approvalWithheld : result.approvalWithheld,
+				openCount: result.posted.length + stillOpen.length,
+				approve: config.reviews.approve,
+				headMoved: false
+			});
+			const verdict = held.verdict;
 			const tier = reconciled?.tier ?? result.tier;
 			const tierReason = reconciled?.tierReason ?? result.tierReason;
-			const approvalWithheld = reconciled ? reconciled.approvalWithheld : result.approvalWithheld;
+			const approvalWithheld = held.approvalWithheld;
 			// Submit a GitHub review when there are inline comments, the approve/request-changes
 			// state changes, the pull request reaches Tier S, or someone explicitly asked for a
 			// re-review. A clean Tier S used to only edit the summary, so the timeline never
@@ -523,7 +557,7 @@ async function executeReview(
 					tierReason,
 					verdict: decision.verdict,
 					posted: result.posted,
-					resolved: history.open.filter((f) => result.resolved.includes(f.id)),
+					resolved: fixedThisRound(history.open, live.fixed, result.resolved, shortSha),
 					// Every open finding, including minors: the grade may rest on them.
 					stillOpen,
 					dropped: result.dropped,
@@ -799,7 +833,8 @@ async function loadReviewHistory(db: Database, review: Review) {
 			title: schema.reviewFindings.title,
 			body: schema.reviewFindings.body,
 			suggestion: schema.reviewFindings.suggestion,
-			status: schema.reviewFindings.status
+			status: schema.reviewFindings.status,
+			dropReason: schema.reviewFindings.dropReason
 		})
 		.from(schema.reviewFindings)
 		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
@@ -808,7 +843,9 @@ async function loadReviewHistory(db: Database, review: Review) {
 	const open: OpenFinding[] = rows
 		.filter((f) => f.status === 'posted')
 		.map((f) => ({ ...f, severity: f.severity as Severity }));
-	// Resolved findings may be reported again if the problem comes back; dismissed ones may not.
+	// Resolved findings may be reported again if the problem comes back. Dismissed and
+	// maintainer-deferred ones stay in this list so they are not reported again. Deferred
+	// findings are not in `open`, so they do not hold the verdict.
 	const findings = rows.filter((f) => f.status !== 'resolved');
 	return {
 		lastReviewId: last?.id,
@@ -824,8 +861,37 @@ async function loadReviewHistory(db: Database, review: Review) {
 				: undefined,
 		lastDecisiveVerdict: decisive?.verdict ?? undefined,
 		findings,
-		open
+		open,
+		statusById: new Map(rows.map((row) => [row.id, row.status])),
+		fixed: rows.filter((row) => row.status === 'resolved')
 	};
+}
+
+/** Fixes from this review plus ones a thread already attributed to this commit. */
+function fixedThisRound(
+	open: OpenFinding[],
+	alreadyFixed: {
+		id: string;
+		path: string;
+		startLine: number;
+		title: string;
+		dropReason: string | null;
+	}[],
+	resolvedIds: string[],
+	shortSha: string
+): { path: string; startLine: number; title: string }[] {
+	const seen = new Set<string>();
+	const rows = [
+		...open.filter((finding) => resolvedIds.includes(finding.id)),
+		...alreadyFixed.filter((finding) =>
+			countsAsFixed({ status: 'resolved', dropReason: finding.dropReason }, shortSha)
+		)
+	];
+	return rows.filter((finding) => {
+		if (seen.has(finding.id)) return false;
+		seen.add(finding.id);
+		return true;
+	});
 }
 
 /**

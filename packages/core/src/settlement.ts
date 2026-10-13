@@ -10,7 +10,7 @@ import { standingFromOpenFindings, tiers, type Tier } from './tier';
 import { decideVerdict, openDefectApprovalReason } from './verdict';
 
 /** The summary note that exists only while a bug-like finding is still open. */
-const DEFECT_NOTE = 'Not approving while a bug finding is open';
+export const DEFECT_NOTE = 'Not approving while a bug finding is open';
 
 export interface SettlementFinding {
 	reviewId: string;
@@ -68,7 +68,10 @@ export function settlementStanding(input: {
 }): SettlementStanding {
 	const open = input.findings.filter((finding) => finding.status === 'posted');
 	const settled = input.findings.filter(
-		(finding) => finding.status === 'dismissed' || finding.status === 'resolved'
+		(finding) =>
+			finding.status === 'dismissed' ||
+			finding.status === 'resolved' ||
+			finding.status === 'deferred'
 	);
 	const posted = open.filter((finding) => finding.reviewId === input.latestReviewId);
 	const stillOpen = open.filter((finding) => finding.reviewId !== input.latestReviewId);
@@ -88,6 +91,14 @@ export function settlementStanding(input: {
 	const blocking = visible.some((finding) => severityAtLeast(finding.severity, threshold));
 	if (verdict === 'request_changes' && !blocking) verdict = 'comment';
 	if (!standingAgrees(tier, verdict)) verdict = 'comment';
+	const lifted = liftStaleBugHold({
+		tier,
+		verdict,
+		approvalWithheld,
+		openCount: visible.length,
+		approve: input.config.reviews.approve,
+		headMoved: input.headMoved
+	});
 
 	return {
 		summary: summaryWithoutSettledFindings(
@@ -97,9 +108,34 @@ export function settlementStanding(input: {
 		),
 		tier,
 		tierReason,
-		verdict,
-		approvalWithheld
+		verdict: lifted.verdict,
+		approvalWithheld: lifted.approvalWithheld
 	};
+}
+
+/**
+ * Tier S with nothing open cannot keep a note that a bug finding is still open.
+ * When that note was the only hold, the verdict becomes an approval.
+ */
+export function liftStaleBugHold(input: {
+	tier: Tier;
+	verdict: Verdict;
+	approvalWithheld: string | null;
+	openCount: number;
+	approve: boolean;
+	headMoved: boolean;
+}): { verdict: Verdict; approvalWithheld: string | null } {
+	const stale =
+		!!input.approvalWithheld?.startsWith(DEFECT_NOTE) &&
+		(input.tier === 'S' || input.openCount === 0);
+	const approvalWithheld = stale ? null : input.approvalWithheld;
+	const canApprove =
+		stale &&
+		input.verdict !== 'request_changes' &&
+		input.openCount === 0 &&
+		input.approve &&
+		!input.headMoved;
+	return { verdict: canApprove ? 'approve' : input.verdict, approvalWithheld };
 }
 
 function toPresentation(findings: SettlementFinding[]): PresentationFinding[] {

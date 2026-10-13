@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test';
 import { parseRepoConfig } from '@hans/config';
-import { settlementStanding, shouldApproveAfterSettlement, standingAgrees } from './settlement';
+import {
+	liftStaleBugHold,
+	settlementStanding,
+	shouldApproveAfterSettlement,
+	standingAgrees
+} from './settlement';
 
 const config = parseRepoConfig(null).config;
 
@@ -77,6 +82,66 @@ test('settlement of the last blocking finding approves and agrees with Tier S', 
 	expect(standing.verdict).toBe('approve');
 	expect(standing.approvalWithheld).toBeNull();
 	expect(standing.summary).not.toContain('remains open');
+	expect(standingAgrees(standing.tier, standing.verdict)).toBe(true);
+});
+
+test('Tier S with nothing open drops the bug note and approves', () => {
+	const lifted = liftStaleBugHold({
+		tier: 'S',
+		verdict: 'comment',
+		approvalWithheld:
+			'Not approving while a bug finding is open: Publish revocation before fallible cleanup',
+		openCount: 0,
+		approve: true,
+		headMoved: false
+	});
+	expect(lifted).toEqual({ verdict: 'approve', approvalWithheld: null });
+
+	const standing = settlementStanding({
+		summary: 'Publishes revocation before cleanup.',
+		latestReviewId: 'review-1',
+		config,
+		approvalWithheld:
+			'Not approving while a bug finding is open: Publish revocation before fallible cleanup',
+		headMoved: false,
+		findings: [
+			{
+				reviewId: 'review-1',
+				severity: 'minor',
+				category: 'bug',
+				title: 'Publish revocation before fallible cleanup',
+				body: 'Cleanup can fail after the token is still valid.',
+				status: 'resolved'
+			}
+		]
+	});
+	expect(standing.tier).toBe('S');
+	expect(standing.verdict).toBe('approve');
+	expect(standing.approvalWithheld).toBeNull();
+	expect(standingAgrees(standing.tier, standing.verdict)).toBe(true);
+});
+
+test('a finding left for a maintainer does not hold the tier or the verdict', () => {
+	const standing = settlementStanding({
+		summary: 'Bounds MQTT replay.',
+		latestReviewId: 'review-2',
+		config,
+		approvalWithheld: 'Not approving while a bug finding is open: Treat unbound cursors as stale',
+		headMoved: false,
+		findings: [
+			{
+				reviewId: 'review-1',
+				severity: 'minor',
+				category: 'bug',
+				title: 'Treat unbound cursors as stale',
+				body: 'Old cursors replay on reconnect.',
+				status: 'deferred'
+			}
+		]
+	});
+	expect(standing.tier).toBe('S');
+	expect(standing.verdict).toBe('approve');
+	expect(standing.approvalWithheld).toBeNull();
 	expect(standingAgrees(standing.tier, standing.verdict)).toBe(true);
 });
 

@@ -6,6 +6,9 @@ import {
 	countReasonedDeclines,
 	defersToGuidelineChange,
 	dropsAfterRepeatedDecline,
+	isFixReport,
+	isMaintainerHandoff,
+	isReasonedDecline,
 	isTrustedCommenter
 } from './chat-policy';
 import { changedGuidelineFiles } from './tools';
@@ -87,7 +90,9 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 		acceptReasonedDecline: true,
 		holdDefect: false,
 		deferToGuidelineEdit: true,
-		dropAfterTwoDeclines: false
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
 	expect(
 		chatReplyPolicy({
@@ -99,7 +104,9 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 		acceptReasonedDecline: false,
 		holdDefect: true,
 		deferToGuidelineEdit: false,
-		dropAfterTwoDeclines: false
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
 	expect(
 		chatReplyPolicy({
@@ -111,13 +118,17 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 		acceptReasonedDecline: false,
 		holdDefect: false,
 		deferToGuidelineEdit: false,
-		dropAfterTwoDeclines: false
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
 	expect(chatReplyPolicy({ authorAssociation: 'MEMBER', finding: note })).toEqual({
 		acceptReasonedDecline: true,
 		holdDefect: false,
 		deferToGuidelineEdit: false,
-		dropAfterTwoDeclines: false
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
 });
 
@@ -147,6 +158,51 @@ test('two reasoned declines drop a non-security finding and leave security open'
 			reasonedDeclines: 2
 		})
 	).toMatchObject({ dropAfterTwoDeclines: false });
+});
+
+test('a fix is not a decline or a policy deferral, and a maintainer handoff does not hold the verdict', () => {
+	const pool =
+		'Fixed in the follow-up commit: Pool.php does not exist on main, so the example now links the existing Utopia/Database/Validator directory.';
+	expect(isFixReport(pool)).toBe(true);
+	expect(isMaintainerHandoff(pool)).toBe(false);
+	expect(isReasonedDecline(pool)).toBe(false);
+
+	const fixed = { severity: 'minor', category: 'documentation' };
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: fixed,
+			changedGuidelines: ['AGENTS.md'],
+			authorFixed: true
+		})
+	).toMatchObject({
+		confirmFix: true,
+		deferToGuidelineEdit: false,
+		acceptReasonedDecline: false
+	});
+
+	const tradeoff =
+		'Correct, and deliberate. Treating pre-deploy cursors as stale would replay the window, so I am leaving this for a maintainer decision.';
+	const handed = 'Whether to treat those cursors as stale is left to @ArnabChatterjee20k.';
+	expect(isMaintainerHandoff(tradeoff)).toBe(true);
+	expect(isMaintainerHandoff(handed)).toBe(true);
+	expect(isMaintainerHandoff('The PUBACK path can write topic null after a cache miss.')).toBe(
+		false
+	);
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: { severity: 'minor', category: 'bug' },
+			maintainerHandoff: true
+		})
+	).toMatchObject({ awaitMaintainer: true, confirmFix: false });
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: { severity: 'minor', category: 'security' },
+			maintainerHandoff: true
+		})
+	).toMatchObject({ awaitMaintainer: false, holdDefect: true });
 });
 
 test('a fix report is not a reasoned decline, and a release-history reply is', () => {
