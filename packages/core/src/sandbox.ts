@@ -3,8 +3,8 @@ import { z } from 'zod';
 import type { EmitEvent } from './tools';
 
 const MAX_OUTPUT_CHARS = 12_000;
-const DEFAULT_TIMEOUT_MS = 120_000;
-const MAX_TIMEOUT_MS = 900_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
+const MAX_TIMEOUT_MS = 1_800_000;
 
 export interface CommandResult {
 	/** Null when the command did not exit on its own, e.g. it timed out. */
@@ -49,7 +49,7 @@ export function formatCommandResult(result: CommandResult): string {
 export function createSandboxTools(runner: CommandRunner, emit: EmitEvent) {
 	return {
 		run_command: tool({
-			description: `Run a shell command (sh -c) in an isolated sandbox, in a writable copy of the repository at the PR head. Returns the exit code and output (long output keeps its start and end). Default timeout ${DEFAULT_TIMEOUT_MS / 1000}s.`,
+			description: `Run a shell command (sh -c) in an isolated sandbox, in a writable copy of the repository at the PR head. Returns the exit code and output (long output keeps its start and end). Default timeout ${DEFAULT_TIMEOUT_MS / 1000}s; installs, builds, and test suites can take longer here, so pass timeoutSeconds (up to ${MAX_TIMEOUT_MS / 1000}) for them. After a timeout, run the command again with a longer timeout or a narrower scope.`,
 			inputSchema: z.object({
 				command: z.string().min(1),
 				timeoutSeconds: z
