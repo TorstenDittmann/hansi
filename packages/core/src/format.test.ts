@@ -4,6 +4,7 @@ import {
 	absolutizeLinks,
 	filesTooLargeFromBody,
 	filesTooLargeSentence,
+	formatBodyFindings,
 	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
@@ -388,4 +389,27 @@ test('the review body is one line that points to the summary', () => {
 			summaryUrl: 'https://x'
 		})
 	).toBe('🔵 **Tier A** · See the inline comments. [Summary](https://x)');
+	expect(
+		formatReviewBody({ tier: 'A', verdict: 'comment', blocking: 0, comments: 0, inBody: 2 })
+	).toBe('🔵 **Tier A** · See the findings below.');
+	expect(
+		formatReviewBody({ tier: 'S', verdict: 'comment', blocking: 0, comments: 0, inBody: 1 })
+	).toBe('🟢 **Tier S** · See the findings below.');
+});
+
+test('findings GitHub would not take inline are listed with a note', () => {
+	const finding = {
+		path: 'src/services/project.ts',
+		startLine: 77,
+		endLine: 77,
+		severity: 'minor' as const,
+		category: 'bug' as const,
+		title: 'Keep project onboarding object-shaped',
+		body: 'b'
+	};
+	expect(formatBodyFindings([], { repository: 'acme/api', headSha: 'abc' })).toBe('');
+	const body = formatBodyFindings([finding], { repository: 'acme/api', headSha: 'abc' });
+	expect(body).toStartWith("> [!NOTE]\n> GitHub does not show the diff for this finding's lines");
+	expect(body).toContain('#### `src/services/project.ts:77`');
+	expect(body).toContain('**Keep project onboarding object-shaped**');
 });

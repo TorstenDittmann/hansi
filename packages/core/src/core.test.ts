@@ -4,12 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRepoConfig } from '@hans/config';
 import { MockLanguageModelV4 } from 'ai/test';
-import { commentableLines, parseUnifiedDiff, renderDiffExcerpt, renderFileDiff } from './diff';
+import {
+	commentableLines,
+	parseGitHubPatch,
+	parseUnifiedDiff,
+	renderDiffExcerpt,
+	renderFileDiff
+} from './diff';
 import { filterFiles } from './filters';
 import { isDuplicateFinding, titleSimilarity } from './findings';
 import { formatFindingComment, formatSummaryComment } from './format';
 import type { ModelCall } from './model-call';
-import { anchoringIsSuspicious, placeFinding, runReview } from './review';
+import { anchoringIsSuspicious, placeFinding, placeOnGitHubDiff, runReview } from './review';
 import { resolveRepoPath } from './tools';
 
 const diff = `diff --git a/src/math.ts b/src/math.ts
@@ -106,6 +112,44 @@ describe('placeFinding', () => {
 	test('drops findings outside the diff', () => {
 		expect(placeFinding({ ...base, startLine: 10, endLine: 10 }, files)).toBeNull();
 		expect(placeFinding({ ...base, path: 'nope.ts', startLine: 2, endLine: 2 }, files)).toBeNull();
+	});
+});
+
+describe('placeOnGitHubDiff', () => {
+	const base = {
+		severity: 'minor' as const,
+		category: 'bug' as const,
+		title: 't',
+		body: 'b'
+	};
+	const patch = '@@ -1,3 +1,4 @@\n a\n-b\n+c\n+d\n e\n@@ -10,2 +11,2 @@ fn\n x\n-y\n+z';
+
+	test('reads the hunks of a GitHub patch', () => {
+		const file = parseGitHubPatch('src/a.ts', patch);
+		expect(file?.path).toBe('src/a.ts');
+		expect([...commentableLines(file!)]).toEqual([1, 2, 3, 4, 11, 12]);
+	});
+
+	test('keeps findings GitHub can take inline and clears the rest', () => {
+		// The sdk-for-node 30.0.0 PR: GitHub sends no patch for files past its diff limit, and
+		// one comment on them failed the whole review.
+		const placed = placeOnGitHubDiff(
+			[
+				{ ...base, path: 'src/a.ts', startLine: 2, endLine: 3 },
+				{ ...base, path: 'src/a.ts', startLine: 3, endLine: 12 },
+				{ ...base, path: 'src/a.ts', startLine: 7, endLine: 7 },
+				{ ...base, path: 'src/huge.ts', startLine: 77, endLine: 77 },
+				{ ...base, path: 'src/missing.ts', startLine: 1, endLine: 1 }
+			],
+			[{ path: 'src/a.ts', patch }, { path: 'src/huge.ts' }]
+		);
+		expect(placed.map((f) => f && [f.startLine, f.endLine])).toEqual([
+			[2, 3],
+			[12, 12],
+			null,
+			null,
+			null
+		]);
 	});
 });
 
