@@ -6,6 +6,7 @@ export * from './format';
 export * from './git';
 export * from './model-call';
 export * from './present';
+export * from './settlement';
 export * from './review';
 export * from './sandbox';
 export * from './suggestions';

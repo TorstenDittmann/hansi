@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { formatSummaryComment } from '@hans/core';
-import { hasBlockingOpen, summaryAfterSettlement, summaryExtrasFromBody } from './summary';
+import { formatSummaryComment, standingAgrees } from '@hans/core';
+import {
+	countsAsFixed,
+	hasBlockingOpen,
+	summaryAfterSettlement,
+	summaryExtrasFromBody
+} from './summary';
 
 const base = {
 	repository: 'acme/api',
@@ -192,6 +197,100 @@ describe('summaryExtrasFromBody', () => {
 		});
 	});
 
+	test('a dismissed blocking finding cannot leave Tier S beside changes requested', () => {
+		const input = summaryAfterSettlement({
+			...base,
+			verdict: 'request_changes',
+			summary:
+				'Adds cron handling. The previously reported test-coverage finding for the web-installer-specific override remains open.',
+			recompute: true,
+			findings: [
+				{
+					...earlierFinding,
+					status: 'dismissed',
+					severity: 'major',
+					title: 'Keep legacy cron schedules runnable',
+					body: 'A null interval stops future scheduled runs.'
+				}
+			]
+		});
+		expect(input.tier).toBe('S');
+		expect(input.verdict).toBe('approve');
+		expect(input.tierReason).toBe('');
+		expect(input.stillOpen).toEqual([]);
+		expect(standingAgrees(input.tier, input.verdict)).toBe(true);
+		expect(input.summary).not.toContain('remains open');
+		expect(input.summary).toContain('Adds cron handling.');
+
+		const body = formatSummaryComment(input);
+		expect(body).toContain('## 🟢 Tier S · Ready to merge');
+		expect(body).toContain('| ✅ Approved | 0 | 0 | 0 |');
+		expect(body).not.toContain('Changes requested');
+		expect(body).not.toContain('Still open from earlier reviews');
+		expect(body).not.toContain('Keep legacy cron schedules runnable');
+	});
+
+	test('a settled defect clears the withheld-approval note, and a minor bug still withholds approval', () => {
+		const cleared = summaryAfterSettlement({
+			...base,
+			verdict: 'comment',
+			recompute: true,
+			approvalWithheld:
+				'Not approving while a bug finding is open: Preserve configured passkey origins',
+			findings: [
+				{
+					...earlierFinding,
+					status: 'dismissed',
+					title: 'Preserve configured passkey origins'
+				}
+			]
+		});
+		expect(cleared.tier).toBe('S');
+		expect(cleared.verdict).toBe('approve');
+		expect(cleared.approvalWithheld).toBeNull();
+		expect(standingAgrees(cleared.tier, cleared.verdict)).toBe(true);
+
+		const still = summaryAfterSettlement({
+			...base,
+			verdict: 'approve',
+			recompute: true,
+			findings: [earlierFinding]
+		});
+		expect(still.tier).toBe('A');
+		expect(still.verdict).toBe('comment');
+		expect(still.approvalWithheld).toContain('Not approving while a bug finding is open');
+		expect(standingAgrees(still.tier, still.verdict)).toBe(true);
+		const body = formatSummaryComment(still);
+		expect(body).toContain('## 🔵 Tier A');
+		expect(body).toContain('| 💬 Commented | 0 | 0 | 1 |');
+		expect(body).not.toContain('Changes requested');
+		expect(body).not.toContain('✅ Approved');
+	});
+
+	test('a write-access note and a moved head stay a comment even when nothing is open', () => {
+		const withheld = summaryAfterSettlement({
+			...base,
+			verdict: 'request_changes',
+			recompute: true,
+			approvalWithheld: '@stranger does not have write access to this repository.',
+			findings: []
+		});
+		expect(withheld.tier).toBe('S');
+		expect(withheld.verdict).toBe('comment');
+		expect(withheld.approvalWithheld).toContain('does not have write access');
+		expect(standingAgrees(withheld.tier, withheld.verdict)).toBe(true);
+
+		const moved = summaryAfterSettlement({
+			...base,
+			verdict: 'approve',
+			recompute: true,
+			staleHead: 'Newer commits exist.',
+			findings: []
+		});
+		expect(moved.verdict).toBe('comment');
+		expect(standingAgrees(moved.tier, moved.verdict)).toBe(true);
+	});
+
 	test('keeps every line of a multiline latest-changes value', () => {
 		const body = formatSummaryComment(
 			summaryAfterSettlement({
@@ -202,6 +301,73 @@ describe('summaryExtrasFromBody', () => {
 		);
 		expect(summaryExtrasFromBody(body).latestChanges).toBe('Adds pageCount.\nMentions the helper.');
 	});
+});
+
+test('a fix on a follow-up commit counts as fixed, and a maintainer deferral does not stay open', () => {
+	expect(
+		countsAsFixed(
+			{
+				status: 'resolved',
+				dropReason: 'Fixed by 267c14f: the example now links the validator directory'
+			},
+			'267c14f'
+		)
+	).toBe(true);
+	expect(countsAsFixed({ status: 'resolved', dropReason: 'Fixed by 245df4c' }, '267c14f')).toBe(
+		false
+	);
+	expect(countsAsFixed({ status: 'dismissed', dropReason: 'Fixed by 267c14f' }, '267c14f')).toBe(
+		false
+	);
+
+	const input = summaryAfterSettlement({
+		...base,
+		headSha: '267c14fabcdef1234567890abcdef1234567890',
+		verdict: 'comment',
+		recompute: true,
+		approvalWithheld:
+			'Not approving while a bug finding is open: Publish revocation before fallible cleanup',
+		summary: 'Updates the Pool example link.',
+		findings: [
+			{
+				...earlierFinding,
+				status: 'resolved',
+				dropReason: 'Fixed by 267c14f: the example now links the validator directory',
+				title: 'Fix the nonexistent Pool example link',
+				category: 'documentation',
+				severity: 'minor'
+			},
+			{
+				...earlierFinding,
+				path: 'src/mqtt.ts',
+				status: 'deferred',
+				dropReason: 'Awaiting a maintainer decision: legacy cursors age out in 7 days',
+				title: 'Treat unbound cursors as stale',
+				category: 'bug',
+				severity: 'minor'
+			}
+		]
+	});
+	expect(input.tier).toBe('S');
+	expect(input.verdict).toBe('approve');
+	expect(input.approvalWithheld).toBeNull();
+	expect(input.stillOpen).toEqual([]);
+	expect(input.resolved.map((finding) => finding.title)).toEqual([
+		'Fix the nonexistent Pool example link'
+	]);
+	expect(input.deferred?.map((finding) => finding.title)).toEqual([
+		'Treat unbound cursors as stale'
+	]);
+	expect(standingAgrees(input.tier, input.verdict)).toBe(true);
+
+	const body = formatSummaryComment(input);
+	expect(body).toContain('| ✅ Approved | 0 | 1 | 0 |');
+	expect(body).toContain('Fix the nonexistent Pool example link');
+	expect(body).toContain('Left for a maintainer');
+	expect(body).toContain('Treat unbound cursors as stale');
+	expect(body).not.toContain('Still open from earlier reviews');
+	expect(body).not.toContain('Not approving while a bug finding is open');
+	expect(body).not.toContain('dismissed as deferred');
 });
 
 test('hasBlockingOpen counts only open findings at the blocking severity', () => {

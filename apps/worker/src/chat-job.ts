@@ -99,7 +99,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		// Replies on a finding Hansi posted can resolve or dismiss that finding.
 		const finding = await loadChatFinding(db, payload.organizationId, payload.rootCommentId);
 
-		let settled = false;
+		let settled: 'resolved' | 'dismissed' | 'deferred' | false = false;
 		const { review: model } = await loadModels(ctx, payload.organizationId);
 		// Each answer is its own trace in PostHog's LLM analytics.
 		const usage = await createUsageRecorder(ctx, {
@@ -158,11 +158,15 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				},
 				onMarkFinding: finding
 					? async (status, reason) => {
+							const dropReason =
+								status === 'resolved' && !reason.startsWith('Fixed by ')
+									? `Fixed by ${pr.headSha.slice(0, 7)}: ${reason}`
+									: reason;
 							await db
 								.update(schema.reviewFindings)
-								.set({ status, dropReason: reason })
+								.set({ status, dropReason })
 								.where(eq(schema.reviewFindings.id, finding.id));
-							settled = true;
+							settled = status;
 						}
 					: undefined,
 				sandbox: sandbox?.runner
@@ -172,9 +176,12 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		await reply(answer);
 		// A finding settled in the conversation (fixed, or intended) closes its thread after the answer.
 		if (settled && payload.rootCommentId) {
-			await resolveReviewThreads(octokit, ref, payload.pullNumber, [payload.rootCommentId]).catch(
-				(error) => log.warn({ err: error }, 'could not resolve thread')
-			);
+			// A maintainer still has to answer a deferred finding, so the thread stays open.
+			if (settled !== 'deferred') {
+				await resolveReviewThreads(octokit, ref, payload.pullNumber, [payload.rootCommentId]).catch(
+					(error) => log.warn({ err: error }, 'could not resolve thread')
+				);
+			}
 			// Keep the PR summary's open-finding list and tier in sync with the dismissal.
 			await refreshSummaryAfterSettlement({
 				db,
@@ -184,6 +191,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				repositoryId: payload.repositoryId,
 				pullNumber: payload.pullNumber,
 				blockingSeverity: blockingSeverity(config),
+				config,
 				log
 			}).catch((error) => log.warn({ err: error }, 'could not refresh summary after settlement'));
 		}

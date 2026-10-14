@@ -2,6 +2,7 @@ import { generateText, isStepCount, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { parseUnifiedDiff, renderFileDiff } from './diff';
 import { filterFiles } from './filters';
+import { countReasonedDeclines, isFixReport, isMaintainerHandoff } from './chat-policy';
 import { chatInstructions, formatChatContext, type ChatReplyContext } from './prompts';
 import { callModel, reasoningCallOptions, type ModelCall, type ModelFailure } from './model-call';
 import type { ReviewModel } from './review';
@@ -48,7 +49,7 @@ export interface ChatInput {
 	/** Stores a team preference for future reviews. */
 	onRemember: (rule: string) => Promise<void>;
 	/** Available when the thread started from a Hansi finding. */
-	onMarkFinding?: (status: 'resolved' | 'dismissed', reason: string) => Promise<void>;
+	onMarkFinding?: (status: 'resolved' | 'dismissed' | 'deferred', reason: string) => Promise<void>;
 	onEvent?: EmitEvent;
 	onModelCall?: (call: ModelCall) => void | Promise<void>;
 	onModelError?: (failure: ModelFailure) => void | Promise<void>;
@@ -83,9 +84,9 @@ export async function runChat(input: ChatInput): Promise<string> {
 		const onMarkFinding = input.onMarkFinding;
 		tools.mark_finding = tool({
 			description:
-				'Record the outcome of the finding this thread is about: resolved (the author fixed it) or dismissed (it was wrong, not wanted, or settled by a trusted maintainer declining a minor testing, documentation, or maintainability note).',
+				'Record the outcome of the finding this thread is about: resolved (the author fixed it; say fixed, never dismissed or deferred), dismissed (it was wrong, not wanted, settled by a trusted maintainer declining a minor testing, documentation, or maintainability note, confirmed with list_refs, path_in_refs, or refs_containing, or dropped after a second reasoned decline of a non-security finding), or deferred (a deliberate tradeoff left awaiting a maintainer decision, with no new evidence).',
 			inputSchema: z.object({
-				status: z.enum(['resolved', 'dismissed']),
+				status: z.enum(['resolved', 'dismissed', 'deferred']),
 				reason: z.string()
 			}),
 			execute: async ({ status, reason }) => {
@@ -97,10 +98,17 @@ export async function runChat(input: ChatInput): Promise<string> {
 	}
 
 	const parsed = parseUnifiedDiff(input.diff);
+	const reasonedDeclines = countReasonedDeclines(input.thread);
+	const latestAuthor = [...input.thread].reverse().find((message) => !message.fromBot);
+	const authorFixed = !!latestAuthor && isFixReport(latestAuthor.body);
+	const maintainerHandoff = !!latestAuthor && isMaintainerHandoff(latestAuthor.body);
 	const replyContext: ChatReplyContext = {
 		authorAssociation: input.authorAssociation,
 		finding: input.finding,
-		changedGuidelines: changedGuidelineFiles(parsed)
+		changedGuidelines: changedGuidelineFiles(parsed),
+		...(reasonedDeclines ? { reasonedDeclines } : {}),
+		...(authorFixed ? { authorFixed } : {}),
+		...(maintainerHandoff ? { maintainerHandoff } : {})
 	};
 	let diff = filterFiles(parsed).included.map(renderFileDiff).join('\n\n');
 	if (diff.length > MAX_DIFF_CHARS) {

@@ -1,4 +1,5 @@
 import type { Severity, Tier, Verdict } from '@hans/config';
+import { DEFECT_NOTE } from './settlement';
 import { isUnattachedDrop, type DroppedFinding, type Finding } from './findings';
 import { tierMeaning } from './tier';
 
@@ -73,7 +74,9 @@ function rewriteMarkdownLinks(prose: string, repository: string, sha: string): s
 		if (prose[i] === '[' && prose[i - 1] !== '!') {
 			const link = readMarkdownLink(prose, i);
 			const dest = link && parseLinkDestination(link.rawDest);
-			const url = dest && repoFileUrl(dest.href, repository, sha);
+			const url =
+				dest &&
+				(repoFileUrl(dest.href, repository, sha) ?? pinnedBlobUrl(dest.href, repository, sha));
 			if (link && dest && url) {
 				out += `[${link.label}](${url}${dest.suffix})`;
 				i = link.end;
@@ -185,6 +188,56 @@ function readLinkTitle(text: string, start: number): number | null {
 		i++;
 	}
 	return null;
+}
+
+/**
+ * Same-repository blob URLs that are not already pinned to `sha`. A short SHA of this commit
+ * and a branch name (`main`, `master`, `HEAD`) become the full reviewed commit. A release tag
+ * or a different commit is left as written.
+ */
+function pinnedBlobUrl(href: string, repository: string, sha: string): string | null {
+	const match =
+		/^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/blob\/([^/\s]+)\/([^#?\s]+)(.*)$/i.exec(
+			href.trim()
+		);
+	if (!match) return null;
+	const owner = match[1];
+	const repo = match[2];
+	const ref = match[3];
+	const path = match[4];
+	const tail = match[5] ?? '';
+	if (!owner || !repo || !ref || path === undefined) return null;
+	if (`${owner}/${repo}`.toLowerCase() !== repository.toLowerCase()) return null;
+	if (ref === sha) return null;
+	if (/^v?\d+\.\d+/.test(ref)) return null;
+	if (/^[0-9a-f]{7,40}$/i.test(ref)) {
+		if (sha.toLowerCase().startsWith(ref.toLowerCase()) && ref.length < sha.length) {
+			return `https://github.com/${repository}/blob/${sha}/${path}${tail}`;
+		}
+		return null;
+	}
+	if (ref !== 'main' && ref !== 'master' && ref !== 'HEAD') return null;
+	return `https://github.com/${repository}/blob/${sha}/${path}${tail}`;
+}
+
+/** Relative repo-file link targets still in `markdown`. Posted bodies must not contain any. */
+export function relativeFileLinkTargets(markdown: string): string[] {
+	const { text } = maskCode(markdown);
+	const found: string[] = [];
+	let i = 0;
+	while (i < text.length) {
+		if (text[i] === '[' && text[i - 1] !== '!') {
+			const link = readMarkdownLink(text, i);
+			const dest = link && parseLinkDestination(link.rawDest);
+			if (link && dest && repoFileUrl(dest.href, 'owner/repo', 'abcdef1')) found.push(dest.href);
+			if (link) {
+				i = link.end;
+				continue;
+			}
+		}
+		i++;
+	}
+	return found;
 }
 
 function repoFileUrl(href: string, repository: string, sha: string): string | null {
@@ -455,10 +508,32 @@ export interface SummaryInput {
 	detailsUrl?: string;
 	/** The bot's handle, e.g. `@hansi-codes`. */
 	mention: string;
+	/** Tradeoffs left for a maintainer. They are not still open and do not hold the verdict. */
+	deferred?: { path: string; startLine: number; title: string }[];
+}
+
+/**
+ * A "bug finding is open" note next to Tier S, or next to a summary with nothing open, is stale.
+ * The rendered comment drops it.
+ */
+export function visibleApprovalNote(
+	note: string | null | undefined,
+	input: { tier: Tier; openCount: number }
+): string | null {
+	if (!note) return null;
+	if (note.startsWith(DEFECT_NOTE) && (input.tier === 'S' || input.openCount === 0)) return null;
+	return note;
 }
 
 /** The summary comment Hansi keeps up to date on every pull request. */
 export function formatSummaryComment(input: SummaryInput): string {
+	input = {
+		...input,
+		approvalWithheld: visibleApprovalNote(input.approvalWithheld, {
+			tier: input.tier,
+			openCount: input.posted.length + input.stillOpen.length
+		})
+	};
 	const permalink = { repository: input.repository, headSha: input.headSha };
 	const link = (text: string) => absolutizeLinks(text, permalink.repository, permalink.headSha);
 	input = {
@@ -579,6 +654,16 @@ export function formatSummaryComment(input: SummaryInput): string {
 				'✅ Fixed since the last review',
 				input.resolved.length,
 				input.resolved.map((f) => `- ~~${f.title}~~ · \`${f.path}:${f.startLine}\``).join('\n')
+			)
+		);
+	}
+	const deferred = input.deferred ?? [];
+	if (deferred.length) {
+		parts.push(
+			section(
+				'⏳ Left for a maintainer',
+				deferred.length,
+				deferred.map((f) => `- ${f.title} · \`${f.path}:${f.startLine}\``).join('\n')
 			)
 		);
 	}

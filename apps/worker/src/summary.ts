@@ -1,6 +1,9 @@
 import {
 	filesTooLargeFromBody,
+	formatReviewBody,
 	formatSummaryComment,
+	settlementStanding,
+	shouldApproveAfterSettlement,
 	standingFromOpenFindings,
 	STALE_HEAD_NOTE_MARK,
 	SUMMARY_MARKER,
@@ -8,11 +11,17 @@ import {
 	type SummaryInput
 } from '@hans/core';
 import { schema, type Database } from '@hans/db';
-import { getMarkedComment, upsertMarkedComment } from '@hans/github';
-import { severityAtLeast, type Severity, type Verdict } from '@hans/config';
+import { createReview, getMarkedComment, getPullRequest, upsertMarkedComment } from '@hans/github';
+import {
+	parseRepoConfig,
+	severityAtLeast,
+	type RepoConfig,
+	type Severity,
+	type Verdict
+} from '@hans/config';
 import type { Logger } from 'pino';
-import { and, desc, eq, ne } from 'drizzle-orm';
-import { CHANGE_REQUEST_DISMISSAL } from './submit-review';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { CHANGE_REQUEST_DISMISSAL, staleHeadNote } from './submit-review';
 import { reviewDetailsUrlFor, withdrawChangeRequests, type RepositoryConnection } from './shared';
 
 type FindingRow = {
@@ -70,7 +79,13 @@ export function summaryExtrasFromBody(body: string): SummaryExtras {
 /** Findings the settlement rebuild turns back into the summary comment. Dismissed ones are omitted. */
 export async function loadSummaryFindings(
 	db: Database,
-	input: { organizationId: string; repositoryId: number; pullNumber: number }
+	input: {
+		organizationId: string;
+		repositoryId: number;
+		pullNumber: number;
+		/** Dismissed findings are needed to strip them from the summary prose. */
+		includeDismissed?: boolean;
+	}
 ): Promise<FindingRow[]> {
 	const { organizationId, repositoryId, pullNumber } = input;
 	return db
@@ -95,7 +110,7 @@ export async function loadSummaryFindings(
 				eq(schema.reviews.pullNumber, pullNumber),
 				eq(schema.reviews.status, 'completed'),
 				eq(schema.reviews.organizationId, organizationId),
-				ne(schema.reviewFindings.status, 'dismissed')
+				...(input.includeDismissed ? [] : [ne(schema.reviewFindings.status, 'dismissed')])
 			)
 		)
 		.limit(200);
@@ -111,10 +126,13 @@ export async function refreshSummaryAfterSettlement(input: {
 	pullNumber: number;
 	/** Findings at or above this severity block the pull request (`reviews.requestChanges`). */
 	blockingSeverity: Severity;
+	/** Approval rules. Omitted uses the default config. */
+	config?: RepoConfig;
 	log: Logger;
 }): Promise<void> {
 	const { db, env, connection, organizationId, repositoryId, pullNumber } = input;
 	const { octokit, ref, mention, repository } = connection;
+	const config = input.config ?? parseRepoConfig(null).config;
 
 	const [last] = await db
 		.select({
@@ -136,46 +154,135 @@ export async function refreshSummaryAfterSettlement(input: {
 		.orderBy(desc(schema.reviews.finishedAt))
 		.limit(1);
 	if (!last?.summary || !last.verdict) return;
+	const previousSummary = last.summary;
+	const previousVerdict = last.verdict;
 
-	const rows = await loadSummaryFindings(db, { organizationId, repositoryId, pullNumber });
-	const blockingOpen = hasBlockingOpen(rows, input.blockingSeverity);
-	// A change request stands while a blocking finding is open; after that the latest verdict
-	// becomes a comment. A conversation is not a review of the code, so it never approves.
-	const verdict =
-		last.verdict === 'request_changes' && !blockingOpen ? 'comment' : (last.verdict as Verdict);
+	const [decisive] = await db
+		.select({ verdict: schema.reviews.verdict })
+		.from(schema.reviews)
+		.where(
+			and(
+				eq(schema.reviews.repositoryId, repositoryId),
+				eq(schema.reviews.pullNumber, pullNumber),
+				eq(schema.reviews.status, 'completed'),
+				eq(schema.reviews.organizationId, organizationId),
+				inArray(schema.reviews.verdict, ['approve', 'request_changes'])
+			)
+		)
+		.orderBy(desc(schema.reviews.finishedAt))
+		.limit(1);
 
+	const rows = await loadSummaryFindings(db, {
+		organizationId,
+		repositoryId,
+		pullNumber,
+		includeDismissed: true
+	});
 	const existing = await getMarkedComment(octokit, ref, pullNumber, SUMMARY_MARKER);
 	const extras = existing ? summaryExtrasFromBody(existing.body) : {};
 
-	const summaryInput = summaryAfterSettlement({
-		repository: repository.fullName,
-		headSha: last.headSha,
-		summary: last.summary,
-		verdict,
-		walkthrough: last.walkthrough ?? [],
-		latestReviewId: last.id,
-		findings: rows,
-		detailsUrl: await reviewDetailsUrlFor(db, env.APP_URL, organizationId, last.id),
-		mention,
-		...extras
-	});
+	const build = (staleHead: string | null) =>
+		summaryAfterSettlement({
+			repository: repository.fullName,
+			headSha: last.headSha,
+			summary: previousSummary,
+			verdict: previousVerdict,
+			walkthrough: last.walkthrough ?? [],
+			latestReviewId: last.id,
+			findings: rows,
+			detailsUrl: undefined,
+			mention,
+			...extras,
+			staleHead,
+			config,
+			recompute: true
+		});
 
-	await upsertMarkedComment(
+	// Grade from the findings first. A note that the head moved is applied only after checking
+	// the live head, so an outdated note cannot block an approval of the commit under review.
+	let summaryInput = build(null);
+	if (summaryInput.verdict === 'approve') {
+		const pr = await getPullRequest(octokit, ref, pullNumber);
+		if (pr.headSha !== last.headSha) {
+			summaryInput = build(staleHeadNote(last.headSha, pr.headSha));
+		}
+	} else if (extras.staleHead) {
+		summaryInput = build(extras.staleHead);
+	}
+
+	const detailsUrl = await reviewDetailsUrlFor(db, env.APP_URL, organizationId, last.id);
+	summaryInput = { ...summaryInput, detailsUrl };
+
+	const summary = await upsertMarkedComment(
 		octokit,
 		ref,
 		pullNumber,
 		SUMMARY_MARKER,
 		formatSummaryComment(summaryInput)
 	);
+	if (
+		shouldApproveAfterSettlement({
+			verdict: summaryInput.verdict,
+			lastDecisiveVerdict: decisive?.verdict,
+			headMoved: !!summaryInput.staleHead
+		})
+	) {
+		try {
+			await createReview(octokit, ref, {
+				pullNumber,
+				commitId: last.headSha,
+				event: 'APPROVE',
+				comments: [],
+				body: formatReviewBody({
+					tier: summaryInput.tier,
+					verdict: 'approve',
+					blocking: 0,
+					comments: 0,
+					summaryUrl: summary.url
+				})
+			});
+		} catch (error) {
+			input.log.warn({ err: error }, 'could not approve after the finding was settled');
+			summaryInput = { ...summaryInput, verdict: 'comment' };
+			await upsertMarkedComment(
+				octokit,
+				ref,
+				pullNumber,
+				SUMMARY_MARKER,
+				formatSummaryComment(summaryInput)
+			);
+		}
+	}
 	await db
 		.update(schema.reviews)
-		.set({ tier: summaryInput.tier, tierReason: summaryInput.tierReason })
+		.set({
+			tier: summaryInput.tier,
+			tierReason: summaryInput.tierReason,
+			verdict: summaryInput.verdict,
+			summary: summaryInput.summary
+		})
 		.where(eq(schema.reviews.id, last.id));
 	// No blocking finding is left: withdraw any change request, including one an earlier review
-	// left in place. Dismissing finds nothing to do when there is none.
-	if (!blockingOpen) {
+	// left in place. An approval replaces it too; dismissing finds nothing when there is none.
+	const blockingOpen = hasBlockingOpen(rows, input.blockingSeverity);
+	if (!blockingOpen && summaryInput.verdict !== 'request_changes') {
 		await withdrawChangeRequests(connection, pullNumber, CHANGE_REQUEST_DISMISSAL, input.log);
 	}
+}
+
+/**
+ * A resolved finding counts as fixed for this head when the thread or the review attributed
+ * the fix to this commit. A fix recorded against a different commit stays on that round.
+ * A resolved finding with no commit prefix (a thread confirmation) still counts.
+ */
+export function countsAsFixed(
+	finding: { status: string; dropReason: string | null },
+	shortSha: string
+): boolean {
+	if (finding.status !== 'resolved') return false;
+	const reason = finding.dropReason ?? '';
+	if (reason.startsWith('Fixed by ') && !reason.startsWith(`Fixed by ${shortSha}`)) return false;
+	return true;
 }
 
 /** Whether a finding at or above the blocking severity is still open on the pull request. */
@@ -190,7 +297,8 @@ export function hasBlockingOpen(
 
 /**
  * Turns the latest review plus remaining findings into a summary comment body.
- * Dismissed findings are already excluded from `findings`.
+ * Dismissed findings are omitted from the lists. With `recompute`, the tier, verdict, and
+ * summary prose are rebuilt from the findings that are still posted, so they cannot disagree.
  */
 export function summaryAfterSettlement(
 	input: {
@@ -203,6 +311,9 @@ export function summaryAfterSettlement(
 		findings: FindingRow[];
 		detailsUrl?: string;
 		mention: string;
+		/** Rebuild tier, verdict, and prose from the posted findings. */
+		recompute?: boolean;
+		config?: RepoConfig;
 	} & SummaryExtras
 ): SummaryInput {
 	const toFinding = (row: FindingRow): Finding => ({
@@ -232,28 +343,49 @@ export function summaryAfterSettlement(
 			severity: f.severity as Severity
 		}));
 	const resolved = input.findings
-		.filter((f) => f.status === 'resolved' && f.dropReason === `Fixed by ${shortSha}`)
+		.filter((f) => countsAsFixed(f, shortSha))
+		.map((f) => ({ path: f.path, startLine: f.startLine, title: f.title }));
+	const deferred = input.findings
+		.filter((f) => f.status === 'deferred')
 		.map((f) => ({ path: f.path, startLine: f.startLine, title: f.title }));
 	const dropped = input.findings
 		.filter((f) => f.status === 'dropped' && f.reviewId === input.latestReviewId)
 		.map((f) => ({ ...toFinding(f), dropReason: f.dropReason ?? 'Dropped' }));
 
-	const { tier, tierReason } = standingFromOpenFindings([...posted, ...stillOpen]);
+	const listed = standingFromOpenFindings([...posted, ...stillOpen]);
+	const standing = input.recompute
+		? settlementStanding({
+				summary: input.summary,
+				latestReviewId: input.latestReviewId,
+				config: input.config ?? parseRepoConfig(null).config,
+				approvalWithheld: input.approvalWithheld ?? null,
+				headMoved: !!input.staleHead,
+				findings: input.findings.map((row) => ({
+					reviewId: row.reviewId,
+					severity: row.severity as Severity,
+					category: row.category,
+					title: row.title,
+					body: row.body,
+					status: row.status
+				}))
+			})
+		: null;
 
 	return {
 		repository: input.repository,
 		headSha: input.headSha,
-		summary: input.summary,
-		tier,
-		tierReason,
-		verdict: input.verdict,
+		summary: standing?.summary ?? input.summary,
+		tier: standing?.tier ?? listed.tier,
+		tierReason: standing?.tierReason ?? listed.tierReason,
+		verdict: standing?.verdict ?? input.verdict,
 		posted,
 		resolved,
 		stillOpen,
+		deferred,
 		dropped,
 		walkthrough: input.walkthrough,
 		latestChanges: input.latestChanges,
-		approvalWithheld: input.approvalWithheld,
+		approvalWithheld: standing ? standing.approvalWithheld : input.approvalWithheld,
 		filesTooLargeForPrompt: input.filesTooLargeForPrompt,
 		staleHead: input.staleHead,
 		incrementalFrom: input.incrementalFrom,

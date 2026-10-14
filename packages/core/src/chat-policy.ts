@@ -51,6 +51,72 @@ export interface ChatReplyPolicy {
 	 * The model still checks that the finding cites that file.
 	 */
 	deferToGuidelineEdit: boolean;
+	/**
+	 * A trusted commenter has declined a non-security finding with a reason at least twice.
+	 * Security findings stay open when a concrete exploit is still named.
+	 */
+	dropAfterTwoDeclines: boolean;
+	/** The latest reply says the finding was fixed in code. That is resolved, not deferred. */
+	confirmFix: boolean;
+	/**
+	 * The latest reply declines the finding as a deliberate tradeoff or hands it to a maintainer.
+	 * It does not hold the verdict unless the reply has new evidence.
+	 */
+	awaitMaintainer: boolean;
+}
+
+/** A reply that reports a fix, rather than a reason the finding should not have been raised. */
+const FIX_REPLY = /\b(?:fixed in|i(?:'ve| have) fixed|i fixed)\b|^\s*fixed\b/i;
+
+/** The author says the cited code was changed, not that they want the finding dropped. */
+export function isFixReport(body: string): boolean {
+	return FIX_REPLY.test(body.trim());
+}
+
+/**
+ * A deliberate tradeoff, or a decision the author leaves to a maintainer.
+ * A fix report is not a handoff.
+ */
+const MAINTAINER_HANDOFF =
+	/\b(deliberate|trade-?off|maintainer(?:'s)? decision|left to @|leaving (?:this|it) (?:open )?for|rather than changing|unapplied)\b/i;
+
+export function isMaintainerHandoff(body: string): boolean {
+	const text = body.trim();
+	if (isFixReport(text)) return false;
+	if (MAINTAINER_HANDOFF.test(text)) return true;
+	return /@[A-Za-z0-9-]+/.test(text) && /\b(decision|whether|left|leave)\b/i.test(text);
+}
+
+/**
+ * A comment that gives a reason, long enough to be a decline rather than "no" or "thanks".
+ * A report that the finding was fixed is not a decline.
+ */
+export function isReasonedDecline(body: string): boolean {
+	const text = body.trim();
+	if (text.length < 40) return false;
+	return !isFixReport(text);
+}
+
+/** How many non-bot messages in the thread are reasoned declines, including the one being answered. */
+export function countReasonedDeclines(messages: { fromBot: boolean; body: string }[]): number {
+	return messages.filter((message) => !message.fromBot && isReasonedDecline(message.body)).length;
+}
+
+/**
+ * After two reasoned declines, a non-security finding is dropped. A security finding can stay
+ * open when the reply names a concrete exploit; one decline is not enough for a real defect.
+ */
+export function dropsAfterRepeatedDecline(
+	authorAssociation: string | undefined,
+	finding: ChatPolicyFinding | null | undefined,
+	reasonedDeclines: number
+): boolean {
+	return (
+		isTrustedCommenter(authorAssociation) &&
+		!!finding &&
+		finding.category !== 'security' &&
+		reasonedDeclines >= 2
+	);
 }
 
 function isDeclinableNote(
@@ -86,14 +152,32 @@ export function chatReplyPolicy(input: {
 	authorAssociation?: string;
 	finding?: ChatPolicyFinding | null;
 	changedGuidelines?: readonly string[];
+	/** Reasoned declines already in the thread, including the comment being answered. */
+	reasonedDeclines?: number;
+	/** The latest reply says the finding was fixed. */
+	authorFixed?: boolean;
+	/** The latest reply is a tradeoff or a handoff to a maintainer. */
+	maintainerHandoff?: boolean;
 }): ChatReplyPolicy {
 	const finding = input.finding ?? undefined;
 	const trusted = isTrustedCommenter(input.authorAssociation);
+	const authorFixed = !!input.authorFixed && !!finding;
 	return {
-		acceptReasonedDecline: acceptsReasonedDecline(input.authorAssociation, finding),
-		holdDefect: trusted && !!finding && isDefectCategory(finding.category),
+		acceptReasonedDecline: acceptsReasonedDecline(input.authorAssociation, finding) && !authorFixed,
+		holdDefect: trusted && !!finding && isDefectCategory(finding.category) && !authorFixed,
 		deferToGuidelineEdit:
 			defersToGuidelineChange(input.authorAssociation, finding) &&
-			(input.changedGuidelines?.length ?? 0) > 0
+			(input.changedGuidelines?.length ?? 0) > 0 &&
+			!authorFixed,
+		dropAfterTwoDeclines:
+			!authorFixed &&
+			dropsAfterRepeatedDecline(input.authorAssociation, finding, input.reasonedDeclines ?? 0),
+		confirmFix: authorFixed,
+		awaitMaintainer:
+			!authorFixed &&
+			trusted &&
+			!!finding &&
+			finding.category !== 'security' &&
+			!!input.maintainerHandoff
 	};
 }

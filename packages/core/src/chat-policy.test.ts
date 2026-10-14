@@ -3,7 +3,12 @@ import { parseUnifiedDiff } from './diff';
 import {
 	acceptsReasonedDecline,
 	chatReplyPolicy,
+	countReasonedDeclines,
 	defersToGuidelineChange,
+	dropsAfterRepeatedDecline,
+	isFixReport,
+	isMaintainerHandoff,
+	isReasonedDecline,
 	isTrustedCommenter
 } from './chat-policy';
 import { changedGuidelineFiles } from './tools';
@@ -84,7 +89,10 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 	).toEqual({
 		acceptReasonedDecline: true,
 		holdDefect: false,
-		deferToGuidelineEdit: true
+		deferToGuidelineEdit: true,
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
 	expect(
 		chatReplyPolicy({
@@ -95,7 +103,10 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 	).toEqual({
 		acceptReasonedDecline: false,
 		holdDefect: true,
-		deferToGuidelineEdit: false
+		deferToGuidelineEdit: false,
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
 	expect(
 		chatReplyPolicy({
@@ -106,13 +117,107 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 	).toEqual({
 		acceptReasonedDecline: false,
 		holdDefect: false,
-		deferToGuidelineEdit: false
+		deferToGuidelineEdit: false,
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
 	expect(chatReplyPolicy({ authorAssociation: 'MEMBER', finding: note })).toEqual({
 		acceptReasonedDecline: true,
 		holdDefect: false,
-		deferToGuidelineEdit: false
+		deferToGuidelineEdit: false,
+		dropAfterTwoDeclines: false,
+		confirmFix: false,
+		awaitMaintainer: false
 	});
+});
+
+const passkeyDecline =
+	'Neither the 2.4.0 tag nor any Cloud tag contains src/Appwrite/Auth/Passkey. No release branch from 2.0.x through 2.4.x contains it.';
+
+test('two reasoned declines drop a non-security finding and leave security open', () => {
+	const bug = { severity: 'minor', category: 'bug' };
+	expect(dropsAfterRepeatedDecline('MEMBER', bug, 1)).toBe(false);
+	expect(dropsAfterRepeatedDecline('MEMBER', bug, 2)).toBe(true);
+	expect(
+		dropsAfterRepeatedDecline('OWNER', { severity: 'major', category: 'concurrency' }, 2)
+	).toBe(true);
+	expect(dropsAfterRepeatedDecline('MEMBER', { severity: 'minor', category: 'security' }, 3)).toBe(
+		false
+	);
+	expect(dropsAfterRepeatedDecline('CONTRIBUTOR', bug, 2)).toBe(false);
+	expect(dropsAfterRepeatedDecline('MEMBER', undefined, 2)).toBe(false);
+
+	expect(
+		chatReplyPolicy({ authorAssociation: 'MEMBER', finding: bug, reasonedDeclines: 2 })
+	).toMatchObject({ holdDefect: true, dropAfterTwoDeclines: true });
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: { severity: 'minor', category: 'security' },
+			reasonedDeclines: 2
+		})
+	).toMatchObject({ dropAfterTwoDeclines: false });
+});
+
+test('a fix is not a decline or a policy deferral, and a maintainer handoff does not hold the verdict', () => {
+	const pool =
+		'Fixed in the follow-up commit: Pool.php does not exist on main, so the example now links the existing Utopia/Database/Validator directory.';
+	expect(isFixReport(pool)).toBe(true);
+	expect(isMaintainerHandoff(pool)).toBe(false);
+	expect(isReasonedDecline(pool)).toBe(false);
+
+	const fixed = { severity: 'minor', category: 'documentation' };
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: fixed,
+			changedGuidelines: ['AGENTS.md'],
+			authorFixed: true
+		})
+	).toMatchObject({
+		confirmFix: true,
+		deferToGuidelineEdit: false,
+		acceptReasonedDecline: false
+	});
+
+	const tradeoff =
+		'Correct, and deliberate. Treating pre-deploy cursors as stale would replay the window, so I am leaving this for a maintainer decision.';
+	const handed = 'Whether to treat those cursors as stale is left to @ArnabChatterjee20k.';
+	expect(isMaintainerHandoff(tradeoff)).toBe(true);
+	expect(isMaintainerHandoff(handed)).toBe(true);
+	expect(isMaintainerHandoff('The PUBACK path can write topic null after a cache miss.')).toBe(
+		false
+	);
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: { severity: 'minor', category: 'bug' },
+			maintainerHandoff: true
+		})
+	).toMatchObject({ awaitMaintainer: true, confirmFix: false });
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: { severity: 'minor', category: 'security' },
+			maintainerHandoff: true
+		})
+	).toMatchObject({ awaitMaintainer: false, holdDefect: true });
+});
+
+test('a fix report is not a reasoned decline, and a release-history reply is', () => {
+	expect(
+		countReasonedDeclines([
+			{ fromBot: true, body: passkeyDecline },
+			{ fromBot: false, body: 'no' },
+			{ fromBot: false, body: passkeyDecline },
+			{
+				fromBot: false,
+				body: 'The endpoint itself was never deployed. The passkey code exists only on main, and no release tag contains it.'
+			},
+			{ fromBot: false, body: 'Fixed in b86de3661d by taking your suggestion: server is now true.' }
+		])
+	).toBe(2);
 });
 
 const agentsDiff = `diff --git a/AGENTS.md b/AGENTS.md

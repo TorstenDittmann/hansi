@@ -161,7 +161,7 @@ export const reviews = sqliteTable(
 	]
 );
 
-export const findingStatuses = ['posted', 'dropped', 'resolved', 'dismissed'] as const;
+export const findingStatuses = ['posted', 'dropped', 'resolved', 'dismissed', 'deferred'] as const;
 
 export const reviewFindings = sqliteTable(
 	'review_findings',

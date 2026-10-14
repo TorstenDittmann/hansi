@@ -203,6 +203,44 @@ export function summaryWithoutDroppedFindings(
 	return text || SUMMARY_FALLBACK;
 }
 
+/** A sentence that still treats a settled finding as open, or withholds approval for it. */
+const STALE_STANDING =
+	/\b(remains open|still open|left open|keep(?:ing)? (?:this |the )?(?:finding )?open|not approving)\b/i;
+
+/**
+ * Summary prose after a finding is dismissed or resolved. Clauses that only describe a settled
+ * finding, and claims that a finding remains open once nothing does, are removed.
+ */
+export function summaryWithoutSettledFindings(
+	summary: string,
+	settled: PresentationFinding[],
+	visible: PresentationFinding[]
+): string {
+	const base = summaryWithoutDroppedFindings(summary, settled, visible);
+	if (!base.trim() || settled.length === 0) return base;
+	const clauses = splitClauses(base);
+	if (clauses.length === 0) return base;
+	const kept = clauses.filter((clause) => !staleStandingClause(clause, settled, visible));
+	if (kept.length === clauses.length) return base;
+	const text = kept.map(asSentence).filter(Boolean).join(' ');
+	return text || SUMMARY_FALLBACK;
+}
+
+function staleStandingClause(
+	clause: string,
+	settled: PresentationFinding[],
+	visible: PresentationFinding[]
+): boolean {
+	if (!STALE_STANDING.test(clause)) return false;
+	if (visible.length === 0) return true;
+	const shown = bestOverlap(clause, visible);
+	const hidden = bestOverlap(clause, settled);
+	const aboutShown = shown.similarity >= VISIBLE_FINDING || shown.stems >= 2;
+	const aboutHidden = hidden.similarity >= VISIBLE_FINDING || hidden.stems >= 2;
+	if (!aboutHidden) return false;
+	return !(aboutShown && shown.similarity >= hidden.similarity && shown.stems >= hidden.stems);
+}
+
 function splitClauses(summary: string): string[] {
 	const clauses: string[] = [];
 	for (const block of summary.split(/\n+/)) {

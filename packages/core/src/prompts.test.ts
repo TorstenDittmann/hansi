@@ -32,6 +32,7 @@ test('chat replies cite files as blob permalinks at the reviewed commit', () => 
 	expect(instructions).toContain(
 		'https://github.com/appwrite/appwrite/blob/999c0d1/<path>#L<start>-L<end>'
 	);
+	expect(instructions).toContain('pinned to this commit, not a branch name or a shortened SHA');
 	expect(instructions).toContain('a single line is `#L<start>`');
 	expect(instructions).toContain(
 		'If the author says they fixed it, or convincingly explains it is not a problem, call mark_finding.'
@@ -253,7 +254,85 @@ test('a trusted factual rebuttal of a bug finding dismisses it', () => {
 	});
 	expect(instructions).toContain("finding's premise is false");
 	expect(instructions).toContain('list_refs and path_in_refs');
+	expect(instructions).toContain('refs_containing');
+	expect(instructions).toContain('git branch -r --contains');
+	expect(instructions).toContain('git tag --contains');
 	expect(instructions).toContain('never call such a claim unverifiable');
+	expect(instructions).toContain('could not verify it');
 	expect(instructions).toContain('Do not repeat an argument');
 	expect(instructions).not.toContain('demonstrable factual error');
+	expect(instructions).not.toContain('at least their second reasoned decline');
+});
+
+test('a second reasoned decline of a non-security finding is dismissed', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'MEMBER',
+		finding: { severity: 'minor', category: 'bug', title: 'Preserve configured passkey origins' },
+		reasonedDeclines: 2
+	});
+	expect(instructions).toContain('at least their second reasoned decline');
+	expect(instructions).toContain('call mark_finding with status dismissed on this reply');
+	expect(instructions).toContain('git branch -r --contains');
+	expect(instructions).not.toContain('keep pushing back on a preference');
+});
+
+test('a security finding is not dropped just because it was declined twice', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'OWNER',
+		finding: { severity: 'minor', category: 'security', title: 'actions: write is unused' },
+		reasonedDeclines: 2
+	});
+	expect(instructions).toContain('concrete exploit path');
+	expect(instructions).not.toContain('at least their second reasoned decline');
+});
+
+test('a review checks release history before reporting a break for existing users', () => {
+	const instructions = reviewerInstructions(parseRepoConfig('').config);
+	expect(instructions).toContain('refs_containing');
+	expect(instructions).toContain('git branch -r --contains');
+	expect(instructions).toContain('git tag --contains');
+	expect(instructions).toContain(
+		'Do not call that history unverifiable without running the tools.'
+	);
+});
+
+test('a fix on a guideline edit is resolved, not dismissed as deferred', () => {
+	const instructions = chatInstructions(
+		'en',
+		true,
+		{ repository: 'appwrite/appwrite', headSha: '267c14f' },
+		{
+			authorAssociation: 'MEMBER',
+			finding: {
+				severity: 'minor',
+				category: 'documentation',
+				title: 'Fix the nonexistent Pool example link'
+			},
+			changedGuidelines: ['AGENTS.md'],
+			authorFixed: true
+		}
+	);
+	expect(instructions).toContain('call mark_finding with status resolved');
+	expect(instructions).toContain('say the finding is fixed');
+	expect(instructions).not.toContain('deferred to the policy change');
+	expect(instructions).toContain('Do not say the finding is dismissed');
+	expect(instructions).toContain('https://github.com/appwrite/appwrite/blob/267c14f/');
+});
+
+test('a maintainer handoff is acknowledged once and does not hold the verdict', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'MEMBER',
+		finding: { severity: 'minor', category: 'bug', title: 'Treat unbound cursors as stale' },
+		maintainerHandoff: true
+	});
+	expect(instructions).toContain('Awaiting a maintainer decision');
+	expect(instructions).toContain('status deferred');
+	expect(instructions).toContain('must not hold the verdict');
+	expect(instructions).toContain('If a reply brings new evidence');
+	expect(instructions).toContain('Do not say you are keeping the finding open');
+});
+
+test('chat context records how many reasoned declines are already in the thread', () => {
+	expect(formatChatContext({ reasonedDeclines: 2 })).toBe('<reasoned_declines count="2"/>');
+	expect(formatChatContext({ reasonedDeclines: 0 })).toBeUndefined();
 });
