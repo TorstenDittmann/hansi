@@ -432,6 +432,27 @@ describe('pullRequestDelta', () => {
 		}
 	});
 
+	test('deleting lines the pull request itself added is a change', async () => {
+		const repo = await originRepo();
+		try {
+			const base = await repo.commit('base', { 'a.ts': 'export const a = 1;\n' });
+			await git(['checkout', '--quiet', '-b', 'feature'], { cwd: repo.origin });
+			const lastHead = await repo.commit('add file', {
+				'b.ts': 'export const keep = 1;\nexport const drop = 2;\nexport const tail = 3;\n'
+			});
+			const head = await repo.commit('drop a line', {
+				'b.ts': 'export const keep = 1;\nexport const tail = 3;\n'
+			});
+			const dir = await reviewedCheckout(repo, 7, base, head);
+			const delta = await pullRequestDelta({ dir, baseSha: base, lastHead, headSha: head });
+			expect(delta.status).toBe('changed');
+			if (delta.status !== 'changed') return;
+			expect(delta.diff).toContain('-export const drop = 2;');
+		} finally {
+			await repo.dispose();
+		}
+	});
+
 	test('a binary change in the increment is kept, and an unchanged binary is not', async () => {
 		const repo = await originRepo();
 		try {

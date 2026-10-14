@@ -25,7 +25,11 @@ const commands: Record<string, string[]> = {
 };
 const names = mode === 'all' ? ['web', 'worker'] : [mode];
 const children = names.map((name) =>
-	Bun.spawn(commands[name]!, { stdio: ['inherit', 'inherit', 'inherit'], env: process.env })
+	Bun.spawn(commands[name]!, {
+		stdio: ['inherit', 'inherit', 'inherit'],
+		// The web server checks form submissions against ORIGIN; it is the public URL unless set.
+		env: { ...process.env, ORIGIN: process.env.ORIGIN || process.env.APP_URL }
+	})
 );
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
