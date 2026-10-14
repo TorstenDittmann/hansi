@@ -9,10 +9,12 @@ import {
 import {
 	absolutizeLinks,
 	checkoutPullRequest,
+	formatBodyFindings,
 	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
 	mergeSecondParent,
+	placeOnGitHubDiff,
 	pullRequestDelta,
 	runReview,
 	SUMMARY_MARKER,
@@ -35,6 +37,7 @@ import {
 	getMarkedComment,
 	getPullRequest,
 	isTrustedAuthor,
+	listPullRequestPatches,
 	listReviewComments,
 	RequestError,
 	resolveReviewThreads,
@@ -531,14 +534,16 @@ async function executeReview(
 						connection,
 						pr,
 						{
-							body: formatReviewBody({
-								tier: result.tier,
-								verdict: submission.verdict,
-								blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
-									.length,
-								comments: result.posted.length,
-								summaryUrl: summary.url
-							}),
+							body: ({ inline, inBody }) =>
+								formatReviewBody({
+									tier: result.tier,
+									verdict: submission.verdict,
+									blocking: result.posted.filter((f) => severityAtLeast(f.severity, threshold))
+										.length,
+									comments: inline,
+									inBody,
+									summaryUrl: summary.url
+								}),
 							event: reviewEvents[submission.verdict]
 						},
 						result.posted,
@@ -681,67 +686,86 @@ async function approvalRestriction(
 
 /**
  * Posts the review and returns the GitHub comment id for each finding (same order), so replies
- * to a finding can be traced back to it.
+ * to a finding can be traced back to it. A finding GitHub would not take inline goes in the
+ * review body instead, and its id is null.
  */
 async function postReview(
 	{ octokit, ref }: RepositoryConnection,
 	pr: { number: number; headSha: string },
-	review: { body: string; event: ReviewEvent },
+	review: { body: (counts: { inline: number; inBody: number }) => string; event: ReviewEvent },
 	findings: Finding[],
 	log: Logger
 ): Promise<(number | null)[]> {
-	const { body, event } = review;
+	const { event } = review;
 	const permalink = { repository: `${ref.owner}/${ref.repo}`, headSha: pr.headSha };
-	const comments = findings.map((finding) => ({
-		path: finding.path,
-		line: finding.endLine,
-		startLine: finding.startLine,
-		body: formatFindingComment(finding, permalink)
-	}));
 
-	try {
-		const review = await createReview(octokit, ref, {
+	// Hansi's diff comes from git. GitHub shows less on a large pull request: files past its diff
+	// limit have no diff there, and it rejects the whole review for one comment on them.
+	const placed = await listPullRequestPatches(octokit, ref, pr.number).then(
+		(files) => placeOnGitHubDiff(findings, files),
+		(error) => {
+			log.warn({ err: error }, 'could not read the pull request files from GitHub');
+			return findings;
+		}
+	);
+	const inline = placed.flatMap((finding, index) => (finding ? [{ finding, index }] : []));
+	const inBody = findings.filter((_, index) => !placed[index]);
+	if (inBody.length) {
+		log.warn(
+			{ inBody: inBody.length, inline: inline.length },
+			'findings outside GitHub diff, posting them in the review body'
+		);
+	}
+
+	const submit = (inlineFindings: typeof inline, bodyFindings: Finding[]) =>
+		createReview(octokit, ref, {
 			pullNumber: pr.number,
 			commitId: pr.headSha,
-			body,
-			comments,
+			body: [
+				review.body({ inline: inlineFindings.length, inBody: bodyFindings.length }),
+				formatBodyFindings(bodyFindings, permalink)
+			]
+				.filter(Boolean)
+				.join('\n\n'),
+			comments: inlineFindings.map(({ finding }) => ({
+				path: finding.path,
+				line: finding.endLine,
+				startLine: finding.startLine,
+				body: formatFindingComment(finding, permalink)
+			})),
 			event
 		});
-		if (comments.length === 0) return [];
-		const created = await listReviewComments(octokit, ref, pr.number, review.id);
-		const used = new Set<number>();
-		return comments.map((comment) => {
-			const match =
-				created.find(
-					(c) => !used.has(c.id) && c.path === comment.path && c.body === comment.body
-				) ??
-				created.find((c) => !used.has(c.id) && c.path === comment.path && c.line === comment.line);
-			if (!match) return null;
-			used.add(match.id);
-			return match.id;
-		});
+
+	let created: Awaited<ReturnType<typeof submit>>;
+	try {
+		created = await submit(inline, inBody);
 	} catch (error) {
 		// GitHub rejects the whole review if one comment position is invalid. Don't lose the
-		// findings: fall back to listing them in the review body.
-		if (!(error instanceof RequestError && error.status === 422) || comments.length === 0) {
+		// findings: fall back to listing them all in the review body.
+		if (!(error instanceof RequestError && error.status === 422) || inline.length === 0) {
 			throw error;
 		}
 		log.warn({ err: error }, 'inline comments rejected, posting findings in the review body');
-		const inline = findings
-			.map(
-				(f) =>
-					`#### \`${f.path}:${f.startLine}-${f.endLine}\`\n\n${formatFindingComment(f, permalink)}`
-			)
-			.join('\n\n---\n\n');
-		await createReview(octokit, ref, {
-			pullNumber: pr.number,
-			commitId: pr.headSha,
-			body: `${body}\n\n${inline}`,
-			comments: [],
-			event
-		});
+		await submit([], findings);
 		return findings.map(() => null);
 	}
+	if (inline.length === 0) return findings.map(() => null);
+
+	const comments = await listReviewComments(octokit, ref, pr.number, created.id);
+	const used = new Set<number>();
+	const ids: (number | null)[] = findings.map(() => null);
+	for (const { finding, index } of inline) {
+		const body = formatFindingComment(finding, permalink);
+		const match =
+			comments.find((c) => !used.has(c.id) && c.path === finding.path && c.body === body) ??
+			comments.find(
+				(c) => !used.has(c.id) && c.path === finding.path && c.line === finding.endLine
+			);
+		if (!match) continue;
+		used.add(match.id);
+		ids[index] = match.id;
+	}
+	return ids;
 }
 
 /**

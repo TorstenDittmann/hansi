@@ -59,6 +59,14 @@ export function parseUnifiedDiff(diff: string): FileDiff[] {
 	});
 }
 
+/**
+ * Parses one file's `patch` from GitHub's pull request files API. It holds only the hunks, so the
+ * file header is added back for the parser.
+ */
+export function parseGitHubPatch(path: string, patch: string): FileDiff | null {
+	return parseUnifiedDiff(`--- a/${path}\n+++ b/${path}\n${patch}\n`)[0] ?? null;
+}
+
 /** Lines GitHub accepts review comments on (RIGHT side): added and context lines in hunks. */
 export function commentableLines(file: FileDiff): Set<number> {
 	const lines = new Set<number>();

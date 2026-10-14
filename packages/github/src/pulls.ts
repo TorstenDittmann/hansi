@@ -112,6 +112,24 @@ export async function createReview(
 }
 
 /**
+ * The pull request's files as GitHub shows them. `patch` is missing when GitHub does not render
+ * the file's diff: a binary file, a file too large to diff, or one past the pull request's diff
+ * limit. GitHub rejects inline comments on those, and one rejected comment fails the whole review.
+ */
+export async function listPullRequestPatches(
+	octokit: Octokit,
+	ref: RepoRef,
+	pullNumber: number
+): Promise<{ path: string; patch?: string }[]> {
+	const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+		...ref,
+		pull_number: pullNumber,
+		per_page: 100
+	});
+	return files.map((file) => ({ path: file.filename, patch: file.patch || undefined }));
+}
+
+/**
  * Dismisses the bot's own "changes requested" reviews on a pull request. A later COMMENT review
  * does not clear that state on GitHub; only an approval or a dismissal does. Returns how many
  * reviews it dismissed, so calling it when there is nothing to dismiss is harmless.

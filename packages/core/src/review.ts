@@ -11,6 +11,7 @@ import { z } from 'zod';
 import {
 	commentableLines,
 	hunkIndexOf,
+	parseGitHubPatch,
 	parseUnifiedDiff,
 	renderDiffExcerpt,
 	renderFileDiff,
@@ -652,6 +653,22 @@ export function placeFinding(finding: Finding, files: FileDiff[]): Finding | nul
 			? Math.min(finding.startLine, endLine)
 			: endLine;
 	return { ...finding, startLine, endLine };
+}
+
+/**
+ * Places each finding on GitHub's own diff of the pull request, from its files API. Null for a
+ * finding GitHub would reject inline: its file has no diff there (GitHub stops rendering diffs
+ * on large pull requests) or its lines fall outside GitHub's hunks.
+ */
+export function placeOnGitHubDiff(
+	findings: Finding[],
+	files: { path: string; patch?: string }[]
+): (Finding | null)[] {
+	const diffs = files.flatMap((file) => {
+		const parsed = file.patch ? parseGitHubPatch(file.path, file.patch) : null;
+		return parsed ? [{ ...parsed, path: file.path }] : [];
+	});
+	return findings.map((finding) => placeFinding(finding, diffs));
 }
 
 async function verifyFindings(
