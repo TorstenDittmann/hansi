@@ -1,5 +1,5 @@
 import type { Analytics } from '@hans/analytics';
-import { lstat, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { access, constants, lstat, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '@hans/config';
@@ -239,6 +239,22 @@ export async function withWorkdir<T>(env: Env, fn: (dir: string) => Promise<T>):
 		return await fn(dir);
 	} finally {
 		await removeTree(dir);
+	}
+}
+
+/**
+ * Why jobs could not use the work directory, or null when they can. A host directory or volume
+ * owned by root is the usual cause: the image runs as uid 1000.
+ */
+export async function workdirProblem(env: Env): Promise<string | null> {
+	const root = workdirRoot(env);
+	try {
+		await mkdir(root, { recursive: true });
+		await access(root, constants.W_OK);
+		return null;
+	} catch {
+		const uid = process.getuid?.() ?? 1000;
+		return `The work directory ${root} is not writable by uid ${uid}. Run \`chown -R ${uid}:${uid}\` on the host directory set in HANSI_WORKDIR, or on the volume mounted there.`;
 	}
 }
 

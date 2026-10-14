@@ -5,7 +5,13 @@ import { chmod, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '@hans/config';
-import { clearWorkdir, createUsageRecorder, reviewDetailsUrl, reviewDetailsUrlFor } from './shared';
+import {
+	clearWorkdir,
+	workdirProblem,
+	createUsageRecorder,
+	reviewDetailsUrl,
+	reviewDetailsUrlFor
+} from './shared';
 
 const realFetch = globalThis.fetch;
 beforeAll(() => {
@@ -159,5 +165,11 @@ test("another worker's job directories are only removed once they are stale", as
 	expect(await readdir(root)).toEqual(['job-b-1']);
 
 	await clearWorkdir(env, { instance: 'a', now: Date.now() + 7 * 60 * 60_000 });
+	expect(await readdir(root)).toEqual([]);
+});
+
+test('a writable work directory is fine, and is created when missing', async () => {
+	const root = join(await mkdtemp(join(tmpdir(), 'hans-workdir-')), 'nested');
+	expect(await workdirProblem({ WORKER_WORKDIR: root } as Env)).toBeNull();
 	expect(await readdir(root)).toEqual([]);
 });
