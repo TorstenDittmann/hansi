@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import type { Analytics } from '@hans/analytics';
 import { createTestDatabase, schema } from '@hans/db';
-import { createUsageRecorder, reviewDetailsUrl, reviewDetailsUrlFor } from './shared';
+import { chmod, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Env } from '@hans/config';
+import { clearWorkdir, createUsageRecorder, reviewDetailsUrl, reviewDetailsUrlFor } from './shared';
 
 const realFetch = globalThis.fetch;
 beforeAll(() => {
@@ -126,4 +130,18 @@ test('review links include the organization slug', async () => {
 	expect(
 		await reviewDetailsUrlFor(db, 'https://hans.example', 'missing', 'review-1')
 	).toBeUndefined();
+});
+
+test('clearing the work directory removes what jobs left behind, read-only parts included', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hans-workdir-'));
+	const locked = join(root, 'job-abc.sandbox', 'workspace', 'cache');
+	await mkdir(locked, { recursive: true });
+	await writeFile(join(locked, 'module.go'), 'package x');
+	await chmod(locked, 0o555);
+	await mkdir(join(root, 'job-abc'));
+	await mkdir(join(root, 'keep'));
+
+	await clearWorkdir({ WORKER_WORKDIR: root } as Env);
+
+	expect(await readdir(root)).toEqual(['keep']);
 });
