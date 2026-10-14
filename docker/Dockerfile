@@ -25,9 +25,12 @@ RUN bun run --cwd apps/web build
 FROM node:22-bookworm-slim AS sandbox-rootfs
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
-		build-essential ca-certificates curl git python3 python3-pip python3-venv \
+		build-essential ca-certificates curl git python3 python3-pip python3-venv unzip \
+		php-cli php-curl php-intl php-mbstring php-mysql php-pgsql php-sqlite3 php-xml php-zip \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& mkdir -p /workspace /run/hansi
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+COPY --from=golang:1.25-bookworm /usr/local/go /usr/local/go
 COPY docker/sandbox-bridge.mjs /opt/hansi/bridge.mjs
 
 # gVisor's runsc, pinned and checked against its published SHA-512.

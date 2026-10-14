@@ -24,6 +24,10 @@ services:
       - seccomp=unconfined
       - apparmor=unconfined
       - label=disable
+    # Caps the whole container, sandboxes included, so reviews can't take over the host. Each
+    # sandbox is also stopped above 2 GiB; WORKER_CONCURRENCY sets how many run at once.
+    cpus: ${HANSI_CPUS:-2}
+    mem_limit: ${HANSI_MEMORY:-6g}
     restart: unless-stopped
 
   # To run web and worker as separate containers, they need a networked database instead of a

@@ -46,6 +46,11 @@ own syscall filters. Docker Swarm ignores these options, so platforms that deplo
 (such as Dokploy applications) need a plain Docker Compose deployment instead. Without that, reviews
 read code only. Each organization can turn the sandbox off in its settings.
 
+`docker/compose.yml` limits the container, sandboxes included, to 2 CPUs and 6 GB of memory. Change
+this with `HANSI_CPUS` and `HANSI_MEMORY` (e.g. `4` and `8g`) in the same place as the other
+variables. Each sandbox is also stopped when it uses more than 2 GiB, and `WORKER_CONCURRENCY`
+(default 2) sets how many run at once.
+
 To use the prebuilt image instead of building it, replace the `build:` section in
 `docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
 for amd64 and arm64 with every [release](https://github.com/TorstenDittmann/hansi/releases), tagged
