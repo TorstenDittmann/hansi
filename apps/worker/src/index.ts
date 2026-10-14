@@ -5,6 +5,7 @@ import { Queue, queues, type ChatJobPayload, type ReviewJobPayload } from '@hans
 import pino from 'pino';
 import { handleChatJob } from './chat-job';
 import { handleReviewJob } from './review-job';
+import { clearWorkdir } from './shared';
 
 const env = parseEnv(process.env);
 const logger = pino({ level: env.LOG_LEVEL, base: { service: 'worker' } });
@@ -31,6 +32,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	});
 }
 
+await clearWorkdir(env);
 logger.info({ concurrency: env.WORKER_CONCURRENCY, workerId: queue.workerId }, 'worker started');
 
 const onError = (error: unknown, job: { id: string; queue: string }) =>

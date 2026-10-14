@@ -51,6 +51,11 @@ this with `HANSI_CPUS` and `HANSI_MEMORY` (e.g. `4` and `8g`) in the same place 
 variables. Each sandbox is also stopped when it uses more than 2 GiB, and `WORKER_CONCURRENCY`
 (default 2) sets how many run at once.
 
+Reviews check out the pull request and run their sandbox in `/tmp/hans`, a volume in
+`docker/compose.yml`. Dependencies installed there can take several GB per review while it runs.
+To keep this off the system disk, set `HANSI_WORKDIR` to a directory on another disk, e.g.
+`/mnt/volume/hansi`, owned by uid 1000 (`chown 1000:1000 /mnt/volume/hansi`).
+
 To use the prebuilt image instead of building it, replace the `build:` section in
 `docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
 for amd64 and arm64 with every [release](https://github.com/TorstenDittmann/hansi/releases), tagged

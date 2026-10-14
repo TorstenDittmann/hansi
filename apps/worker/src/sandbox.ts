@@ -7,6 +7,7 @@ import { schema, type Database } from '@hans/db';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { startEgressProxy } from './egress-proxy';
+import { removeTree } from './shared';
 
 /** Where the pull request's files are in the sandbox, and where commands run. */
 const WORKSPACE = '/workspace';
@@ -219,7 +220,9 @@ export async function openSandbox(options: {
 			);
 		}
 		proxy?.close();
-		await rm(dir, { recursive: true, force: true });
+		await removeTree(dir).catch((error: unknown) =>
+			log.warn({ err: error, dir }, 'sandbox cleanup failed')
+		);
 	};
 
 	const exec = (args: string[], timeoutMs?: number) =>

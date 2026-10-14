@@ -1,5 +1,5 @@
 import type { Analytics } from '@hans/analytics';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '@hans/config';
@@ -221,16 +221,41 @@ export async function reviewDetailsUrlFor(
 	return reviewDetailsUrl(appUrl, organization.slug, reviewId);
 }
 
+const workdirRoot = (env: Env) => env.WORKER_WORKDIR ?? join(tmpdir(), 'hans');
+
 /** Runs `fn` with a fresh temporary directory that is always removed afterwards. */
 export async function withWorkdir<T>(env: Env, fn: (dir: string) => Promise<T>): Promise<T> {
-	const root = env.WORKER_WORKDIR ?? join(tmpdir(), 'hans');
+	const root = workdirRoot(env);
 	await mkdir(root, { recursive: true });
 	const dir = await mkdtemp(join(root, 'job-'));
 	try {
 		return await fn(dir);
 	} finally {
-		await rm(dir, { recursive: true, force: true });
+		await removeTree(dir);
 	}
+}
+
+/**
+ * Removes the checkouts and sandboxes that jobs left behind when the worker stopped mid-job (a
+ * restart, a deploy, an out-of-memory kill). Call it before taking jobs.
+ */
+export async function clearWorkdir(env: Env): Promise<void> {
+	const entries = await readdir(workdirRoot(env)).catch(() => []);
+	await Promise.all(
+		entries
+			.filter((name) => name.startsWith('job-'))
+			// Best effort: one directory that cannot be removed must not stop the worker.
+			.map((name) => removeTree(join(workdirRoot(env), name)).catch(() => {}))
+	);
+}
+
+/**
+ * Removes a directory tree, including read-only directories that commands in a sandbox can leave
+ * in its workspace, which `rm` alone cannot delete without root.
+ */
+export async function removeTree(dir: string): Promise<void> {
+	await Bun.spawn(['chmod', '-R', 'u+w', dir], { stdout: 'ignore', stderr: 'ignore' }).exited;
+	await rm(dir, { recursive: true, force: true });
 }
 
 /**

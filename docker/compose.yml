@@ -16,6 +16,9 @@ services:
         required: false
     volumes:
       - hans-data:/data
+      # Checkouts and sandboxes while reviews run. Set HANSI_WORKDIR to a host path, e.g. on a
+      # separate disk, to keep them off the system disk; it must be writable by uid 1000.
+      - ${HANSI_WORKDIR:-hans-work}:/tmp/hans
     # Reviews run commands in gVisor sandboxes inside this container. runsc creates a user
     # namespace and installs its own seccomp filters, which Docker's default seccomp profile,
     # AppArmor, and SELinux block. The container stays unprivileged. Docker Swarm ignores
@@ -41,3 +44,4 @@ services:
 
 volumes:
   hans-data:
+  hans-work:
