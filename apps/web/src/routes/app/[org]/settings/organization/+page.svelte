@@ -52,6 +52,33 @@
 		</div>
 	</form>
 
+	<form method="post" action="?/sandbox" use:enhance class="card overflow-hidden">
+		<div class="flex gap-3 p-5">
+			<input
+				id="sandbox"
+				name="sandbox"
+				type="checkbox"
+				class="mt-1 rounded border-stone-300 dark:border-stone-700"
+				checked={data.sandbox}
+			/>
+			<label for="sandbox" class="text-sm">
+				<span class="font-medium">Let Hansi run commands</span>
+				<span class="muted block">
+					Reviews and replies get a disposable sandbox with a copy of the pull request, where Hansi
+					can install dependencies, build, and run tests to confirm what it finds. It has no
+					credentials and reaches only public websites. Turned off, Hansi reviews by reading the
+					code.
+				</span>
+			</label>
+		</div>
+		<div
+			class="flex items-center justify-end gap-3 border-t border-stone-200 bg-stone-50 px-5 py-3 dark:border-stone-800 dark:bg-stone-900/50"
+		>
+			{#if form && 'sandboxSaved' in form}<span class="muted">Saved</span>{/if}
+			<button class="btn btn-primary">Save</button>
+		</div>
+	</form>
+
 	{#if canLeave || isOwner}
 		<section class="card divide-y divide-stone-200 dark:divide-stone-800">
 			{#if canLeave}

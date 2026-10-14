@@ -55,7 +55,14 @@ export const envSchema = z.object({
 
 	WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
 	/** Directory for temporary repository checkouts. */
-	WORKER_WORKDIR: optional
+	WORKER_WORKDIR: optional,
+
+	/**
+	 * The gVisor runtime binary and the sandbox's root filesystem; the Docker image ships both.
+	 * Whether reviews use the sandbox is an organization setting.
+	 */
+	SANDBOX_RUNSC: z.string().default('runsc'),
+	SANDBOX_ROOTFS: z.string().default('/opt/hansi-sandbox/rootfs')
 });
 
 export type Env = z.infer<typeof envSchema>;

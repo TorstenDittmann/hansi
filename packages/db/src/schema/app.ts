@@ -255,3 +255,13 @@ export const learnings = sqliteTable(
 	},
 	(t) => [index('learnings_org_repo_idx').on(t.organizationId, t.repositoryId)]
 );
+
+/** Per-organization settings. An organization without a row uses the defaults. */
+export const organizationSettings = sqliteTable('organization_settings', {
+	organizationId: text('organization_id')
+		.primaryKey()
+		.references(() => organization.id, { onDelete: 'cascade' }),
+	/** Whether reviews and replies can run commands in a sandbox (install, build, test). */
+	sandbox: integer('sandbox', { mode: 'boolean' }).notNull().default(true),
+	updatedAt
+});

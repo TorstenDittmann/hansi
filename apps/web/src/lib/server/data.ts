@@ -273,3 +273,21 @@ export async function getCostSummary(organizationId: string, now = new Date()) {
 	const { db } = await getContext();
 	return costSummary(db, organizationId, now);
 }
+
+/** Whether the organization's reviews and replies can run commands in a sandbox. On by default. */
+export async function getSandboxSetting(organizationId: string): Promise<boolean> {
+	const { db } = await getContext();
+	const [row] = await db
+		.select({ sandbox: schema.organizationSettings.sandbox })
+		.from(schema.organizationSettings)
+		.where(eq(schema.organizationSettings.organizationId, organizationId));
+	return row?.sandbox ?? true;
+}
+
+export async function setSandboxSetting(organizationId: string, sandbox: boolean) {
+	const { db } = await getContext();
+	await db
+		.insert(schema.organizationSettings)
+		.values({ organizationId, sandbox })
+		.onConflictDoUpdate({ target: schema.organizationSettings.organizationId, set: { sandbox } });
+}

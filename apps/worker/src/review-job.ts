@@ -47,6 +47,7 @@ import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { REVIEW_FAILURE_SUMMARY } from './public-failure';
 import { dismissFindingsResolvedOnGitHub } from './resolved-threads';
+import { openSandbox, sandboxEnabled, type ReviewSandbox } from './sandbox';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -77,6 +78,7 @@ import {
 import {
 	carriedReview,
 	carriedSummaryInput,
+	settledCarriedReview,
 	decideIncrementalReview,
 	type IncrementalDecision
 } from './merge-only';
@@ -389,6 +391,13 @@ async function executeReview(
 				}
 			});
 
+			const sandbox = await reviewSandbox(ctx, config, {
+				organizationId: review.organizationId,
+				repoDir,
+				name: `hansi-review-${review.id}`,
+				record,
+				log
+			});
 			const result = await runReview({
 				repoDir,
 				diff: reviewDiff,
@@ -407,8 +416,9 @@ async function executeReview(
 				models,
 				onEvent: record,
 				onModelCall: usage.record,
-				onModelError: usage.recordError
-			});
+				onModelError: usage.recordError,
+				sandbox: sandbox?.runner
+			}).finally(() => sandbox?.close());
 			await pendingWrites;
 			await db.update(schema.reviews).set(usage.totals).where(eq(schema.reviews.id, review.id));
 
@@ -627,6 +637,35 @@ async function loadPullRequestContext(
 }
 
 /**
+ * The sandbox this review runs commands in. It starts before the review. When it cannot start,
+ * the failure is recorded and the review reads code only.
+ */
+async function reviewSandbox(
+	ctx: WorkerContext,
+	config: RepoConfig,
+	options: {
+		organizationId: string;
+		repoDir: string;
+		name: string;
+		record: (event: TraceEvent) => void;
+		log: Logger;
+	}
+): Promise<ReviewSandbox | undefined> {
+	const { record, log } = options;
+	if (!(await sandboxEnabled(ctx.db, options.organizationId))) {
+		record({ type: 'sandbox.skipped', data: { reason: 'turned off in organization settings' } });
+		return undefined;
+	}
+	try {
+		return await openSandbox({ env: ctx.env, config, emit: record, ...options });
+	} catch (error) {
+		log.warn({ err: error }, 'sandbox failed to start');
+		record({ type: 'sandbox.failed', data: { error: (error as Error).message } });
+		return undefined;
+	}
+}
+
+/**
  * Why Hansi may not approve this PR, if anything. Content from people without write access could
  * try to talk the model into approving, so their PRs get findings but never an approval.
  */
@@ -795,7 +834,17 @@ async function finishMergeOnly(input: {
 }): Promise<Outcome> {
 	const { connection, decision } = input;
 	const { octokit, ref } = connection;
-	const carried = decision.review;
+	const findings = await loadSummaryFindings(input.db, {
+		organizationId: input.review.organizationId,
+		repositoryId: input.review.repositoryId,
+		pullNumber: input.review.pullNumber
+	});
+	const carried = settledCarriedReview(
+		decision.review,
+		findings
+			.filter((f) => f.status === 'posted')
+			.map((f) => ({ severity: f.severity as Severity, title: f.title }))
+	);
 	input.record({
 		type: 'review.mode',
 		data: { incremental: true, mergeOnly: true, from: decision.sinceSha }
@@ -813,11 +862,6 @@ async function finishMergeOnly(input: {
 	});
 
 	const existing = await getMarkedComment(octokit, ref, input.pullNumber, SUMMARY_MARKER);
-	const findings = await loadSummaryFindings(input.db, {
-		organizationId: input.review.organizationId,
-		repositoryId: input.review.repositoryId,
-		pullNumber: input.review.pullNumber
-	});
 	const summaryInput = carriedSummaryInput({
 		repository: connection.repository.fullName,
 		mention: connection.mention,
