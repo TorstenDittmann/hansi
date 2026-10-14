@@ -33,6 +33,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 await clearWorkdir(env);
+// Workers sharing a work directory also clear what stopped workers left there.
+const sweep = setInterval(() => void clearWorkdir(env, { ownJobs: false }), 60 * 60_000);
 logger.info({ concurrency: env.WORKER_CONCURRENCY, workerId: queue.workerId }, 'worker started');
 
 const onError = (error: unknown, job: { id: string; queue: string }) =>
@@ -55,6 +57,7 @@ await Promise.all([
 	})
 ]);
 
+clearInterval(sweep);
 await analytics.shutdown();
 client.close();
 logger.info('worker stopped');
