@@ -1,10 +1,42 @@
 import { expect, test } from 'bun:test';
 import { isBlockedAddress } from './egress-proxy';
-import { memoryUsage, readTail, sandboxSkipReason, sandboxSpec } from './sandbox';
+import { lazySandbox, memoryUsage, readTail, sandboxSpec, type ReviewSandbox } from './sandbox';
 
-test('every review gets a sandbox unless the instance turns it off', () => {
-	expect(sandboxSkipReason({ SANDBOX: 'on' })).toBeNull();
-	expect(sandboxSkipReason({ SANDBOX: 'off' })).toBe('SANDBOX=off on this instance');
+test('a lazy sandbox starts on its first command and only then needs closing', async () => {
+	let opened = 0;
+	let closed = 0;
+	const sandbox = lazySandbox(async (): Promise<ReviewSandbox> => {
+		opened++;
+		return {
+			runner: {
+				run: async (command) => ({ exitCode: 0, stdout: command, stderr: '', timedOut: false })
+			},
+			close: async () => {
+				closed++;
+			}
+		};
+	});
+	expect(opened).toBe(0);
+	expect((await sandbox.runner.run('a', { timeoutMs: 1 })).stdout).toBe('a');
+	await sandbox.runner.run('b', { timeoutMs: 1 });
+	expect(opened).toBe(1);
+	await sandbox.close();
+	expect(closed).toBe(1);
+
+	const unused = lazySandbox(async () => {
+		throw new Error('should not start');
+	});
+	await unused.close();
+});
+
+test('a lazy sandbox that cannot start fails its commands with the reason', async () => {
+	const sandbox = lazySandbox(async () => {
+		throw new Error('runsc missing');
+	});
+	await expect(sandbox.runner.run('ls', { timeoutMs: 1 })).rejects.toThrow(
+		'The sandbox could not start: runsc missing'
+	);
+	await sandbox.close();
 });
 
 test('the egress proxy refuses private, loopback, link-local, and metadata addresses', () => {

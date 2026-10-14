@@ -47,7 +47,7 @@ import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { REVIEW_FAILURE_SUMMARY } from './public-failure';
 import { dismissFindingsResolvedOnGitHub } from './resolved-threads';
-import { openSandbox, sandboxSkipReason, type ReviewSandbox } from './sandbox';
+import { openSandbox, sandboxEnabled, type ReviewSandbox } from './sandbox';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -392,6 +392,7 @@ async function executeReview(
 			});
 
 			const sandbox = await reviewSandbox(ctx, config, {
+				organizationId: review.organizationId,
 				repoDir,
 				name: `hansi-review-${review.id}`,
 				record,
@@ -642,12 +643,17 @@ async function loadPullRequestContext(
 async function reviewSandbox(
 	ctx: WorkerContext,
 	config: RepoConfig,
-	options: { repoDir: string; name: string; record: (event: TraceEvent) => void; log: Logger }
+	options: {
+		organizationId: string;
+		repoDir: string;
+		name: string;
+		record: (event: TraceEvent) => void;
+		log: Logger;
+	}
 ): Promise<ReviewSandbox | undefined> {
 	const { record, log } = options;
-	const skip = sandboxSkipReason(ctx.env);
-	if (skip) {
-		record({ type: 'sandbox.skipped', data: { reason: skip } });
+	if (!(await sandboxEnabled(ctx.db, options.organizationId))) {
+		record({ type: 'sandbox.skipped', data: { reason: 'turned off in organization settings' } });
 		return undefined;
 	}
 	try {

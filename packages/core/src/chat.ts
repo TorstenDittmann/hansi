@@ -12,6 +12,7 @@ import {
 	type EmitEvent,
 	type TrustedSource
 } from './tools';
+import { createSandboxTools, SANDBOX_GUIDANCE, type CommandRunner } from './sandbox';
 
 export interface ThreadMessage {
 	author: string;
@@ -41,6 +42,8 @@ export interface ChatInput {
 	finding?: { severity: string; category: string; title: string };
 	/** Where to read repository guidelines from; defaults to the (untrusted) PR checkout. */
 	trustedSource?: TrustedSource;
+	/** Where `run_command` runs, when the organization allows a sandbox. */
+	sandbox?: CommandRunner;
 	model: ReviewModel;
 	/** Stores a team preference for future reviews. */
 	onRemember: (rule: string) => Promise<void>;
@@ -62,6 +65,7 @@ export async function runChat(input: ChatInput): Promise<string> {
 			token: input.trustedSource?.token,
 			baseRef: input.trustedSource?.ref
 		}),
+		...(input.sandbox ? createSandboxTools(input.sandbox, emit) : {}),
 		remember: tool({
 			description:
 				'Save a lasting team preference for future reviews of this repository, e.g. "Do not flag missing error handling in scripts/". Only use when the user states a durable rule, not for one-off decisions.',
@@ -134,15 +138,18 @@ export async function runChat(input: ChatInput): Promise<string> {
 		generateText({
 			model: input.model.model,
 			...reasoningCallOptions(input.model),
-			instructions: chatInstructions(
-				input.language,
-				!!input.onMarkFinding,
-				{
-					repository: input.repository,
-					headSha: input.headSha
-				},
-				replyContext
-			),
+			instructions: [
+				chatInstructions(
+					input.language,
+					!!input.onMarkFinding,
+					{
+						repository: input.repository,
+						headSha: input.headSha
+					},
+					replyContext
+				),
+				...(input.sandbox ? [SANDBOX_GUIDANCE] : [])
+			].join('\n\n'),
 			prompt: parts.join('\n\n'),
 			tools,
 			stopWhen: isStepCount(20),

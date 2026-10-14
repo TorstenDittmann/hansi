@@ -3,6 +3,8 @@ import type { Server } from 'node:net';
 import { join } from 'node:path';
 import type { Env, RepoConfig } from '@hans/config';
 import { git, type CommandResult, type CommandRunner, type EmitEvent } from '@hans/core';
+import { schema, type Database } from '@hans/db';
+import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { startEgressProxy } from './egress-proxy';
 
@@ -25,9 +27,36 @@ export interface ReviewSandbox {
 	close(): Promise<void>;
 }
 
-/** Why reviews on this instance run without a sandbox, or null when they get one. */
-export function sandboxSkipReason(env: Pick<Env, 'SANDBOX'>): string | null {
-	return env.SANDBOX === 'off' ? 'SANDBOX=off on this instance' : null;
+/** Whether an organization's reviews and replies get a sandbox: on unless its settings turn it off. */
+export async function sandboxEnabled(db: Database, organizationId: string): Promise<boolean> {
+	const [row] = await db
+		.select({ sandbox: schema.organizationSettings.sandbox })
+		.from(schema.organizationSettings)
+		.where(eq(schema.organizationSettings.organizationId, organizationId));
+	return row?.sandbox ?? true;
+}
+
+/**
+ * A sandbox that starts on its first command, for replies that usually need none. If it cannot
+ * start, that command and every later one fail with the reason.
+ */
+export function lazySandbox(open: () => Promise<ReviewSandbox>): ReviewSandbox {
+	let opening: Promise<ReviewSandbox> | undefined;
+	return {
+		runner: {
+			run: async (command, options) => {
+				opening ??= open();
+				const sandbox = await opening.catch((error: unknown) => {
+					throw new Error(`The sandbox could not start: ${(error as Error).message}`);
+				});
+				return sandbox.runner.run(command, options);
+			}
+		},
+		close: async () => {
+			const sandbox = await opening?.catch(() => undefined);
+			await sandbox?.close();
+		}
+	};
 }
 
 /** The OCI runtime spec for one review's sandbox. */

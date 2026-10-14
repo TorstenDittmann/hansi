@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { organizationHome } from '$lib/org-path';
 import { getAuth } from '$lib/server/auth';
+import { getSandboxSetting, setSandboxSetting } from '$lib/server/data';
 import { organizationsFor, requireOrganization } from '$lib/server/organization';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -8,7 +9,11 @@ export const load: PageServerLoad = async ({ parent, request }) => {
 	const { organization } = await parent();
 	const auth = await getAuth();
 	const member = await auth.api.getActiveMember({ headers: request.headers });
-	return { role: member?.role ?? 'member', memberCount: await countMembers(organization.id) };
+	return {
+		role: member?.role ?? 'member',
+		memberCount: await countMembers(organization.id),
+		sandbox: await getSandboxSetting(organization.id)
+	};
 
 	async function countMembers(organizationId: string) {
 		const { members } = await auth.api.listMembers({
@@ -42,6 +47,13 @@ export const actions: Actions = {
 				})
 			)) ?? { renamed: true }
 		);
+	},
+
+	sandbox: async ({ locals, params, request }) => {
+		const organization = await requireOrganization(locals, request.headers, params.org);
+		const enabled = (await request.formData()).get('sandbox') === 'on';
+		await setSandboxSetting(organization.id, enabled);
+		return { sandboxSaved: true };
 	},
 
 	leave: async ({ locals, params, request }) => {

@@ -17,6 +17,7 @@ import { eq } from 'drizzle-orm';
 import { chatReplyFields, loadChatFinding } from './chat-finding';
 import { repliesToBot } from './chat-reply';
 import { chatFailureReply } from './public-failure';
+import { lazySandbox, openSandbox, sandboxEnabled } from './sandbox';
 import {
 	connectRepository,
 	createUsageRecorder,
@@ -108,6 +109,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		const learnings = await loadLearnings(db, payload.organizationId, payload.repositoryId);
 
 		const token = await getInstallationToken(octokit);
+		const useSandbox = await sandboxEnabled(db, payload.organizationId);
 		const answer = await withWorkdir(env, async (repoDir) => {
 			const diff = await checkoutPullRequest({
 				dir: repoDir,
@@ -117,6 +119,19 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				baseSha: pr.baseSha,
 				headSha: pr.headSha
 			});
+			// Most replies need no commands, so the sandbox starts only when the first one runs.
+			const sandbox = useSandbox
+				? lazySandbox(() =>
+						openSandbox({
+							env,
+							config,
+							repoDir,
+							name: `hansi-chat-${job.id}`,
+							emit: () => {},
+							log
+						})
+					)
+				: undefined;
 			return runChat({
 				repoDir,
 				repository: files.repository,
@@ -149,8 +164,9 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 								.where(eq(schema.reviewFindings.id, finding.id));
 							settled = true;
 						}
-					: undefined
-			});
+					: undefined,
+				sandbox: sandbox?.runner
+			}).finally(() => sandbox?.close());
 		});
 
 		await reply(answer);

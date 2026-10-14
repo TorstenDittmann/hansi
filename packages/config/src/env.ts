@@ -58,11 +58,9 @@ export const envSchema = z.object({
 	WORKER_WORKDIR: optional,
 
 	/**
-	 * Every review runs commands in a gVisor sandbox inside this container. `off` reviews by
-	 * reading code only.
+	 * The gVisor runtime binary and the sandbox's root filesystem; the Docker image ships both.
+	 * Whether reviews use the sandbox is an organization setting.
 	 */
-	SANDBOX: z.enum(['on', 'off']).default('on'),
-	/** The gVisor runtime binary and the sandbox's root filesystem; the Docker image ships both. */
 	SANDBOX_RUNSC: z.string().default('runsc'),
 	SANDBOX_ROOTFS: z.string().default('/opt/hansi-sandbox/rootfs')
 });

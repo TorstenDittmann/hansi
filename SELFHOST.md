@@ -38,7 +38,7 @@ Each review runs its commands, such as installing dependencies and running tests
 [gVisor](https://gvisor.dev) sandbox inside the container. It needs no KVM, no Docker socket, and
 no privileges, but the container must run with `seccomp=unconfined` and `apparmor=unconfined`
 (see `docker/compose.yml`), because gVisor installs its own syscall filters. Without that, reviews
-read code only; set `SANDBOX=off` to turn sandboxes off.
+read code only. Each organization can turn the sandbox off in its settings.
 
 To use the prebuilt image instead of building it, replace the `build:` section in
 `docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
