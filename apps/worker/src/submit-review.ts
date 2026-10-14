@@ -78,3 +78,31 @@ export function submissionForCurrentHead(input: HeadSubmissionInput): HeadSubmis
 		note: staleHeadNote(input.reviewedSha, input.currentHeadSha)
 	};
 }
+
+/**
+ * Whether Hansi should withdraw its earlier "changes requested" review.
+ *
+ * GitHub keeps a reviewer's latest approve / request-changes review in force. A COMMENT review
+ * does not replace it, so once the blocking findings are fixed or settled in a thread, a verdict
+ * that only comments (a minor defect still open, approval withheld, `approve: false`) would leave
+ * the pull request blocked by findings that no longer exist. An approval replaces it on its own,
+ * and a moved head is decided by the review of the newer commit.
+ */
+export function shouldDismissChangeRequest(input: {
+	verdict: Verdict;
+	/** Findings at or above the blocking severity that are still open after this review. */
+	blockingOpen: number;
+	lastDecisiveVerdict?: Verdict | null;
+	headMoved: boolean;
+}): boolean {
+	return (
+		!input.headMoved &&
+		input.verdict === 'comment' &&
+		input.blockingOpen === 0 &&
+		input.lastDecisiveVerdict === 'request_changes'
+	);
+}
+
+/** Shown on GitHub next to the dismissed review. */
+export const CHANGE_REQUEST_DISMISSAL =
+	'The findings that requested changes are resolved. See the summary comment for what is still open.';

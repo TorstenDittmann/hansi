@@ -134,15 +134,10 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 
 			const isReviewThread = event === 'pull_request_review_comment';
 			const rootCommentId = isReviewThread ? (comment.in_reply_to_id ?? comment.id) : undefined;
-			let intent = classifyMention(comment.body, credentials.slug);
-			// Replying to one of Hansi's findings is a conversation, even without a mention.
-			if (
-				!intent &&
-				rootCommentId &&
-				(await isFindingComment(repo.organizationId, rootCommentId))
-			) {
-				intent = 'chat';
-			}
+			const intent = classifyMention(comment.body, credentials.slug);
+			// A reply in a review thread may be talking to Hansi without a mention. The worker reads
+			// the thread and answers when the reply is to one of Hansi's comments.
+			const unmentioned = !intent && isReviewThread && comment.in_reply_to_id != null;
 
 			if (intent === 'review') {
 				await enqueueReview(db, queue, {
@@ -154,7 +149,7 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 					commentId: comment.id,
 					commentKind: isReviewThread ? 'review' : 'issue'
 				});
-			} else if (intent === 'chat') {
+			} else if (intent === 'chat' || unmentioned) {
 				await enqueueChat(
 					queue,
 					chatJobFromComment({
@@ -163,6 +158,7 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 						pullNumber,
 						kind: isReviewThread ? 'review' : 'issue',
 						rootCommentId,
+						unmentioned,
 						comment
 					})
 				);
@@ -197,23 +193,6 @@ async function findActiveRepository(repositoryId: number) {
 		);
 	if (!row?.organizationId || row.suspendedAt) return null;
 	return { id: row.id, organizationId: row.organizationId };
-}
-
-/** Whether a GitHub review comment is one of the findings Hansi posted for this organization. */
-async function isFindingComment(organizationId: string, commentId: number) {
-	const { db } = await getContext();
-	const [row] = await db
-		.select({ id: schema.reviewFindings.id })
-		.from(schema.reviewFindings)
-		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
-		.where(
-			and(
-				eq(schema.reviewFindings.githubCommentId, commentId),
-				eq(schema.reviews.organizationId, organizationId)
-			)
-		)
-		.limit(1);
-	return !!row;
 }
 
 function toRepo(repo: Repo) {

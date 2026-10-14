@@ -46,6 +46,7 @@ import type { Job, ReviewJobPayload } from '@hans/queue';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { REVIEW_FAILURE_SUMMARY } from './public-failure';
+import { dismissFindingsResolvedOnGitHub } from './resolved-threads';
 import { openSandbox, sandboxSkipReason, type ReviewSandbox } from './sandbox';
 import {
 	connectRepository,
@@ -54,6 +55,7 @@ import {
 	loadModels,
 	reviewDetailsUrlFor,
 	withWorkdir,
+	withdrawChangeRequests,
 	type RepositoryConnection,
 	type WorkerContext
 } from './shared';
@@ -80,7 +82,12 @@ import {
 	type IncrementalDecision
 } from './merge-only';
 import { loadSummaryFindings, summaryExtrasFromBody } from './summary';
-import { shouldSubmitReview, submissionForCurrentHead } from './submit-review';
+import {
+	CHANGE_REQUEST_DISMISSAL,
+	shouldDismissChangeRequest,
+	shouldSubmitReview,
+	submissionForCurrentHead
+} from './submit-review';
 
 type Review = typeof schema.reviews.$inferSelect;
 type Outcome = Pick<
@@ -243,8 +250,9 @@ async function executeReview(
 
 	// A follow-up trigger (a mention while this commit is in review, or another event after it
 	// finished) would otherwise run next and submit again. The queue only replaces queued jobs.
-	// Skip when this commit is already covered. A new commit has a different head and still runs.
-	const covered = sameHeadCoalesce(pr.headSha, await otherPullReviews(db, review));
+	// Skip when this commit is already covered. A new commit has a different head and still runs,
+	// and an explicit `@slug review` re-reviews a commit that was already reviewed.
+	const covered = sameHeadCoalesce(pr.headSha, await otherPullReviews(db, review), review.trigger);
 	if (covered) {
 		const summary = sameHeadSkipSummary(covered, pr.headSha);
 		log.info({ reason: covered, headSha: pr.headSha }, 'commit already reviewed, skipping');
@@ -309,6 +317,8 @@ async function executeReview(
 
 			// On a push, review only what this pull request itself changed since the last review.
 			// A merge of the base branch is not that: its files belong to main, not to the PR.
+			// A thread a maintainer resolved on GitHub settles its finding before the history is read.
+			await dismissFindingsResolvedOnGitHub(db, connection, review, log);
 			const history = await loadReviewHistory(db, review);
 			let reviewDiff = diff;
 			let incrementalFrom: string | undefined;
@@ -533,12 +543,26 @@ async function executeReview(
 						log
 					)
 				: [];
+			// A COMMENT review leaves an earlier "changes requested" in force on GitHub. Withdraw it
+			// once nothing blocking is open, or the author stays blocked by fixed findings.
+			const blockingOpen =
+				result.posted.filter((f) => severityAtLeast(f.severity, threshold)).length +
+				result.stillOpenBlocking;
+			const dismissedChangeRequests = shouldDismissChangeRequest({
+				verdict: submission.verdict,
+				blockingOpen,
+				lastDecisiveVerdict: history.lastDecisiveVerdict,
+				headMoved: submission.headMoved
+			})
+				? await withdrawChangeRequests(connection, pr.number, CHANGE_REQUEST_DISMISSAL, log)
+				: 0;
 			record({
 				type: 'review.posted',
 				data: {
 					summaryUrl: summary.url,
 					submittedReview: submission.submit,
-					headMoved: submission.headMoved
+					headMoved: submission.headMoved,
+					dismissedChangeRequests
 				}
 			});
 

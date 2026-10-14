@@ -16,29 +16,45 @@ function review(status: SameHeadReview['status'], headSha = head): SameHeadRevie
 }
 
 test('a completed review of this commit skips the follow-up', () => {
-	expect(sameHeadCoalesce(head, [review('completed')])).toBe('already-reviewed');
+	expect(sameHeadCoalesce(head, [review('completed')], 'synchronize')).toBe('already-reviewed');
+});
+
+test('an explicit review request re-reviews a commit that is already reviewed', () => {
+	expect(sameHeadCoalesce(head, [review('completed')], 'mention')).toBeNull();
+	expect(sameHeadCoalesce(head, [review('completed')], 'opened')).toBe('already-reviewed');
+	expect(sameHeadCoalesce(head, [review('completed')], 'manual')).toBe('already-reviewed');
+});
+
+test('an explicit review request still waits for a running review of the same commit', () => {
+	expect(sameHeadCoalesce(head, [review('running'), review('completed')], 'mention')).toBe(
+		'in-flight'
+	);
 });
 
 test('a running review of this commit skips the follow-up', () => {
-	expect(sameHeadCoalesce(head, [review('running')])).toBe('in-flight');
+	expect(sameHeadCoalesce(head, [review('running')], 'synchronize')).toBe('in-flight');
 });
 
 test('a completed review wins over one that is still running', () => {
-	expect(sameHeadCoalesce(head, [review('running'), review('completed')])).toBe('already-reviewed');
+	expect(sameHeadCoalesce(head, [review('running'), review('completed')], 'synchronize')).toBe(
+		'already-reviewed'
+	);
 });
 
 test('failed, skipped, superseded, and queued attempts still leave the commit to review', () => {
 	for (const status of ['failed', 'skipped', 'superseded', 'queued'] as const) {
-		expect(sameHeadCoalesce(head, [review(status)])).toBeNull();
+		expect(sameHeadCoalesce(head, [review(status)], 'synchronize')).toBeNull();
 	}
 });
 
 test('a new commit is reviewed even when the previous one finished', () => {
-	expect(sameHeadCoalesce(newer, [review('completed', head), review('running', head)])).toBeNull();
+	expect(
+		sameHeadCoalesce(newer, [review('completed', head), review('running', head)], 'synchronize')
+	).toBeNull();
 });
 
 test('an unresolved head is not treated as already reviewed', () => {
-	expect(sameHeadCoalesce('', [review('completed', '')])).toBeNull();
+	expect(sameHeadCoalesce('', [review('completed', '')], 'synchronize')).toBeNull();
 });
 
 test('the skip summary names the short commit', () => {
@@ -105,7 +121,9 @@ test('the lookup is limited to other reviews of the same pull request', async ()
 	expect(others).toHaveLength(2);
 	expect(others).toContainEqual({ headSha: head, status: 'completed' });
 	expect(others).toContainEqual({ headSha: newer, status: 'running' });
-	expect(sameHeadCoalesce(head, others)).toBe('already-reviewed');
-	expect(sameHeadCoalesce(newer, others)).toBe('in-flight');
-	expect(sameHeadCoalesce('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', others)).toBeNull();
+	expect(sameHeadCoalesce(head, others, 'synchronize')).toBe('already-reviewed');
+	expect(sameHeadCoalesce(newer, others, 'synchronize')).toBe('in-flight');
+	expect(
+		sameHeadCoalesce('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', others, 'synchronize')
+	).toBeNull();
 });

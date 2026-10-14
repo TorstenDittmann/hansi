@@ -446,6 +446,39 @@ describe('runReview', () => {
 		]);
 	});
 
+	test('keeps a different failure that shares the same lines', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Hands work back without spending an attempt.',
+					findings: [
+						finding(2, 'Republish can evict older messages'),
+						finding(2, 'Preserve the original job TTL when requeuing')
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real' }
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Requeue', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => f.title).sort()).toEqual([
+			'Preserve the original job TTL when requeuing',
+			'Republish can evict older messages'
+		]);
+		expect(result.dropped).toEqual([]);
+	});
+
 	test('skips when nothing is reviewable', async () => {
 		const result = await runReview({
 			repoDir,
@@ -603,7 +636,11 @@ ${upstream}`;
 			doGenerate: [
 				toolCall('submit_review', {
 					summary: 'Refactors divide.',
-					findings: [finding(2, 'Division by zero'), finding(4, 'Divides when b is 0', 'minor')]
+					findings: [
+						finding(2, 'Division by zero'),
+						// Far enough from line 2 that only the verifier's move makes it a duplicate.
+						finding(21, 'Division by zero when b is 0', 'minor')
+					]
 				}),
 				toolCall('submit_verdicts', {
 					verdicts: [
@@ -623,8 +660,41 @@ ${upstream}`;
 		if (result.status !== 'completed') throw new Error('expected a completed review');
 		expect(result.posted.map((f) => [f.title, f.startLine])).toEqual([['Division by zero', 2]]);
 		expect(result.dropped.map((f) => [f.title, f.startLine, f.dropReason])).toEqual([
-			['Divides when b is 0', 2, 'Duplicate of another finding in this review']
+			['Division by zero when b is 0', 2, 'Duplicate of another finding in this review']
 		]);
+	});
+
+	test('keeps a different failure the verifier moves onto the same lines', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Refactors divide.',
+					findings: [
+						finding(2, 'Division by zero'),
+						finding(21, 'Preserve the original job TTL when requeuing', 'minor')
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [
+						{ id: 'F1', keep: true, reason: 'real' },
+						{ id: 'F2', keep: true, reason: 'real', start_line: 2, end_line: 2 }
+					]
+				})
+			]
+		});
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.posted.map((f) => [f.title, f.startLine]).sort()).toEqual([
+			['Division by zero', 2],
+			['Preserve the original job TTL when requeuing', 2]
+		]);
+		expect(result.dropped).toEqual([]);
 	});
 
 	test('moves kept findings to the lines the verifier corrects them to', async () => {
@@ -643,7 +713,7 @@ ${upstream}`;
 						{ id: 'F1', keep: true, reason: 'real', start_line: 3, end_line: 3 },
 						// Not a changed line: the original position stays.
 						{ id: 'F2', keep: true, reason: 'real', start_line: 40, end_line: 40 },
-						// Already reported there: the original position stays.
+						// Same failure already reported there: the original position stays.
 						{ id: 'F3', keep: true, reason: 'real', start_line: 21, end_line: 21 }
 					]
 				})
@@ -654,7 +724,13 @@ ${upstream}`;
 			repoDir,
 			diff,
 			previousFindings: [
-				{ path: 'src/math.ts', startLine: 21, endLine: 21, category: 'bug', title: 'Old issue' }
+				{
+					path: 'src/math.ts',
+					startLine: 21,
+					endLine: 21,
+					category: 'bug',
+					title: 'Missing guard before returning'
+				}
 			],
 			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
 			config: parseRepoConfig('').config,
@@ -1546,8 +1622,26 @@ describe('isDuplicateFinding', () => {
 		).toBe(true);
 	});
 
-	test('matches the same category on the same lines', () => {
-		expect(isDuplicateFinding(base, [{ ...prior, category: 'bug' }])).toBe(true);
+	test('matches the same failure on the same lines', () => {
+		expect(
+			isDuplicateFinding({ ...base, title: 'Division by zero when b is 0' }, [
+				{ ...prior, category: 'bug', title: 'Division by zero' }
+			])
+		).toBe(true);
+	});
+
+	test('keeps a different failure that only shares the lines', () => {
+		expect(
+			isDuplicateFinding(base, [
+				{
+					...prior,
+					category: 'bug',
+					title: 'Preserve the original job TTL when requeuing'
+				}
+			])
+		).toBe(false);
+		// An empty title does not describe the same failure, so the lines alone do not merge it.
+		expect(isDuplicateFinding(base, [{ ...prior, category: 'bug' }])).toBe(false);
 	});
 
 	test('keeps new problems next to old ones', () => {

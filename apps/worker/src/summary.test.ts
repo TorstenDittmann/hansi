@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { formatSummaryComment } from '@hans/core';
-import { summaryAfterSettlement, summaryExtrasFromBody } from './summary';
+import { hasBlockingOpen, summaryAfterSettlement, summaryExtrasFromBody } from './summary';
 
 const base = {
 	repository: 'acme/api',
@@ -202,4 +202,12 @@ describe('summaryExtrasFromBody', () => {
 		);
 		expect(summaryExtrasFromBody(body).latestChanges).toBe('Adds pageCount.\nMentions the helper.');
 	});
+});
+
+test('hasBlockingOpen counts only open findings at the blocking severity', () => {
+	expect(hasBlockingOpen([{ status: 'posted', severity: 'major' }], 'major')).toBe(true);
+	expect(hasBlockingOpen([{ status: 'posted', severity: 'minor' }], 'major')).toBe(false);
+	expect(hasBlockingOpen([{ status: 'resolved', severity: 'critical' }], 'major')).toBe(false);
+	expect(hasBlockingOpen([{ status: 'dropped', severity: 'critical' }], 'major')).toBe(false);
+	expect(hasBlockingOpen([], 'major')).toBe(false);
 });

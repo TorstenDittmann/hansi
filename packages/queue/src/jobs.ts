@@ -28,6 +28,11 @@ export interface ChatJobPayload {
 	 */
 	authorAssociation: string;
 	commentUrl: string;
+	/**
+	 * A review-thread reply that doesn't mention the bot. The worker answers it only when it
+	 * replies to one of the bot's comments, and stays silent otherwise.
+	 */
+	unmentioned?: boolean;
 }
 
 /** The chat job for one webhook comment. Association comes from GitHub, not the comment body. */
@@ -37,6 +42,7 @@ export function chatJobFromComment(input: {
 	pullNumber: number;
 	kind: 'issue' | 'review';
 	rootCommentId?: number;
+	unmentioned?: boolean;
 	comment: {
 		id: number;
 		html_url: string;
@@ -53,7 +59,8 @@ export function chatJobFromComment(input: {
 		rootCommentId: input.rootCommentId,
 		author: input.comment.user.login,
 		authorAssociation: input.comment.author_association,
-		commentUrl: input.comment.html_url
+		commentUrl: input.comment.html_url,
+		...(input.unmentioned ? { unmentioned: true } : {})
 	};
 }
 

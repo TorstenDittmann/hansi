@@ -1,5 +1,9 @@
-import { expect, test } from 'bun:test';
-import { shouldSubmitReview, submissionForCurrentHead } from './submit-review';
+import { describe, expect, test } from 'bun:test';
+import {
+	shouldDismissChangeRequest,
+	shouldSubmitReview,
+	submissionForCurrentHead
+} from './submit-review';
 
 const quiet = {
 	posted: 0,
@@ -113,4 +117,32 @@ test('a moved head with nothing to comment does not leave a review', () => {
 			shouldSubmit: true
 		})
 	).toMatchObject({ headMoved: true, verdict: 'comment', submit: false });
+});
+
+describe('shouldDismissChangeRequest', () => {
+	const fixed = {
+		verdict: 'comment' as const,
+		blockingOpen: 0,
+		lastDecisiveVerdict: 'request_changes' as const,
+		headMoved: false
+	};
+
+	test('withdraws a change request once nothing blocking is open', () => {
+		expect(shouldDismissChangeRequest(fixed)).toBe(true);
+	});
+
+	test('keeps it while a blocking finding is still open', () => {
+		expect(shouldDismissChangeRequest({ ...fixed, blockingOpen: 1 })).toBe(false);
+	});
+
+	test('leaves an approval or a new change request to replace it', () => {
+		expect(shouldDismissChangeRequest({ ...fixed, verdict: 'approve' })).toBe(false);
+		expect(shouldDismissChangeRequest({ ...fixed, verdict: 'request_changes' })).toBe(false);
+	});
+
+	test('does nothing without an earlier change request or when the head moved', () => {
+		expect(shouldDismissChangeRequest({ ...fixed, lastDecisiveVerdict: 'approve' })).toBe(false);
+		expect(shouldDismissChangeRequest({ ...fixed, lastDecisiveVerdict: null })).toBe(false);
+		expect(shouldDismissChangeRequest({ ...fixed, headMoved: true })).toBe(false);
+	});
 });
