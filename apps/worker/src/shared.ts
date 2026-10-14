@@ -1,6 +1,6 @@
 import type { Analytics } from '@hans/analytics';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { access, constants, lstat, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '@hans/config';
 import type { ModelCall, ModelFailure, ReviewModel } from '@hans/core';
@@ -242,16 +242,76 @@ export async function reviewDetailsUrlFor(
 	return reviewDetailsUrl(appUrl, organization.slug, reviewId);
 }
 
+const workdirRoot = (env: Env) => env.WORKER_WORKDIR ?? join(tmpdir(), 'hans');
+/**
+ * Job directories carry the worker's hostname, so workers sharing a work directory each clean up
+ * only their own. A container keeps its hostname across restarts.
+ */
+const jobPrefix = (instance: string) => `job-${instance}-`;
+/** No job runs this long, so another worker's directory this old was left behind. */
+const STALE_MS = 6 * 60 * 60_000;
+
 /** Runs `fn` with a fresh temporary directory that is always removed afterwards. */
 export async function withWorkdir<T>(env: Env, fn: (dir: string) => Promise<T>): Promise<T> {
-	const root = env.WORKER_WORKDIR ?? join(tmpdir(), 'hans');
+	const root = workdirRoot(env);
 	await mkdir(root, { recursive: true });
-	const dir = await mkdtemp(join(root, 'job-'));
+	const dir = await mkdtemp(join(root, jobPrefix(hostname())));
 	try {
 		return await fn(dir);
 	} finally {
-		await rm(dir, { recursive: true, force: true });
+		await removeTree(dir);
 	}
+}
+
+/**
+ * Why jobs could not use the work directory, or null when they can. A host directory or volume
+ * owned by root is the usual cause: the image runs as uid 1000.
+ */
+export async function workdirProblem(env: Env): Promise<string | null> {
+	const root = workdirRoot(env);
+	try {
+		await mkdir(root, { recursive: true });
+		await access(root, constants.W_OK);
+		return null;
+	} catch {
+		const uid = process.getuid?.() ?? 1000;
+		return `The work directory ${root} is not writable by uid ${uid}. Run \`chown -R ${uid}:${uid}\` on the host directory set in HANSI_WORKDIR, or on the volume mounted there.`;
+	}
+}
+
+/**
+ * Removes the checkouts and sandboxes that jobs left behind when a worker stopped mid-job (a
+ * restart, a deploy, an out-of-memory kill): all of this worker's, and other workers' once they
+ * are stale. With `ownJobs: false` it only removes stale ones, which is safe while jobs run.
+ */
+export async function clearWorkdir(
+	env: Env,
+	options: { ownJobs?: boolean; instance?: string; now?: number } = {}
+): Promise<void> {
+	const { ownJobs = true, instance = hostname(), now = Date.now() } = options;
+	const root = workdirRoot(env);
+	const entries = await readdir(root).catch(() => []);
+	await Promise.all(
+		entries
+			.filter((name) => name.startsWith('job-'))
+			// Best effort: one directory that cannot be removed must not stop the worker.
+			.map(async (name) => {
+				const path = join(root, name);
+				const own = ownJobs && name.startsWith(jobPrefix(instance));
+				const remove = own || now - (await lstat(path)).mtimeMs > STALE_MS;
+				if (remove) await removeTree(path);
+			})
+			.map((removal) => removal.catch(() => {}))
+	);
+}
+
+/**
+ * Removes a directory tree, including read-only directories that commands in a sandbox can leave
+ * in its workspace, which `rm` alone cannot delete without root.
+ */
+export async function removeTree(dir: string): Promise<void> {
+	await Bun.spawn(['chmod', '-R', 'u+w', dir], { stdout: 'ignore', stderr: 'ignore' }).exited;
+	await rm(dir, { recursive: true, force: true });
 }
 
 /**

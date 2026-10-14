@@ -639,15 +639,40 @@ export function formatReviewBody(input: {
 	blocking: number;
 	/** Inline comments on this review. A Tier S review with none still says it is ready. */
 	comments?: number;
+	/** Findings listed in the review body because GitHub would not take them inline. */
+	inBody?: number;
 	summaryUrl?: string;
 }): string {
 	const link = input.summaryUrl ? ` [Summary](${input.summaryUrl})` : '';
-	const readyWithoutComments = input.tier === 'S' && input.comments === 0;
+	const inBody = input.inBody ?? 0;
+	const readyWithoutComments = input.tier === 'S' && input.comments === 0 && inBody === 0;
 	const headline =
 		input.verdict === 'request_changes'
 			? `${plural(input.blocking, 'blocking finding')} to address.`
 			: input.verdict === 'approve' || readyWithoutComments
 				? 'Looks good to merge.'
-				: 'See the inline comments.';
+				: input.comments === 0 && inBody > 0
+					? 'See the findings below.'
+					: 'See the inline comments.';
 	return `${tierIcon[input.tier]} **Tier ${input.tier}** · ${headline}${link}`;
+}
+
+/**
+ * Findings GitHub would not take as inline comments, for the review body. GitHub does not show
+ * a diff for every file of a large pull request, and comments there are rejected.
+ */
+export function formatBodyFindings(findings: Finding[], permalink: FilePermalink): string {
+	if (findings.length === 0) return '';
+	const intro =
+		findings.length === 1
+			? "GitHub does not show the diff for this finding's lines, so it is listed here instead of inline."
+			: "GitHub does not show the diff for these findings' lines, so they are listed here instead of inline.";
+	const items = findings.map((finding) => {
+		const range =
+			finding.startLine < finding.endLine
+				? `${finding.startLine}-${finding.endLine}`
+				: `${finding.endLine}`;
+		return `#### \`${finding.path}:${range}\`\n\n${formatFindingComment(finding, permalink)}`;
+	});
+	return [`> [!NOTE]\n> ${intro}`, ...items].join('\n\n---\n\n');
 }

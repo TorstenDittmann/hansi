@@ -34,22 +34,29 @@ This loads `docker/compose.yml` and `docker/compose.override.yml`, which publish
 Platforms that deploy a compose file and route a domain to it, such as Dokploy, use
 `docker/compose.yml` alone; set the variables in their UI.
 
-The container listens on port 3000, stores its database in the `hans-data` volume, and applies
-database migrations on every start. Put a reverse proxy with TLS in front of it (Caddy, Traefik,
+This starts two containers from one image: `hans`, the web app on port 3000, which applies database
+migrations on every start, and `worker`, which runs reviews. Both use the database in the `hans-data`
+volume. Put a reverse proxy with TLS in front of it (Caddy, Traefik,
 nginx), then continue with [Set up the GitHub App](#set-up-the-github-app).
 
 Each review runs its commands, such as installing dependencies and running tests, in a
-[gVisor](https://gvisor.dev) sandbox inside the container. It needs no KVM, no Docker socket, and
-no privileges, but the container must run with `seccomp=unconfined`, `apparmor=unconfined`, and
+[gVisor](https://gvisor.dev) sandbox inside the worker container. It needs no KVM, no Docker socket,
+and no privileges, but the worker must run with `seccomp=unconfined`, `apparmor=unconfined`, and
 `label=disable` (see `docker/compose.yml`), because gVisor creates a user namespace and installs its
 own syscall filters. Docker Swarm ignores these options, so platforms that deploy as swarm services
 (such as Dokploy applications) need a plain Docker Compose deployment instead. Without that, reviews
 read code only. Each organization can turn the sandbox off in its settings.
 
-`docker/compose.yml` limits the container, sandboxes included, to 2 CPUs and 6 GB of memory. Change
+`docker/compose.yml` limits each worker, sandboxes included, to 2 CPUs and 6 GB of memory. Change
 this with `HANSI_CPUS` and `HANSI_MEMORY` (e.g. `4` and `8g`) in the same place as the other
 variables. Each sandbox is also stopped when it uses more than 2 GiB, and `WORKER_CONCURRENCY`
-(default 2) sets how many run at once.
+(default 2) sets how many run at once in each worker. To review more pull requests at once, set
+`HANSI_WORKERS` (default 1) to run more workers; the limits apply to each.
+
+Reviews check out the pull request and run their sandbox in `/tmp/hans`, a volume in
+`docker/compose.yml` that all workers share. Dependencies installed there can take several GB per review while it runs.
+To keep this off the system disk, set `HANSI_WORKDIR` to a directory on another disk, e.g.
+`/mnt/volume/hansi`, owned by uid 1000 (`chown 1000:1000 /mnt/volume/hansi`).
 
 To use the prebuilt image instead of building it, replace the `build:` section in
 `docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
@@ -144,38 +151,39 @@ organization keeps its own model keys, installations, and costs.
 
 ## Deployment modes
 
-**One container (default).** `HANS_MODE=all` runs the web app and the worker in one container,
-sharing a database file on a volume. This is what `docker/compose.yml` does, and it is enough for
-most teams.
+**Web and workers (default).** `docker/compose.yml` runs the web app (`HANS_MODE=web`) and
+`HANSI_WORKERS` workers (`HANS_MODE=worker`) on one host, sharing a database file on a volume. Run
+any number of workers: they claim jobs from the database, so each review runs once.
 
-**Separate web and worker containers.** To scale the worker on its own, or to run it on another
-machine, both need a networked database instead of a shared file:
+**One container.** `HANS_MODE=all` (the image's default) runs the web app and a worker in one
+container, e.g. with a plain `docker run`.
+
+**Workers on other machines.** Containers on different hosts can't share a database file, so they
+need a networked database:
 
 1. Run sqld, e.g. the `ghcr.io/tursodatabase/libsql-server` image, with a volume for
    `/var/lib/sqld`.
-2. Point both containers at it with `DATABASE_URL=http://sqld:8080`. If sqld uses HTTP Basic auth,
+2. Point every container at it with `DATABASE_URL=http://sqld:8080`. If sqld uses HTTP Basic auth,
    put the credentials in the URL: `http://user:password@sqld:8080`.
-3. Set `HANS_MODE=web` on one container and `HANS_MODE=worker` on the other. Only the web
-   container runs migrations, so start it first. A worker that starts on an empty database exits,
-   and comes back once your orchestrator restarts it.
-4. Give both the same `HANS_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, `APP_URL`, and GitHub
+3. Only the web container runs migrations, so start it first. A worker that starts on an empty
+   database exits, and comes back once your orchestrator restarts it.
+4. Give all of them the same `HANS_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, `APP_URL`, and GitHub
    variables. Only the web container needs a domain and a port.
-
-Run any number of workers. They claim jobs from the database, so each review runs once.
 
 ### Dokploy
 
+Dokploy **Applications** run as swarm services, which can't run the sandbox, so deploy a
+**Compose** service instead:
+
 1. Create a project with a **libSQL** database. Dokploy protects it with HTTP Basic auth; the user
    is `libsql`, and the password is on the database's page.
-2. Create two **Applications** from the GitHub repository, branch `main`. For each, set **Build
-   type** to Dockerfile, **Dockerfile** to `docker/Dockerfile`, and **Context** to `.`.
-3. Give both the variables from step 4 above, with
-   `DATABASE_URL=http://libsql:<password>@<database app name>:8080`. Add `HANS_MODE=web` and
-   `ORIGIN` to the first, and `HANS_MODE=worker` to the second.
-4. Add your domain to the web application on port 3000, with HTTPS.
-5. Deploy the web application first, so it runs the migrations, then the worker.
+2. Create a **Compose** service of type Docker Compose from the GitHub repository, branch `main`,
+   with the compose path `./docker/compose.yml`.
+3. Set the variables, with `DATABASE_URL=http://libsql:<password>@<database app name>:8080`, and
+   attach the service to the database's network so that name resolves.
+4. Add your domain to the `hans` service on port 3000, with HTTPS.
 
-Push to `main` and both redeploy.
+Push to `main` and it redeploys.
 
 ## Analytics
 

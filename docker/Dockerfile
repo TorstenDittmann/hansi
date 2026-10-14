@@ -66,7 +66,7 @@ COPY docker/start.ts ./docker/start.ts
 COPY --from=gvisor /gvisor/ /usr/local/bin/
 COPY --from=sandbox-rootfs / /opt/hansi-sandbox/rootfs/
 
-RUN mkdir -p /data && chown bun:bun /data
+RUN mkdir -p /data /tmp/hans && chown bun:bun /data /tmp/hans
 USER bun
 VOLUME /data
 EXPOSE 3000
