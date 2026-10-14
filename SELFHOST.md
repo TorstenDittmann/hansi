@@ -27,8 +27,12 @@ In `.env`, set:
 Then start it:
 
 ```sh
-docker compose -f docker/compose.yml up -d
+cd docker && docker compose up -d
 ```
+
+This loads `docker/compose.yml` and `docker/compose.override.yml`, which publishes port 3000.
+Platforms that deploy a compose file and route a domain to it, such as Dokploy, use
+`docker/compose.yml` alone; set the variables in their UI.
 
 The container listens on port 3000, stores its database in the `hans-data` volume, and applies
 database migrations on every start. Put a reverse proxy with TLS in front of it (Caddy, Traefik,
@@ -36,8 +40,10 @@ nginx), then continue with [Set up the GitHub App](#set-up-the-github-app).
 
 Each review runs its commands, such as installing dependencies and running tests, in a
 [gVisor](https://gvisor.dev) sandbox inside the container. It needs no KVM, no Docker socket, and
-no privileges, but the container must run with `seccomp=unconfined` and `apparmor=unconfined`
-(see `docker/compose.yml`), because gVisor installs its own syscall filters. Without that, reviews
+no privileges, but the container must run with `seccomp=unconfined`, `apparmor=unconfined`, and
+`label=disable` (see `docker/compose.yml`), because gVisor creates a user namespace and installs its
+own syscall filters. Docker Swarm ignores these options, so platforms that deploy as swarm services
+(such as Dokploy applications) need a plain Docker Compose deployment instead. Without that, reviews
 read code only. Each organization can turn the sandbox off in its settings.
 
 To use the prebuilt image instead of building it, replace the `build:` section in
@@ -95,28 +101,28 @@ events.
 
 Hansi reads its configuration from environment variables.
 
-| Variable                 | Required | Description                                                                                                     |
-| ------------------------ | -------- | --------------------------------------------------------------------------------------------------------------- |
-| `APP_URL`                | Yes      | Public URL of the instance. GitHub sends webhooks here.                                                         |
-| `ORIGIN`                 | Yes      | Same as `APP_URL`. The web server checks form submissions against it. `docker/compose.yml` sets it for you.     |
-| `HANS_ENCRYPTION_KEY`    | Yes      | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts provider keys and GitHub App secrets. Back it up. |
-| `BETTER_AUTH_SECRET`     | Yes      | At least 32 characters (`openssl rand -base64 32`). Signs sessions.                                             |
-| `DATABASE_URL`           |          | `file:/data/hans.db` in the image. Or `http://…` / `libsql://…` for sqld or Turso.                              |
-| `DATABASE_AUTH_TOKEN`    |          | Token for sqld or Turso. For HTTP Basic auth, put the credentials in the URL instead.                           |
-| `SIGNUP_MODE`            |          | `restricted` (default) or `open`. See [Who can sign up](#who-can-sign-up).                                      |
-| `ALLOWED_GITHUB_USERS`   |          | Comma-separated GitHub logins that may sign up in `restricted` mode.                                            |
-| `HANS_MODE`              |          | `all` (default), `web`, or `worker`. See [Deployment modes](#deployment-modes).                                 |
-| `HANS_SKIP_MIGRATIONS`   |          | `true` to skip migrations on start.                                                                             |
-| `WORKER_CONCURRENCY`     |          | Reviews one worker runs at a time. Default `2`.                                                                 |
-| `WORKER_WORKDIR`         |          | Directory for temporary checkouts. Default `/tmp/hans` in the image.                                            |
-| `PORT`                   |          | Port the web app listens on. Default `3000`.                                                                    |
-| `LOG_LEVEL`              |          | `trace`, `debug`, `info` (default), `warn`, `error`, or `fatal`.                                                |
-| `GITHUB_APP_ID`          |          | With the five below: use an existing GitHub App instead of `/setup`.                                            |
-| `GITHUB_APP_SLUG`        |          | The app's URL name, e.g. `hansi-reviews`.                                                                       |
-| `GITHUB_APP_PRIVATE_KEY` |          | The PEM private key, on one line with `\n` for line breaks.                                                     |
-| `GITHUB_WEBHOOK_SECRET`  |          | The webhook secret set in the app.                                                                              |
-| `GITHUB_CLIENT_ID`       |          | The app's client ID.                                                                                            |
-| `GITHUB_CLIENT_SECRET`   |          | A client secret generated in the app.                                                                           |
+| Variable                 | Required | Description                                                                                                      |
+| ------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `APP_URL`                | Yes      | Public URL of the instance. GitHub sends webhooks here.                                                          |
+| `ORIGIN`                 | Yes      | Same as `APP_URL`. The web server checks form submissions against it. The image uses `APP_URL` when it is unset. |
+| `HANS_ENCRYPTION_KEY`    | Yes      | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts provider keys and GitHub App secrets. Back it up.  |
+| `BETTER_AUTH_SECRET`     | Yes      | At least 32 characters (`openssl rand -base64 32`). Signs sessions.                                              |
+| `DATABASE_URL`           |          | `file:/data/hans.db` in the image. Or `http://…` / `libsql://…` for sqld or Turso.                               |
+| `DATABASE_AUTH_TOKEN`    |          | Token for sqld or Turso. For HTTP Basic auth, put the credentials in the URL instead.                            |
+| `SIGNUP_MODE`            |          | `restricted` (default) or `open`. See [Who can sign up](#who-can-sign-up).                                       |
+| `ALLOWED_GITHUB_USERS`   |          | Comma-separated GitHub logins that may sign up in `restricted` mode.                                             |
+| `HANS_MODE`              |          | `all` (default), `web`, or `worker`. See [Deployment modes](#deployment-modes).                                  |
+| `HANS_SKIP_MIGRATIONS`   |          | `true` to skip migrations on start.                                                                              |
+| `WORKER_CONCURRENCY`     |          | Reviews one worker runs at a time. Default `2`.                                                                  |
+| `WORKER_WORKDIR`         |          | Directory for temporary checkouts. Default `/tmp/hans` in the image.                                             |
+| `PORT`                   |          | Port the web app listens on. Default `3000`.                                                                     |
+| `LOG_LEVEL`              |          | `trace`, `debug`, `info` (default), `warn`, `error`, or `fatal`.                                                 |
+| `GITHUB_APP_ID`          |          | With the five below: use an existing GitHub App instead of `/setup`.                                             |
+| `GITHUB_APP_SLUG`        |          | The app's URL name, e.g. `hansi-reviews`.                                                                        |
+| `GITHUB_APP_PRIVATE_KEY` |          | The PEM private key, on one line with `\n` for line breaks.                                                      |
+| `GITHUB_WEBHOOK_SECRET`  |          | The webhook secret set in the app.                                                                               |
+| `GITHUB_CLIENT_ID`       |          | The app's client ID.                                                                                             |
+| `GITHUB_CLIENT_SECRET`   |          | A client secret generated in the app.                                                                            |
 
 ### Who can sign up
 

@@ -1,0 +1,8 @@
+# Local additions to compose.yml. `docker compose up` in this directory loads both files;
+# deployments that name compose.yml explicitly (docker compose -f docker/compose.yml) skip this.
+services:
+  hans:
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    ports:
+      - '3000:3000'
