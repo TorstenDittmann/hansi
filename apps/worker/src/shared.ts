@@ -200,6 +200,27 @@ export async function createUsageRecorder(
 	return { record, recordError, totals };
 }
 
+/**
+ * How long a review took, for analytics: `queueMs` from the trigger until its last attempt
+ * started, `durationMs` for that attempt, and `totalMs` from trigger to finish. A review that
+ * never started has only `totalMs`.
+ */
+export function reviewTimings(review: {
+	createdAt: Date;
+	startedAt: Date | null;
+	finishedAt: Date | null;
+}) {
+	const { createdAt, startedAt, finishedAt } = review;
+	if (!finishedAt) return {};
+	const totalMs = finishedAt.getTime() - createdAt.getTime();
+	if (!startedAt) return { totalMs };
+	return {
+		queueMs: startedAt.getTime() - createdAt.getTime(),
+		durationMs: finishedAt.getTime() - startedAt.getTime(),
+		totalMs
+	};
+}
+
 /** Dashboard URL for one review, scoped to the organization that owns it. */
 export function reviewDetailsUrl(appUrl: string, organizationSlug: string, reviewId: string) {
 	const base = appUrl.replace(/\/+$/, '');
