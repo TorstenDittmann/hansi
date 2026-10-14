@@ -17,7 +17,8 @@ import {
 	renderFileDiff,
 	type FileDiff
 } from './diff';
-import { filterFiles } from './filters';
+import { dependencyChanges } from './dependencies';
+import { filterFiles, isGeneratedOutput, isLockfile } from './filters';
 import {
 	cachedPrompt,
 	callModel,
@@ -218,9 +219,12 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const inPullRequest = (file: FileDiff) =>
 		!pullRequestFiles || pullRequestFiles.some((f) => f.path === file.path);
 	const changed = parseUnifiedDiff(input.diff);
+	// Lockfiles, snapshots, and generated code are only checked by running something, so they
+	// stay ignored without a sandbox.
 	const { included, excluded } = filterFiles(
 		changed.filter(inPullRequest),
-		config.reviews.pathFilters
+		config.reviews.pathFilters,
+		{ sandbox: !!input.sandbox }
 	);
 	for (const file of changed.filter((f) => !inPullRequest(f))) {
 		excluded.push({ path: file.path, reason: 'not part of the pull request diff' });
@@ -234,11 +238,17 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	}
 	const previousFindings = input.previousFindings ?? [];
 
-	// Keep the prompt within budget; files that don't fit are listed but not shown.
+	// Keep the prompt within budget; files that don't fit are listed but not shown. Files checked
+	// by running something go last so a large one cannot crowd out code. Lockfile versions are
+	// listed separately.
 	const shown: FileDiff[] = [];
 	const notShown = [...excluded];
 	let budget = limits.maxDiffChars;
-	for (const file of included) {
+	const lockfiles = included.filter((file) => isLockfile(file.path));
+	const generated = included.filter((file) => isGeneratedOutput(file.path));
+	const dependencies = dependencyChanges(lockfiles);
+	const checked = new Set([...lockfiles, ...generated]);
+	for (const file of [...included.filter((f) => !checked.has(f)), ...checked]) {
 		const rendered = renderFileDiff(file);
 		if (rendered.length > budget) {
 			notShown.push({ path: file.path, reason: 'too large to show' });
@@ -247,7 +257,10 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		budget -= rendered.length;
 		shown.push(file);
 	}
-	if (shown.length === 0) return { status: 'skipped', reason: 'Diff too large to review' };
+	// With a sandbox the reviewer can still read the files and run the build and tests.
+	if (shown.length === 0 && !input.sandbox) {
+		return { status: 'skipped', reason: 'Diff too large to review' };
+	}
 	// `shown` is only the prompt. Placement uses `included`, so record which files the model
 	// had to read with tools instead of seeing in the diff.
 	const omittedFromPrompt = notShown.filter((file) => file.reason === 'too large to show');
@@ -283,6 +296,8 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		pathInstructions,
 		diff: shown.map(renderFileDiff).join('\n\n'),
 		excludedFiles: notShown,
+		dependencyChanges: lockfiles.length ? dependencies : undefined,
+		generatedFiles: generated.map((file) => file.path),
 		incrementalFrom: input.incrementalFrom,
 		learnings: input.learnings,
 		previousFindings,

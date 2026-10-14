@@ -534,6 +534,96 @@ describe('runReview', () => {
 		expect(result).toEqual({ status: 'skipped', reason: 'No reviewable changes' });
 	});
 
+	test('reviews a lockfile-only bump when a sandbox can run it, and skips it otherwise', async () => {
+		const composerBump = `diff --git a/composer.lock b/composer.lock
+--- a/composer.lock
++++ b/composer.lock
+@@ -10,4 +10,4 @@
+         {
+             "name": "guzzlehttp/guzzle",
+-            "version": "6.5.8",
++            "version": "7.9.2",
+             "source": {
+`;
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				toolCall('submit_review', {
+					summary: 'Bumps Guzzle.',
+					findings: [
+						{
+							path: 'composer.lock',
+							startLine: 12,
+							endLine: 12,
+							severity: 'major',
+							category: 'bug',
+							title: 'Guzzle 7 drops the request option the client uses',
+							body: 'The tests fail after composer install.'
+						}
+					]
+				}),
+				toolCall('submit_verdicts', {
+					verdicts: [{ id: 'F1', keep: true, reason: 'reproduced with phpunit' }]
+				})
+			]
+		});
+		const base = {
+			repoDir,
+			diff: composerBump,
+			pullRequest: { title: 'Bump guzzle', body: '', author: 'dependabot' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } }
+		};
+
+		expect(await runReview(base)).toEqual({ status: 'skipped', reason: 'No reviewable changes' });
+
+		const result = await runReview({
+			...base,
+			sandbox: { run: async () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false }) }
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.reviewedFiles).toEqual(['composer.lock']);
+		expect(result.posted.map((f) => f.title)).toEqual([
+			'Guzzle 7 drops the request option the client uses'
+		]);
+		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+		expect(prompt).toContain('<dependency_changes>');
+		expect(prompt).toContain('composer.lock: guzzlehttp/guzzle 6.5.8 -> 7.9.2 (major)');
+	});
+
+	test('a sandbox reviews a diff too large to show, and checks generated files by running them', async () => {
+		const model = new MockLanguageModelV4({
+			doGenerate: [toolCall('submit_review', { summary: 'Regenerates the client.', findings: [] })]
+		});
+		const base = {
+			repoDir,
+			diff: `${diff}diff --git a/api/client.generated.ts b/api/client.generated.ts
+--- a/api/client.generated.ts
++++ b/api/client.generated.ts
+@@ -1 +1 @@
+-export const v = 1;
++export const v = 2;
+`,
+			pullRequest: { title: 'Regenerate', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			limits: { maxDiffChars: 10 }
+		};
+		expect(await runReview(base)).toEqual({
+			status: 'skipped',
+			reason: 'Diff too large to review'
+		});
+
+		const result = await runReview({
+			...base,
+			sandbox: { run: async () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false }) }
+		});
+		expect(result.status).toBe('completed');
+		const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+		expect(prompt).toContain('None of the changed files fit in this prompt');
+		expect(prompt).toContain('<generated_files>');
+		expect(prompt).toContain('- api/client.generated.ts');
+	});
+
 	test('incremental reviews drop repeats and findings outside the PR diff', async () => {
 		// The increment touches line 3 only; the full PR diff covers lines 1-5 and 21-23.
 		const increment = `diff --git a/src/math.ts b/src/math.ts

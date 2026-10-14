@@ -93,7 +93,7 @@ Every field is optional. Omit a field when it would only restate the default. Ke
 
 `profile`: `chill` flags confirmed bugs only. `balanced` also flags risky patterns, weak or missing tests, and broken documentation examples. `strict` also counts naming, style, and maintainability.
 
-`pathFilters`: a pattern without `!` is an allowlist, and files outside it are skipped. A pattern with `!` excludes. Do not add an allowlist unless the user asked for one. Lockfiles, `dist/`, `build/`, snapshots, generated files, and images are already ignored. Do not repeat those.
+`pathFilters`: a pattern without `!` is an allowlist, and files outside it are skipped. A pattern with `!` excludes. Do not add an allowlist unless the user asked for one. `dist/`, `build/`, vendored code, and images are already ignored. So are lockfiles, snapshots, and generated files, unless the organization lets Hansi run commands: then Hansi checks them by installing, running the tests, or regenerating. Do not repeat those.
 
 Always set `$schema` to `https://hansi.codes/schema/v1.json`.
 
