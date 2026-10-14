@@ -69,7 +69,7 @@ export function sandboxSpec(options: { rootfs: string; workspace: string; proxyD
 			// Keeps the sandbox alive for `runsc exec`, and ends it once its lifetime is up.
 			args: ['sleep', String(MAX_LIFETIME_SECONDS)],
 			env: [
-				'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+				'PATH=/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
 				'HOME=/root',
 				'CI=true',
 				...['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'].map(
