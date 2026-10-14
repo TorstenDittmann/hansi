@@ -1,9 +1,14 @@
 import type { FileDiff } from './diff';
 
-/** Files that are almost never worth an LLM's attention. */
-export const defaultIgnoreGlobs = [
+/**
+ * Dependency lockfiles. Reading one tells a model little, so they are ignored by default. With a
+ * sandbox the reviewer can install the locked versions and run the build and tests, so they are
+ * reviewed then.
+ */
+export const lockfileGlobs = [
 	'**/*.lock',
 	'**/package-lock.json',
+	'**/npm-shrinkwrap.json',
 	'**/pnpm-lock.yaml',
 	'**/yarn.lock',
 	'**/bun.lock',
@@ -11,8 +16,20 @@ export const defaultIgnoreGlobs = [
 	'**/Cargo.lock',
 	'**/go.sum',
 	'**/poetry.lock',
+	'**/uv.lock',
 	'**/composer.lock',
-	'**/Gemfile.lock',
+	'**/Gemfile.lock'
+];
+
+const lockfileMatchers = lockfileGlobs.map((g) => new Bun.Glob(g));
+
+export function isLockfile(path: string): boolean {
+	return lockfileMatchers.some((glob) => glob.match(path));
+}
+
+/** Files that are almost never worth an LLM's attention. */
+export const defaultIgnoreGlobs = [
+	...lockfileGlobs,
 	'**/*.min.js',
 	'**/*.min.css',
 	'**/*.map',
@@ -40,14 +57,22 @@ export interface FilterResult {
 
 /**
  * Applies default ignores plus `.hansi.json` path filters. Filters without `!` are an allowlist;
- * filters with `!` exclude. User filters can re-include a default-ignored path.
+ * filters with `!` exclude. User filters can re-include a default-ignored path. `lockfiles`
+ * keeps lockfiles in the review when the reviewer can run commands to check them.
  */
-export function filterFiles(files: FileDiff[], pathFilters: string[] = []): FilterResult {
+export function filterFiles(
+	files: FileDiff[],
+	pathFilters: string[] = [],
+	options: { lockfiles?: boolean } = {}
+): FilterResult {
 	const includes = pathFilters.filter((f) => !f.startsWith('!')).map((f) => new Bun.Glob(f));
 	const excludes = pathFilters
 		.filter((f) => f.startsWith('!'))
 		.map((f) => new Bun.Glob(f.slice(1)));
-	const defaults = defaultIgnoreGlobs.map((g) => new Bun.Glob(g));
+	const ignored = options.lockfiles
+		? defaultIgnoreGlobs.filter((g) => !lockfileGlobs.includes(g))
+		: defaultIgnoreGlobs;
+	const defaults = ignored.map((g) => new Bun.Glob(g));
 
 	const result: FilterResult = { included: [], excluded: [] };
 	for (const file of files) {

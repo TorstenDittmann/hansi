@@ -1,5 +1,6 @@
 import type { RepoConfig, ReviewProfile } from '@hans/config';
 import { chatReplyPolicy, type ChatReplyPolicy } from './chat-policy';
+import { isMajorBump, type DependencyChange } from './dependencies';
 import type { FailedCheck, LinkedIssue } from './review';
 
 /**
@@ -249,6 +250,8 @@ export function buildReviewPrompt(input: {
 	pathInstructions: string[];
 	diff: string;
 	excludedFiles: { path: string; reason: string }[];
+	/** Versions the changed lockfiles move. Only set when lockfiles are part of the review. */
+	dependencyChanges?: DependencyChange[];
 	incrementalFrom?: string;
 	learnings?: string[];
 	previousFindings?: { path: string; startLine: number; endLine: number; title: string }[];
@@ -307,6 +310,7 @@ export function buildReviewPrompt(input: {
 			`<files_not_shown>\nChanged in this pull request but not shown in the diff below.\n${list}${deleted}\n</files_not_shown>`
 		);
 	}
+	if (input.dependencyChanges) parts.push(dependencyChangesSection(input.dependencyChanges));
 	if (input.previousFindings?.length) {
 		const list = input.previousFindings
 			.map((f) => `- ${f.path}:${f.startLine}-${f.endLine} ${f.title}`)
@@ -343,4 +347,32 @@ export function buildReviewPrompt(input: {
 		`<diff>\nEach line: new-file line number, marker (+ added, - removed, space context), content.\n\n${input.diff}\n</diff>`
 	);
 	return parts.join('\n\n');
+}
+
+/**
+ * Lockfile changes are only reviewed when the reviewer can run commands, so this asks for the
+ * checks a reviewer would run on a dependency bump instead of a read of the lockfile.
+ */
+function dependencyChangesSection(changes: DependencyChange[]): string {
+	const list = changes.length
+		? changes
+				.map((c) => {
+					const move =
+						c.from && c.to ? `${c.from} -> ${c.to}` : c.to ? `added ${c.to}` : `removed ${c.from}`;
+					const major = c.from && c.to && isMajorBump(c.from, c.to) ? ' (major)' : '';
+					return `- ${c.lockfile}: ${c.name} ${move}${major}`;
+				})
+				.join('\n')
+		: '(The versions could not be read from the lockfile diff. Read it with the tools.)';
+	return `<dependency_changes>
+This pull request changes dependency lockfiles, so the code now runs against different versions of its dependencies. Versions read from the lockfile diffs:
+${list}
+
+Review this like the code change it is, using run_command:
+1. Install exactly what is locked with the project's own tool and lockfile (for example composer install, npm ci, bun install --frozen-lockfile, yarn install --immutable, pnpm install --frozen-lockfile, go mod download, poetry install, uv sync, bundle install, cargo fetch). An install that fails, or a lockfile out of sync with its manifest (composer validate, npm ci), is a finding.
+2. Build or type check the project and run the tests that exercise code using the changed packages. When the base branch passes a check that now fails, the bump broke it: report that, with the command you ran.
+3. For each version change, above all major ones, find what changed upstream between the two versions: the package's changelog or release notes (from its registry or repository over the network, or from the installed package's CHANGELOG), or by comparing the installed APIs with what the code calls. Then grep the repository for the code that uses the package. Report a breaking change only when this repository uses the API it breaks, and name the call site.
+4. Report a known vulnerability in a locked version when an audit tool shows it (composer audit, npm audit, pip-audit, govulncheck).
+Put findings on the lockfile line that sets the new version (the "version" line or entry for that package). When the line is not in the diff, put it on the closest changed line of that package's entry and name the package in the title. A bump that installs, builds, and passes its tests with no breaking change this code depends on needs no finding.
+</dependency_changes>`;
 }
