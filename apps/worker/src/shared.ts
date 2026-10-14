@@ -244,7 +244,8 @@ export async function clearWorkdir(env: Env): Promise<void> {
 	await Promise.all(
 		entries
 			.filter((name) => name.startsWith('job-'))
-			.map((name) => removeTree(join(workdirRoot(env), name)))
+			// Best effort: one directory that cannot be removed must not stop the worker.
+			.map((name) => removeTree(join(workdirRoot(env), name)).catch(() => {}))
 	);
 }
 
