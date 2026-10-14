@@ -57,6 +57,7 @@ import {
 	loadLearnings,
 	loadModels,
 	reviewDetailsUrlFor,
+	reviewTimings,
 	withWorkdir,
 	withdrawChangeRequests,
 	type RepositoryConnection,
@@ -140,18 +141,26 @@ export async function handleReviewJob(ctx: WorkerContext, job: Job<ReviewJobPayl
 				: { status: 'queued', error: message }
 		);
 		if (final) {
+			const [timing] = await db
+				.select({
+					createdAt: schema.reviews.createdAt,
+					startedAt: schema.reviews.startedAt,
+					finishedAt: schema.reviews.finishedAt
+				})
+				.from(schema.reviews)
+				.where(eq(schema.reviews.id, reviewId));
 			ctx.analytics.capture({
 				distinctId: `organization:${review.organizationId}`,
 				event: 'review failed',
 				organizationId: review.organizationId,
-				properties: { trigger: review.trigger }
+				properties: { trigger: review.trigger, ...(timing ? reviewTimings(timing) : {}) }
 			});
 		}
 		throw error;
 	}
 }
 
-/** Reports a finished review: its outcome and cost, never code or repository names. */
+/** Reports a finished review: its outcome, cost and timing, never code or repository names. */
 async function trackReviewCompleted({ db, analytics }: WorkerContext, review: Review) {
 	const [row] = await db
 		.select({
@@ -160,16 +169,24 @@ async function trackReviewCompleted({ db, analytics }: WorkerContext, review: Re
 			costUsd: schema.reviews.costUsd,
 			inputTokens: schema.reviews.inputTokens,
 			outputTokens: schema.reviews.outputTokens,
+			createdAt: schema.reviews.createdAt,
+			startedAt: schema.reviews.startedAt,
+			finishedAt: schema.reviews.finishedAt,
 			comments: sql<number>`(select count(*) from ${schema.reviewFindings} where ${schema.reviewFindings.reviewId} = ${schema.reviews.id} and ${schema.reviewFindings.status} = 'posted')`
 		})
 		.from(schema.reviews)
 		.where(eq(schema.reviews.id, review.id));
 	if (!row) return;
+	const { createdAt, startedAt, finishedAt, ...outcome } = row;
 	analytics.capture({
 		distinctId: `organization:${review.organizationId}`,
 		event: 'review completed',
 		organizationId: review.organizationId,
-		properties: { trigger: review.trigger, ...row }
+		properties: {
+			trigger: review.trigger,
+			...outcome,
+			...reviewTimings({ createdAt, startedAt, finishedAt })
+		}
 	});
 }
 

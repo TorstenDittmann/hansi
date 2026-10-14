@@ -10,7 +10,8 @@ import {
 	workdirProblem,
 	createUsageRecorder,
 	reviewDetailsUrl,
-	reviewDetailsUrlFor
+	reviewDetailsUrlFor,
+	reviewTimings
 } from './shared';
 
 const realFetch = globalThis.fetch;
@@ -136,6 +137,21 @@ test('review links include the organization slug', async () => {
 	expect(
 		await reviewDetailsUrlFor(db, 'https://hans.example', 'missing', 'review-1')
 	).toBeUndefined();
+});
+
+test('review timings split queue wait from run time', () => {
+	const at = (ms: number) => new Date(1_000_000 + ms);
+	expect(reviewTimings({ createdAt: at(0), startedAt: at(4_000), finishedAt: at(94_000) })).toEqual(
+		{
+			queueMs: 4_000,
+			durationMs: 90_000,
+			totalMs: 94_000
+		}
+	);
+	expect(reviewTimings({ createdAt: at(0), startedAt: null, finishedAt: at(2_000) })).toEqual({
+		totalMs: 2_000
+	});
+	expect(reviewTimings({ createdAt: at(0), startedAt: at(1_000), finishedAt: null })).toEqual({});
 });
 
 test("clearing the work directory removes this worker's leftovers, read-only parts included", async () => {
