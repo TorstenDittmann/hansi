@@ -117,10 +117,22 @@ test('isMajorBump treats a new major, or a new minor before 1.0, as breaking', (
 	expect(isMajorBump('abc', 'def')).toBe(false);
 });
 
-test('filterFiles keeps lockfiles only when asked to', () => {
+test('filterFiles keeps lockfiles, snapshots, and generated code only with a sandbox', () => {
 	const files = parseUnifiedDiff(`diff --git a/composer.lock b/composer.lock
 --- a/composer.lock
 +++ b/composer.lock
+@@ -1 +1 @@
+-a
++b
+diff --git a/src/__snapshots__/app.test.ts.snap b/src/__snapshots__/app.test.ts.snap
+--- a/src/__snapshots__/app.test.ts.snap
++++ b/src/__snapshots__/app.test.ts.snap
+@@ -1 +1 @@
+-a
++b
+diff --git a/api/v1/api.pb.go b/api/v1/api.pb.go
+--- a/api/v1/api.pb.go
++++ b/api/v1/api.pb.go
 @@ -1 +1 @@
 -a
 +b
@@ -132,8 +144,14 @@ diff --git a/dist/app.js b/dist/app.js
 +b
 `);
 	expect(filterFiles(files).included).toEqual([]);
-	const withLockfiles = filterFiles(files, [], { lockfiles: true });
-	expect(withLockfiles.included.map((f) => f.path)).toEqual(['composer.lock']);
-	expect(withLockfiles.excluded).toEqual([{ path: 'dist/app.js', reason: 'ignored by default' }]);
-	expect(filterFiles(files, ['!composer.lock'], { lockfiles: true }).included).toEqual([]);
+	const withSandbox = filterFiles(files, [], { sandbox: true });
+	expect(withSandbox.included.map((f) => f.path)).toEqual([
+		'composer.lock',
+		'src/__snapshots__/app.test.ts.snap',
+		'api/v1/api.pb.go'
+	]);
+	expect(withSandbox.excluded).toEqual([{ path: 'dist/app.js', reason: 'ignored by default' }]);
+	expect(
+		filterFiles(files, ['!composer.lock'], { sandbox: true }).included.map((f) => f.path)
+	).not.toContain('composer.lock');
 });

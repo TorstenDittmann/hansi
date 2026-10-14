@@ -1,6 +1,7 @@
 import { generateText, isStepCount, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { parseUnifiedDiff, renderFileDiff } from './diff';
+import { dependencyChanges, formatDependencyChanges } from './dependencies';
 import { filterFiles } from './filters';
 import { chatInstructions, formatChatContext, type ChatReplyContext } from './prompts';
 import { callModel, reasoningCallOptions, type ModelCall, type ModelFailure } from './model-call';
@@ -118,6 +119,13 @@ export async function runChat(input: ChatInput): Promise<string> {
 		);
 	}
 	parts.push(`<diff>\n${diff}\n</diff>`);
+	// The diff leaves lockfiles out. With a sandbox a question about a bump can be checked.
+	const dependencies = input.sandbox ? dependencyChanges(parsed) : [];
+	if (dependencies.length) {
+		parts.push(
+			`<dependency_changes>\nVersions the pull request's lockfiles change:\n${formatDependencyChanges(dependencies)}\n</dependency_changes>`
+		);
+	}
 	const context = formatChatContext(replyContext);
 	if (context) parts.push(context);
 	if (input.focus) {

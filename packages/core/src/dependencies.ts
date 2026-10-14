@@ -168,3 +168,15 @@ export function isMajorBump(from: string, to: string): boolean {
 	if (bMajor !== aMajor) return bMajor > aMajor;
 	return aMajor === 0 && bMinor > aMinor;
 }
+
+/** One line per change, such as `- composer.lock: psr/log 3.0.0 -> 3.0.2`. */
+export function formatDependencyChanges(changes: DependencyChange[]): string {
+	return changes
+		.map((c) => {
+			const move =
+				c.from && c.to ? `${c.from} -> ${c.to}` : c.to ? `added ${c.to}` : `removed ${c.from}`;
+			const major = c.from && c.to && isMajorBump(c.from, c.to) ? ' (major)' : '';
+			return `- ${c.lockfile}: ${c.name} ${move}${major}`;
+		})
+		.join('\n');
+}

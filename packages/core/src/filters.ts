@@ -27,19 +27,35 @@ export function isLockfile(path: string): boolean {
 	return lockfileMatchers.some((glob) => glob.match(path));
 }
 
-/** Files that are almost never worth an LLM's attention. */
+/**
+ * Test snapshots and generated code. Read alone they say nothing about correctness, but with a
+ * sandbox the reviewer can run the snapshot tests or the generator and compare the output.
+ */
+export const outputGlobs = ['**/*.snap', '**/*.generated.*', '**/*.pb.go'];
+
+/** Ignored by default, but reviewed when a sandbox can check them by running something. */
+export const sandboxCheckedGlobs = [...lockfileGlobs, ...outputGlobs];
+
+const outputMatchers = outputGlobs.map((g) => new Bun.Glob(g));
+
+export function isGeneratedOutput(path: string): boolean {
+	return outputMatchers.some((glob) => glob.match(path));
+}
+
+/**
+ * Files that are almost never worth an LLM's attention. Build output, vendored code, minified
+ * bundles, and media stay ignored even with a sandbox: there is nothing to run that checks them
+ * which the review of their sources does not already cover.
+ */
 export const defaultIgnoreGlobs = [
-	...lockfileGlobs,
+	...sandboxCheckedGlobs,
 	'**/*.min.js',
 	'**/*.min.css',
 	'**/*.map',
-	'**/*.snap',
 	'**/dist/**',
 	'**/build/**',
 	'**/vendor/**',
 	'**/node_modules/**',
-	'**/*.generated.*',
-	'**/*.pb.go',
 	'**/*.svg',
 	'**/*.png',
 	'**/*.jpg',
@@ -57,20 +73,20 @@ export interface FilterResult {
 
 /**
  * Applies default ignores plus `.hansi.json` path filters. Filters without `!` are an allowlist;
- * filters with `!` exclude. User filters can re-include a default-ignored path. `lockfiles`
- * keeps lockfiles in the review when the reviewer can run commands to check them.
+ * filters with `!` exclude. User filters can re-include a default-ignored path. `sandbox` keeps
+ * the files only a sandbox can check (lockfiles, snapshots, generated code) in the review.
  */
 export function filterFiles(
 	files: FileDiff[],
 	pathFilters: string[] = [],
-	options: { lockfiles?: boolean } = {}
+	options: { sandbox?: boolean } = {}
 ): FilterResult {
 	const includes = pathFilters.filter((f) => !f.startsWith('!')).map((f) => new Bun.Glob(f));
 	const excludes = pathFilters
 		.filter((f) => f.startsWith('!'))
 		.map((f) => new Bun.Glob(f.slice(1)));
-	const ignored = options.lockfiles
-		? defaultIgnoreGlobs.filter((g) => !lockfileGlobs.includes(g))
+	const ignored = options.sandbox
+		? defaultIgnoreGlobs.filter((g) => !sandboxCheckedGlobs.includes(g))
 		: defaultIgnoreGlobs;
 	const defaults = ignored.map((g) => new Bun.Glob(g));
 
