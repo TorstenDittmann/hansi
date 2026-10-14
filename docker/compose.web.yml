@@ -1,0 +1,22 @@
+# The web app alone: dashboard and webhooks. It runs the database migrations on start. Deploy this
+# where your domain points (port 3000), and the workers from compose.worker.yml, with the same
+# variables and database. Set the variables in your platform's UI (they land in a .env next to
+# this file), or in the repository's .env.
+services:
+  hans:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    environment:
+      HANS_MODE: web
+    volumes:
+      - hans-data:/data
+    restart: unless-stopped
+
+volumes:
+  hans-data:
