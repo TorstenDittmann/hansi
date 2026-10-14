@@ -31,8 +31,10 @@ cd docker && docker compose up -d
 ```
 
 This loads `docker/compose.yml` and `docker/compose.override.yml`, which publishes port 3000.
-Platforms that deploy a compose file and route a domain to it, such as Dokploy, use
-`docker/compose.yml` alone; set the variables in their UI.
+`docker/compose.yml` includes `docker/compose.web.yml` (the web app) and
+`docker/compose.worker.yml` (the workers). Platforms that deploy a compose file, such as Dokploy,
+can deploy `docker/compose.yml` alone, or each of the two files as its own deployment; set the
+variables in their UI.
 
 This starts two containers from one image: `hans`, the web app on port 3000, which applies database
 migrations on every start, and `worker`, which runs reviews. Both use the database in the `hans-data`
@@ -58,8 +60,8 @@ Reviews check out the pull request and run their sandbox in `/tmp/hans`, a volum
 To keep this off the system disk, set `HANSI_WORKDIR` to a directory on another disk, e.g.
 `/mnt/volume/hansi`, owned by uid 1000 (`chown 1000:1000 /mnt/volume/hansi`).
 
-To use the prebuilt image instead of building it, replace the `build:` section in
-`docker/compose.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
+To use the prebuilt image instead of building it, replace the `build:` sections in
+`docker/compose.web.yml` and `docker/compose.worker.yml` with `image: ghcr.io/torstendittmann/hansi:latest`. A new image is published
 for amd64 and arm64 with every [release](https://github.com/TorstenDittmann/hansi/releases), tagged
 with its version (e.g. `1.2.3` and `1.2`) and `latest`.
 
@@ -151,9 +153,11 @@ organization keeps its own model keys, installations, and costs.
 
 ## Deployment modes
 
-**Web and workers (default).** `docker/compose.yml` runs the web app (`HANS_MODE=web`) and
-`HANSI_WORKERS` workers (`HANS_MODE=worker`) on one host, sharing a database file on a volume. Run
-any number of workers: they claim jobs from the database, so each review runs once.
+**Web and workers (default).** `docker/compose.yml` runs the web app (`HANS_MODE=web`, from
+`compose.web.yml`) and `HANSI_WORKERS` workers (`HANS_MODE=worker`, from `compose.worker.yml`) on
+one host, sharing a database file on a volume. Run any number of workers: they claim jobs from the
+database, so each review runs once. To deploy the web app and the workers separately, deploy each
+file on its own; they then need a networked database (below).
 
 **One container.** `HANS_MODE=all` (the image's default) runs the web app and a worker in one
 container, e.g. with a plain `docker run`.
@@ -177,13 +181,17 @@ Dokploy **Applications** run as swarm services, which can't run the sandbox, so 
 
 1. Create a project with a **libSQL** database. Dokploy protects it with HTTP Basic auth; the user
    is `libsql`, and the password is on the database's page.
-2. Create a **Compose** service of type Docker Compose from the GitHub repository, branch `main`,
-   with the compose path `./docker/compose.yml`.
-3. Set the variables, with `DATABASE_URL=http://libsql:<password>@<database app name>:8080`, and
-   attach the service to the database's network so that name resolves.
-4. Add your domain to the `hans` service on port 3000, with HTTPS.
+2. Create two **Compose** services of type Docker Compose from the GitHub repository, branch
+   `main`: the web app with the compose path `./docker/compose.web.yml`, and the workers with
+   `./docker/compose.worker.yml`. (One service with `./docker/compose.yml` runs both instead.)
+3. Give both the same variables, with
+   `DATABASE_URL=http://libsql:<password>@<database app name>:8080`, and attach both to the
+   database's network so that name resolves. Set `HANSI_WORKERS` and the other worker settings on
+   the workers.
+4. Add your domain to the web app's `hans` service on port 3000, with HTTPS.
 
-Push to `main` and it redeploys.
+Push to `main` and both redeploy. The web app runs the migrations, so a worker that starts first
+exits and comes back once they have run.
 
 ## Analytics
 
