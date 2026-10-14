@@ -183,6 +183,8 @@ interface DiffHunkText {
 	addedLines: number[];
 	/** Head-side anchors of a hunk that only deletes. Empty when the hunk adds lines. */
 	deletionAnchors: number[];
+	/** Old-side numbers of the lines the hunk deletes. */
+	deletedLines: number[];
 }
 
 interface DiffSection {
@@ -229,7 +231,13 @@ async function keepPullRequestChanges(
 			continue;
 		}
 		const lines = pullRequestLines(current);
-		const hunks = section.hunks.filter((hunk) => hunkIntersects(hunk, lines));
+		const before = previous ? pullRequestLines(previous) : undefined;
+		const hunks = section.hunks.filter(
+			(hunk) =>
+				hunkIntersects(hunk, lines) ||
+				// Removing lines the pull request itself added leaves no trace in its new diff.
+				(before !== undefined && hunk.deletedLines.some((line) => before.added.has(line)))
+		);
 		if (hunks.length === 0) continue;
 		kept.push(section.header + hunks.map((hunk) => hunk.text).join(''));
 	}
@@ -293,22 +301,28 @@ function parseSection(raw: string): DiffSection {
 function parseHunk(text: string): DiffHunkText {
 	const [header, ...body] = text.split('\n');
 	const start = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(header ?? '');
+	let oldLine = start ? Number(/^@@ -(\d+)/.exec(header ?? '')?.[1] ?? 1) : 1;
 	let newLine = start ? Number(start[1]) : 1;
 	const addedLines: number[] = [];
 	const deletionAnchors: number[] = [];
+	const deletedLines: number[] = [];
 	for (const line of body) {
 		if (line.startsWith('+')) {
 			addedLines.push(newLine);
 			newLine++;
 		} else if (line.startsWith('-')) {
 			deletionAnchors.push(newLine);
+			deletedLines.push(oldLine);
+			oldLine++;
 		} else if (line.startsWith(' ')) {
 			newLine++;
+			oldLine++;
 		}
 	}
 	return {
 		text,
 		addedLines,
+		deletedLines,
 		// A modification is matched by its added line. Only a deletion has no new-side line.
 		deletionAnchors: addedLines.length === 0 ? deletionAnchors : []
 	};
