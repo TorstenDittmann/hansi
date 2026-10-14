@@ -5,7 +5,7 @@ import { Queue, queues, type ChatJobPayload, type ReviewJobPayload } from '@hans
 import pino from 'pino';
 import { handleChatJob } from './chat-job';
 import { handleReviewJob } from './review-job';
-import { clearWorkdir } from './shared';
+import { clearWorkdir, workdirProblem } from './shared';
 
 const env = parseEnv(process.env);
 const logger = pino({ level: env.LOG_LEVEL, base: { service: 'worker' } });
@@ -32,7 +32,15 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	});
 }
 
+const problem = await workdirProblem(env);
+if (problem) {
+	// Every job would fail the same way; stop here so the logs say why.
+	logger.fatal(problem);
+	process.exit(1);
+}
 await clearWorkdir(env);
+// Workers sharing a work directory also clear what stopped workers left there.
+const sweep = setInterval(() => void clearWorkdir(env, { ownJobs: false }), 60 * 60_000);
 logger.info({ concurrency: env.WORKER_CONCURRENCY, workerId: queue.workerId }, 'worker started');
 
 const onError = (error: unknown, job: { id: string; queue: string }) =>
@@ -55,6 +63,7 @@ await Promise.all([
 	})
 ]);
 
+clearInterval(sweep);
 await analytics.shutdown();
 client.close();
 logger.info('worker stopped');

@@ -1,19 +1,39 @@
-# Production: one container runs web + worker, sharing a libSQL file on a volume. Platforms such
-# as Dokploy deploy this file as is and route their domain to port 3000. Set the variables in
-# their UI (they land in a .env next to this file), or in the repository's .env.
+# Production: the web app and the workers run as separate containers from one image, sharing the
+# database: a libSQL file on the hans-data volume, or a sqld server set in DATABASE_URL. Platforms
+# such as Dokploy deploy this file as is and route their domain to the hans service on port 3000.
+# Set the variables in their UI (they land in a .env next to this file), or in the repository's
+# .env.
 #
 # Locally, `cd docker && docker compose up -d` also loads compose.override.yml, which publishes
 # port 3000.
+x-hans: &hans
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  env_file:
+    - path: ../.env
+      required: false
+    - path: .env
+      required: false
+  restart: unless-stopped
+
 services:
+  # Dashboard and webhooks. Runs the database migrations on start.
   hans:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    env_file:
-      - path: ../.env
-        required: false
-      - path: .env
-        required: false
+    <<: *hans
+    environment:
+      HANS_MODE: web
+    volumes:
+      - hans-data:/data
+
+  # Reviews and replies. Set HANSI_WORKERS to run more of them; they claim jobs from the database,
+  # so each job runs once. WORKER_CONCURRENCY sets how many jobs each one runs at a time.
+  worker:
+    <<: *hans
+    environment:
+      HANS_MODE: worker
+    deploy:
+      replicas: ${HANSI_WORKERS:-1}
     volumes:
       - hans-data:/data
       # Checkouts and sandboxes while reviews run. Set HANSI_WORKDIR to a host path, e.g. on a
@@ -27,20 +47,10 @@ services:
       - seccomp=unconfined
       - apparmor=unconfined
       - label=disable
-    # Caps the whole container, sandboxes included, so reviews can't take over the host. Each
-    # sandbox is also stopped above 2 GiB; WORKER_CONCURRENCY sets how many run at once.
+    # Caps each worker, sandboxes included, so reviews can't take over the host. Each sandbox is
+    # also stopped above 2 GiB.
     cpus: ${HANSI_CPUS:-2}
     mem_limit: ${HANSI_MEMORY:-6g}
-    restart: unless-stopped
-
-  # To run web and worker as separate containers, they need a networked database instead of a
-  # shared file. Point both at sqld:
-  #
-  # sqld:
-  #   image: ghcr.io/tursodatabase/libsql-server:latest
-  #   volumes: [sqld-data:/var/lib/sqld]
-  #
-  # and set DATABASE_URL=http://sqld:8080 with HANS_MODE=web / HANS_MODE=worker.
 
 volumes:
   hans-data:

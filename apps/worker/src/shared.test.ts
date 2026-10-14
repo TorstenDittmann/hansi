@@ -5,7 +5,13 @@ import { chmod, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '@hans/config';
-import { clearWorkdir, createUsageRecorder, reviewDetailsUrl, reviewDetailsUrlFor } from './shared';
+import {
+	clearWorkdir,
+	workdirProblem,
+	createUsageRecorder,
+	reviewDetailsUrl,
+	reviewDetailsUrlFor
+} from './shared';
 
 const realFetch = globalThis.fetch;
 beforeAll(() => {
@@ -132,16 +138,38 @@ test('review links include the organization slug', async () => {
 	).toBeUndefined();
 });
 
-test('clearing the work directory removes what jobs left behind, read-only parts included', async () => {
+test("clearing the work directory removes this worker's leftovers, read-only parts included", async () => {
 	const root = await mkdtemp(join(tmpdir(), 'hans-workdir-'));
-	const locked = join(root, 'job-abc.sandbox', 'workspace', 'cache');
+	const locked = join(root, 'job-a-123.sandbox', 'workspace', 'cache');
 	await mkdir(locked, { recursive: true });
 	await writeFile(join(locked, 'module.go'), 'package x');
 	await chmod(locked, 0o555);
-	await mkdir(join(root, 'job-abc'));
+	await mkdir(join(root, 'job-a-123'));
 	await mkdir(join(root, 'keep'));
 
-	await clearWorkdir({ WORKER_WORKDIR: root } as Env);
+	await clearWorkdir({ WORKER_WORKDIR: root } as Env, { instance: 'a' });
 
 	expect(await readdir(root)).toEqual(['keep']);
+});
+
+test("another worker's job directories are only removed once they are stale", async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hans-workdir-'));
+	await mkdir(join(root, 'job-a-1'));
+	await mkdir(join(root, 'job-b-1'));
+	const env = { WORKER_WORKDIR: root } as Env;
+
+	await clearWorkdir(env, { ownJobs: false, instance: 'a' });
+	expect((await readdir(root)).sort()).toEqual(['job-a-1', 'job-b-1']);
+
+	await clearWorkdir(env, { instance: 'a' });
+	expect(await readdir(root)).toEqual(['job-b-1']);
+
+	await clearWorkdir(env, { instance: 'a', now: Date.now() + 7 * 60 * 60_000 });
+	expect(await readdir(root)).toEqual([]);
+});
+
+test('a writable work directory is fine, and is created when missing', async () => {
+	const root = join(await mkdtemp(join(tmpdir(), 'hans-workdir-')), 'nested');
+	expect(await workdirProblem({ WORKER_WORKDIR: root } as Env)).toBeNull();
+	expect(await readdir(root)).toEqual([]);
 });
