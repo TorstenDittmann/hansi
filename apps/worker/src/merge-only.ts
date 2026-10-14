@@ -1,5 +1,11 @@
 import type { Tier, Verdict } from '@hans/config';
-import type { PullRequestDelta, SummaryInput } from '@hans/core';
+import {
+	finalTier,
+	standingFromOpenFindings,
+	type PullRequestDelta,
+	type SummaryInput
+} from '@hans/core';
+import type { Severity } from '@hans/config';
 import { summaryAfterSettlement, type SummaryExtras } from './summary';
 
 const verdicts = ['approve', 'request_changes', 'comment'] as const satisfies readonly Verdict[];
@@ -44,6 +50,24 @@ function isOneOf<T extends string>(
 ): value is T {
 	return !!value && (allowed as readonly string[]).includes(value);
 }
+
+/**
+ * The carried grade after findings settled since that review, e.g. a maintainer resolved a
+ * thread. A grade that only an open finding held down follows the findings that are still open;
+ * the model's own grade is kept, but never better than they allow.
+ */
+export function settledCarriedReview(
+	review: CarriedReview,
+	open: { severity: Severity; title: string }[]
+): CarriedReview {
+	const standing = standingFromOpenFindings(open);
+	if (review.tierReason.startsWith(CAPPED_REASON)) return { ...review, ...standing };
+	const tier = finalTier(review.tier, standing.tier);
+	return tier === review.tier ? review : { ...review, tier, tierReason: standing.tierReason };
+}
+
+/** How `standingFromOpenFindings` starts a reason: the grade came from a finding, not the model. */
+const CAPPED_REASON = 'Limited by an open ';
 
 /** Footer sentence for a push that merged the base branch and did not change the pull request. */
 export function mergeOnlyScopeLine(input: {

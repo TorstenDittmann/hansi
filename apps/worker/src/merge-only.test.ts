@@ -4,6 +4,7 @@ import {
 	carriedReview,
 	carriedSummaryInput,
 	decideIncrementalReview,
+	settledCarriedReview,
 	type CarriedReview
 } from './merge-only';
 import { summaryExtrasFromBody } from './summary';
@@ -152,5 +153,37 @@ describe('carried summary', () => {
 			})
 		);
 		expect(rebuilt).toContain(decision.scope);
+	});
+});
+
+describe('settledCarriedReview', () => {
+	const review = {
+		id: 'r1',
+		headSha: 'abc1234',
+		summary: 'Adds a sandbox.',
+		verdict: 'comment' as const,
+		walkthrough: []
+	};
+
+	test('a grade held down by a finding that was since resolved follows what is open', () => {
+		const capped = {
+			...review,
+			tier: 'D' as const,
+			tierReason: 'Limited by an open critical finding: X'
+		};
+		expect(settledCarriedReview(capped, [])).toMatchObject({ tier: 'S', tierReason: '' });
+		expect(settledCarriedReview(capped, [{ severity: 'minor', title: 'Y' }])).toMatchObject({
+			tier: 'A',
+			tierReason: 'Limited by an open minor finding: Y'
+		});
+	});
+
+	test("the model's own grade stays, but never better than open findings allow", () => {
+		const graded = { ...review, tier: 'B' as const, tierReason: 'Untested edge cases.' };
+		expect(settledCarriedReview(graded, [])).toBe(graded);
+		expect(settledCarriedReview(graded, [{ severity: 'critical', title: 'Z' }])).toMatchObject({
+			tier: 'D',
+			tierReason: 'Limited by an open critical finding: Z'
+		});
 	});
 });

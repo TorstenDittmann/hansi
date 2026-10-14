@@ -78,6 +78,7 @@ import {
 import {
 	carriedReview,
 	carriedSummaryInput,
+	settledCarriedReview,
 	decideIncrementalReview,
 	type IncrementalDecision
 } from './merge-only';
@@ -827,7 +828,17 @@ async function finishMergeOnly(input: {
 }): Promise<Outcome> {
 	const { connection, decision } = input;
 	const { octokit, ref } = connection;
-	const carried = decision.review;
+	const findings = await loadSummaryFindings(input.db, {
+		organizationId: input.review.organizationId,
+		repositoryId: input.review.repositoryId,
+		pullNumber: input.review.pullNumber
+	});
+	const carried = settledCarriedReview(
+		decision.review,
+		findings
+			.filter((f) => f.status === 'posted')
+			.map((f) => ({ severity: f.severity as Severity, title: f.title }))
+	);
 	input.record({
 		type: 'review.mode',
 		data: { incremental: true, mergeOnly: true, from: decision.sinceSha }
@@ -845,11 +856,6 @@ async function finishMergeOnly(input: {
 	});
 
 	const existing = await getMarkedComment(octokit, ref, input.pullNumber, SUMMARY_MARKER);
-	const findings = await loadSummaryFindings(input.db, {
-		organizationId: input.review.organizationId,
-		repositoryId: input.review.repositoryId,
-		pullNumber: input.review.pullNumber
-	});
 	const summaryInput = carriedSummaryInput({
 		repository: connection.repository.fullName,
 		mention: connection.mention,
