@@ -103,6 +103,7 @@ test('a guideline edit does not settle a bug finding from a trusted commenter', 
 	expect(instructions).toContain('keep pushing back on a preference');
 	expect(instructions).toContain('bug, security, concurrency, or error-handling');
 	expect(instructions).not.toContain('deferred to the policy change');
+	expect(instructions).not.toContain('a deliberate change the commenter owns');
 	expect(instructions).toContain('Base-branch guidelines');
 	expect(instructions).toContain('AGENTS.md, CONTRIBUTING.md');
 });
@@ -256,4 +257,18 @@ test('a trusted factual rebuttal of a bug finding dismisses it', () => {
 	expect(instructions).toContain('never call such a claim unverifiable');
 	expect(instructions).toContain('Do not repeat an argument');
 	expect(instructions).not.toContain('demonstrable factual error');
+});
+
+test('a maintainer who confirms an intentional breaking change settles the finding', () => {
+	const instructions = chatInstructions('en', true, files, {
+		authorAssociation: 'MEMBER',
+		finding: {
+			severity: 'major',
+			category: 'bug',
+			title: 'Go v7.12.0 removes shipped topic methods as a minor release'
+		}
+	});
+	expect(instructions).toContain('a deliberate change the commenter owns');
+	expect(instructions).toContain('their explicit answer is that decision');
+	expect(instructions).toContain('Do not argue that the change still breaks callers');
 });
