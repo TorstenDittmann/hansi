@@ -84,6 +84,7 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 	).toEqual({
 		acceptReasonedDecline: true,
 		holdDefect: false,
+		acceptDeliberateChange: false,
 		deferToGuidelineEdit: true
 	});
 	expect(
@@ -95,6 +96,7 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 	).toEqual({
 		acceptReasonedDecline: false,
 		holdDefect: true,
+		acceptDeliberateChange: true,
 		deferToGuidelineEdit: false
 	});
 	expect(
@@ -106,11 +108,13 @@ test('the prompt policy combines trust, category, and whether a guideline file c
 	).toEqual({
 		acceptReasonedDecline: false,
 		holdDefect: false,
+		acceptDeliberateChange: false,
 		deferToGuidelineEdit: false
 	});
 	expect(chatReplyPolicy({ authorAssociation: 'MEMBER', finding: note })).toEqual({
 		acceptReasonedDecline: true,
 		holdDefect: false,
+		acceptDeliberateChange: false,
 		deferToGuidelineEdit: false
 	});
 });
@@ -149,4 +153,25 @@ test('only the repository guideline files count as a policy change', () => {
 			{ path: '.github/copilot-instructions.md' }
 		])
 	).toEqual(['CLAUDE.md', '.github/copilot-instructions.md', 'CONTRIBUTING.md']);
+});
+
+test('a trusted commenter can settle a deliberate change, except on a security finding', () => {
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'MEMBER',
+			finding: { severity: 'major', category: 'bug' }
+		}).acceptDeliberateChange
+	).toBe(true);
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'OWNER',
+			finding: { severity: 'critical', category: 'security' }
+		}).acceptDeliberateChange
+	).toBe(false);
+	expect(
+		chatReplyPolicy({
+			authorAssociation: 'CONTRIBUTOR',
+			finding: { severity: 'major', category: 'bug' }
+		}).acceptDeliberateChange
+	).toBe(false);
 });

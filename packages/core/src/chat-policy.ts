@@ -47,6 +47,12 @@ export interface ChatReplyPolicy {
 	/** Trusted commenter, but the finding is a bug, security, concurrency, or error-handling issue. */
 	holdDefect: boolean;
 	/**
+	 * A held defect that is not security. The commenter may still settle it by confirming the
+	 * change is deliberate, such as a documented breaking change to a public API. The model checks
+	 * that the finding is about a choice the pull request makes, not code that misbehaves.
+	 */
+	acceptDeliberateChange: boolean;
+	/**
 	 * Trusted commenter and a non-defect finding, and this pull request edits a guideline file.
 	 * The model still checks that the finding cites that file.
 	 */
@@ -92,6 +98,8 @@ export function chatReplyPolicy(input: {
 	return {
 		acceptReasonedDecline: acceptsReasonedDecline(input.authorAssociation, finding),
 		holdDefect: trusted && !!finding && isDefectCategory(finding.category),
+		acceptDeliberateChange:
+			trusted && !!finding && isDefectCategory(finding.category) && finding.category !== 'security',
 		deferToGuidelineEdit:
 			defersToGuidelineChange(input.authorAssociation, finding) &&
 			(input.changedGuidelines?.length ?? 0) > 0
