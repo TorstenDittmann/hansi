@@ -5,6 +5,7 @@ import {
 	filesTooLargeFromBody,
 	filesTooLargeSentence,
 	formatBodyFindings,
+	formatFileFindingComment,
 	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
@@ -412,4 +413,20 @@ test('findings GitHub would not take inline are listed with a note', () => {
 	expect(body).toStartWith("> [!NOTE]\n> GitHub does not show the diff for this finding's lines");
 	expect(body).toContain('#### `src/services/project.ts:77`');
 	expect(body).toContain('**Keep project onboarding object-shaped**');
+});
+
+test('a finding on a file without a diff names its lines in the file comment', () => {
+	const finding = {
+		path: 'dashboards/Edge/inbound-email.json',
+		startLine: 394,
+		endLine: 394,
+		severity: 'minor' as const,
+		category: 'bug' as const,
+		title: 'Keep range-based rate windows above 2m',
+		body: 'b'
+	};
+	const body = formatFileFindingComment(finding);
+	expect(body).toStartWith("**Line 394** · GitHub does not show this file's diff");
+	expect(body).toContain('**Keep range-based rate windows above 2m**');
+	expect(formatFileFindingComment({ ...finding, startLine: 390 })).toStartWith('**Lines 390-394**');
 });

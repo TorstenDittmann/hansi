@@ -13,8 +13,14 @@ import {
 	resolveReviewThreads
 } from '@hans/github';
 import type { ChatJobPayload, Job } from '@hans/queue';
-import { eq } from 'drizzle-orm';
-import { chatReplyFields, loadChatFinding } from './chat-finding';
+import { inArray } from 'drizzle-orm';
+import {
+	chatReplyFields,
+	findingsNamedIn,
+	loadChatFinding,
+	loadOpenBodyFindings,
+	type ChatFindingRow
+} from './chat-finding';
 import { repliesToBot } from './chat-reply';
 import { chatFailureReply } from './public-failure';
 import { lazySandbox, openSandbox, sandboxEnabled } from './sandbox';
@@ -33,6 +39,20 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 	const payload = job.payload;
 	const log = logger.child({ jobId: job.id, commentId: payload.commentId });
 
+	// Findings GitHub would not take inline have no thread; a conversation comment answers them.
+	const bodyFindings =
+		payload.kind === 'issue'
+			? await loadOpenBodyFindings(db, {
+					organizationId: payload.organizationId,
+					repositoryId: payload.repositoryId,
+					pullNumber: payload.pullNumber
+				})
+			: [];
+	if (payload.unmentioned && payload.kind === 'issue' && bodyFindings.length === 0) {
+		log.info('conversation comment without a mention and no open body findings, skipping');
+		return;
+	}
+
 	const connection = await connectRepository(ctx, payload.repositoryId);
 	if (!connection) return;
 	const { octokit, ref } = connection;
@@ -48,9 +68,20 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 			: getRecentIssueComments(octokit, ref, payload.pullNumber);
 	// A reply without a mention is answered only when it replies to Hansi. Checked before the 👀,
 	// so people talking among themselves in a review thread see nothing from Hansi.
-	const early = payload.unmentioned ? await threadOf() : undefined;
-	if (early && !repliesToBot(early, payload.commentId, connection.mention)) {
+	const early = payload.unmentioned || bodyFindings.length > 0 ? await threadOf() : undefined;
+	if (
+		early &&
+		payload.kind === 'review' &&
+		!repliesToBot(early, payload.commentId, connection.mention)
+	) {
 		log.info('review-thread reply is not to Hansi, skipping');
+		return;
+	}
+	// The comment being answered can settle a body-listed finding by quoting its title or line.
+	const answered = early?.find((comment) => comment.id === payload.commentId)?.body ?? '';
+	const named = findingsNamedIn(answered, bodyFindings, { mentioned: !payload.unmentioned });
+	if (payload.unmentioned && payload.kind === 'issue' && named.length === 0) {
+		log.info('conversation comment does not name an open finding, skipping');
 		return;
 	}
 
@@ -91,13 +122,18 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 			fromBot: c.isBot
 		}));
 		const root = comments[0];
+		const bodyFinding = named[0];
 		const focus =
 			payload.kind === 'review' && root?.path
 				? { path: root.path, line: root.line ?? undefined, diffHunk: root.diffHunk }
-				: undefined;
+				: bodyFinding
+					? { path: bodyFinding.path, line: bodyFinding.endLine }
+					: undefined;
 
 		// Replies on a finding Hansi posted can resolve or dismiss that finding.
-		const finding = await loadChatFinding(db, payload.organizationId, payload.rootCommentId);
+		const finding: ChatFindingRow | undefined =
+			(await loadChatFinding(db, payload.organizationId, payload.rootCommentId)) ?? bodyFinding;
+		const findingIds = finding ? (named.length ? named.map((f) => f.id) : [finding.id]) : [];
 
 		let settled = false;
 		const { review: model } = await loadModels(ctx, payload.organizationId);
@@ -161,7 +197,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 							await db
 								.update(schema.reviewFindings)
 								.set({ status, dropReason: reason })
-								.where(eq(schema.reviewFindings.id, finding.id));
+								.where(inArray(schema.reviewFindings.id, findingIds));
 							settled = true;
 						}
 					: undefined,
@@ -171,10 +207,12 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 
 		await reply(answer);
 		// A finding settled in the conversation (fixed, or intended) closes its thread after the answer.
-		if (settled && payload.rootCommentId) {
-			await resolveReviewThreads(octokit, ref, payload.pullNumber, [payload.rootCommentId]).catch(
-				(error) => log.warn({ err: error }, 'could not resolve thread')
-			);
+		if (settled) {
+			if (payload.rootCommentId) {
+				await resolveReviewThreads(octokit, ref, payload.pullNumber, [payload.rootCommentId]).catch(
+					(error) => log.warn({ err: error }, 'could not resolve thread')
+				);
+			}
 			// Keep the PR summary's open-finding list and tier in sync with the dismissal.
 			await refreshSummaryAfterSettlement({
 				db,

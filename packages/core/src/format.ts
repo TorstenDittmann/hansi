@@ -410,6 +410,18 @@ export function formatFindingComment(finding: Finding, permalink?: FilePermalink
 	].join('\n\n');
 }
 
+/**
+ * A finding posted on its whole file, because GitHub shows no diff for the file and takes no line
+ * comment there. The line goes in the text instead.
+ */
+export function formatFileFindingComment(finding: Finding, permalink?: FilePermalink): string {
+	const range =
+		finding.startLine < finding.endLine
+			? `Lines ${finding.startLine}-${finding.endLine}`
+			: `Line ${finding.endLine}`;
+	return `**${range}** · GitHub does not show this file's diff, so this comment is on the file.\n\n${formatFindingComment(finding, permalink)}`;
+}
+
 export interface SummaryInput {
 	repository: string;
 	headSha: string;
@@ -665,8 +677,8 @@ export function formatBodyFindings(findings: Finding[], permalink: FilePermalink
 	if (findings.length === 0) return '';
 	const intro =
 		findings.length === 1
-			? "GitHub does not show the diff for this finding's lines, so it is listed here instead of inline."
-			: "GitHub does not show the diff for these findings' lines, so they are listed here instead of inline.";
+			? "GitHub does not show the diff for this finding's lines, so it is listed here instead of inline. To answer it, comment on the pull request and quote its title."
+			: "GitHub does not show the diff for these findings' lines, so they are listed here instead of inline. To answer one, comment on the pull request and quote its title.";
 	const items = findings.map((finding) => {
 		const range =
 			finding.startLine < finding.endLine

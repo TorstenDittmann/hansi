@@ -10,6 +10,7 @@ import {
 	absolutizeLinks,
 	checkoutPullRequest,
 	formatBodyFindings,
+	formatFileFindingComment,
 	formatFindingComment,
 	formatReviewBody,
 	formatSummaryComment,
@@ -29,6 +30,7 @@ import {
 	acknowledgeComment,
 	completeCheckRun,
 	createIssueComment,
+	createFileComment,
 	createReview,
 	getFailedChecks,
 	getFileContent,
@@ -726,11 +728,31 @@ async function postReview(
 		}
 	);
 	const inline = placed.flatMap((finding, index) => (finding ? [{ finding, index }] : []));
-	const inBody = findings.filter((_, index) => !placed[index]);
-	if (inBody.length) {
+	const ids: (number | null)[] = findings.map(() => null);
+
+	// A file GitHub shows no diff for still takes a comment on the whole file, which gives the
+	// finding a thread to reply in. Only what GitHub refuses there goes in the review body.
+	const inBody: Finding[] = [];
+	for (const [index, finding] of findings.entries()) {
+		if (placed[index]) continue;
+		try {
+			ids[index] = await createFileComment(octokit, ref, {
+				pullNumber: pr.number,
+				commitId: pr.headSha,
+				path: finding.path,
+				body: formatFileFindingComment(finding, permalink)
+			});
+		} catch (error) {
+			if (!(error instanceof RequestError && error.status === 422)) throw error;
+			log.warn({ err: error, path: finding.path }, 'file comment rejected');
+			inBody.push(finding);
+		}
+	}
+	const onFiles = findings.length - inline.length - inBody.length;
+	if (onFiles || inBody.length) {
 		log.warn(
-			{ inBody: inBody.length, inline: inline.length },
-			'findings outside GitHub diff, posting them in the review body'
+			{ onFiles, inBody: inBody.length, inline: inline.length },
+			'findings outside GitHub diff, posting them on their files or in the review body'
 		);
 	}
 
@@ -739,7 +761,7 @@ async function postReview(
 			pullNumber: pr.number,
 			commitId: pr.headSha,
 			body: [
-				review.body({ inline: inlineFindings.length, inBody: bodyFindings.length }),
+				review.body({ inline: inlineFindings.length + onFiles, inBody: bodyFindings.length }),
 				formatBodyFindings(bodyFindings, permalink)
 			]
 				.filter(Boolean)
@@ -763,14 +785,16 @@ async function postReview(
 			throw error;
 		}
 		log.warn({ err: error }, 'inline comments rejected, posting findings in the review body');
-		await submit([], findings);
-		return findings.map(() => null);
+		await submit(
+			[],
+			findings.filter((_, index) => ids[index] === null)
+		);
+		return ids;
 	}
-	if (inline.length === 0) return findings.map(() => null);
+	if (inline.length === 0) return ids;
 
 	const comments = await listReviewComments(octokit, ref, pr.number, created.id);
 	const used = new Set<number>();
-	const ids: (number | null)[] = findings.map(() => null);
 	for (const { finding, index } of inline) {
 		const body = formatFindingComment(finding, permalink);
 		const match =
