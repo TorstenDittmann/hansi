@@ -141,7 +141,8 @@ The model grades the pull request, but open findings cap the tier: a minor findi
 **A**, a major one at most **B**, a critical one at most **D**. Informational notes don't lower it,
 and with no open findings the tier is **S**.
 The `Hansi` check run follows the verdict (success, failure, or neutral), so you can make it a
-required check.
+required check. While a review runs, the check run and the top of the summary comment say what
+Hansi is doing (starting the sandbox, reviewing, verifying findings), with a link to follow along.
 
 ## Plugins
 

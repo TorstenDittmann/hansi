@@ -12,6 +12,7 @@ import { getMarkedComment, upsertMarkedComment } from '@hans/github';
 import { severityAtLeast, type Severity, type Verdict } from '@hans/config';
 import type { Logger } from 'pino';
 import { and, desc, eq, ne } from 'drizzle-orm';
+import { statusBlockOf, withStatusBlock } from './progress';
 import { CHANGE_REQUEST_DISMISSAL } from './submit-review';
 import { reviewDetailsUrlFor, withdrawChangeRequests, type RepositoryConnection } from './shared';
 
@@ -160,12 +161,13 @@ export async function refreshSummaryAfterSettlement(input: {
 		...extras
 	});
 
+	// A review running right now keeps its status line above the rebuilt summary.
 	await upsertMarkedComment(
 		octokit,
 		ref,
 		pullNumber,
 		SUMMARY_MARKER,
-		formatSummaryComment(summaryInput)
+		withStatusBlock(formatSummaryComment(summaryInput), existing && statusBlockOf(existing.body))
 	);
 	await db
 		.update(schema.reviews)

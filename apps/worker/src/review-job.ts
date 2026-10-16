@@ -44,12 +44,15 @@ import {
 	RequestError,
 	resolveReviewThreads,
 	startCheckRun,
+	updateCheckRun,
+	updateIssueComment,
 	upsertMarkedComment,
 	type ReviewEvent
 } from '@hans/github';
 import type { Job, ReviewJobPayload } from '@hans/queue';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Logger } from 'pino';
+import { checkRunProgress, createReviewProgress, type ReviewProgress } from './progress';
 import { REVIEW_FAILURE_SUMMARY } from './public-failure';
 import { dismissFindingsResolvedOnGitHub } from './resolved-threads';
 import { openSandbox, sandboxEnabled, type ReviewSandbox } from './sandbox';
@@ -303,7 +306,22 @@ async function executeReview(
 	const checkRunId = await startCheckRun(octokit, ref, {
 		headSha: pr.headSha,
 		name: 'Hansi',
-		detailsUrl
+		detailsUrl,
+		ownAppId: connection.appId,
+		output: checkRunProgress({ kind: 'preparing' })
+	});
+	// The check run and the summary comment follow the review's phases while it runs.
+	const progress = createReviewProgress({
+		headSha: pr.headSha,
+		mention: connection.mention,
+		detailsUrl,
+		log,
+		updateCheckRun: (output) => updateCheckRun(octokit, ref, checkRunId, output),
+		readSummary: () => getMarkedComment(octokit, ref, pr.number, SUMMARY_MARKER),
+		writeSummary: async (id, body) => {
+			if (id) await updateIssueComment(octokit, ref, id, body);
+			else await upsertMarkedComment(octokit, ref, pr.number, SUMMARY_MARKER, body);
+		}
 	});
 
 	// Events are written sequentially, off the model's critical path.
@@ -312,6 +330,7 @@ async function executeReview(
 		pendingWrites = pendingWrites.then(() =>
 			db.insert(schema.reviewEvents).values({ reviewId: review.id, ...event })
 		);
+		progress.onEvent(event);
 		if (event.type !== 'anchoring.suspicious') return;
 		const submitted = event.data?.submitted;
 		const unattached = event.data?.unattached;
@@ -375,6 +394,7 @@ async function executeReview(
 				});
 				log.info({ delta: delta.status, decision: decision.kind }, 'incremental review range');
 				if (decision.kind === 'merge-only') {
+					await progress.close();
 					return finishMergeOnly({
 						db,
 						connection,
@@ -418,6 +438,7 @@ async function executeReview(
 				repoDir,
 				name: `hansi-review-${review.id}`,
 				record,
+				progress,
 				log
 			});
 			const result = await runReview({
@@ -445,6 +466,7 @@ async function executeReview(
 			await db.update(schema.reviews).set(usage.totals).where(eq(schema.reviews.id, review.id));
 
 			if (result.status === 'skipped') {
+				await progress.settle({ kind: 'skipped', reason: result.reason });
 				await completeCheckRun(octokit, ref, checkRunId, {
 					conclusion: 'skipped',
 					title: 'Skipped',
@@ -468,6 +490,10 @@ async function executeReview(
 					fixed.flatMap((f) => (f.commentId ? [f.commentId] : []))
 				).catch((error) => log.warn({ err: error }, 'could not resolve fixed threads'));
 			}
+
+			// The final summary replaces the status block, so no progress write may land after it.
+			progress.phase({ kind: 'publishing' });
+			await progress.close();
 
 			// One summary comment per PR, edited in place on every review.
 			const threshold = blockingSeverity(config);
@@ -629,6 +655,8 @@ async function executeReview(
 		});
 	} catch (error) {
 		await pendingWrites.catch(() => {});
+		// Never leave the summary saying the review is still running.
+		await progress.settle({ kind: job.attempts >= job.maxAttempts ? 'failed' : 'retrying' });
 		await completeCheckRun(octokit, ref, checkRunId, {
 			conclusion: 'neutral',
 			title: 'Review failed',
@@ -672,14 +700,16 @@ async function reviewSandbox(
 		repoDir: string;
 		name: string;
 		record: (event: TraceEvent) => void;
+		progress: ReviewProgress;
 		log: Logger;
 	}
 ): Promise<ReviewSandbox | undefined> {
-	const { record, log } = options;
+	const { record, progress, log } = options;
 	if (!(await sandboxEnabled(ctx.db, options.organizationId))) {
 		record({ type: 'sandbox.skipped', data: { reason: 'turned off in organization settings' } });
 		return undefined;
 	}
+	progress.phase({ kind: 'sandbox' });
 	try {
 		return await openSandbox({ env: ctx.env, config, emit: record, ...options });
 	} catch (error) {

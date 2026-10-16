@@ -189,20 +189,69 @@ export async function createIssueComment(
 	await octokit.rest.issues.createComment({ ...ref, issue_number: issueNumber, body });
 }
 
+/**
+ * Starts the app's check run on a commit. A run the app left in progress there (a worker that
+ * died mid-review) is taken over instead of left spinning next to the new one.
+ */
 export async function startCheckRun(
 	octokit: Octokit,
 	ref: RepoRef,
-	input: { headSha: string; name: string; detailsUrl?: string }
+	input: {
+		headSha: string;
+		name: string;
+		detailsUrl?: string;
+		ownAppId?: string;
+		output?: { title: string; summary: string };
+	}
 ) {
+	const fields = {
+		status: 'in_progress' as const,
+		details_url: input.detailsUrl,
+		started_at: new Date().toISOString(),
+		...(input.output ? { output: input.output } : {})
+	};
+	if (input.ownAppId) {
+		const { data: runs } = await octokit.rest.checks.listForRef({
+			...ref,
+			ref: input.headSha,
+			check_name: input.name,
+			per_page: 100
+		});
+		const orphan = runs.check_runs.find(
+			(run) => run.status !== 'completed' && String(run.app?.id) === input.ownAppId
+		);
+		if (orphan) {
+			await octokit.rest.checks.update({ ...ref, check_run_id: orphan.id, ...fields });
+			return orphan.id;
+		}
+	}
 	const { data } = await octokit.rest.checks.create({
 		...ref,
 		name: input.name,
 		head_sha: input.headSha,
-		status: 'in_progress',
-		details_url: input.detailsUrl,
-		started_at: new Date().toISOString()
+		...fields
 	});
 	return data.id;
+}
+
+/** Updates what an in-progress check run says, without completing it. */
+export async function updateCheckRun(
+	octokit: Octokit,
+	ref: RepoRef,
+	checkRunId: number,
+	output: { title: string; summary: string }
+) {
+	await octokit.rest.checks.update({ ...ref, check_run_id: checkRunId, output });
+}
+
+/** Edits an issue comment's body. */
+export async function updateIssueComment(
+	octokit: Octokit,
+	ref: RepoRef,
+	commentId: number,
+	body: string
+) {
+	await octokit.rest.issues.updateComment({ ...ref, comment_id: commentId, body });
 }
 
 export async function completeCheckRun(
