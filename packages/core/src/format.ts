@@ -410,6 +410,18 @@ export function formatFindingComment(finding: Finding, permalink?: FilePermalink
 	].join('\n\n');
 }
 
+/**
+ * A finding posted on its whole file, because GitHub shows no diff for the file and takes no line
+ * comment there. The line goes in the text instead.
+ */
+export function formatFileFindingComment(finding: Finding, permalink?: FilePermalink): string {
+	const range =
+		finding.startLine < finding.endLine
+			? `Lines ${finding.startLine}-${finding.endLine}`
+			: `Line ${finding.endLine}`;
+	return `**${range}** · GitHub does not show this file's diff, so this comment is on the file.\n\n${formatFindingComment(finding, permalink)}`;
+}
+
 export interface SummaryInput {
 	repository: string;
 	headSha: string;

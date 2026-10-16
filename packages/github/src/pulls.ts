@@ -112,6 +112,26 @@ export async function createReview(
 }
 
 /**
+ * Comments on a whole file rather than a line. GitHub takes these on files it shows no diff for,
+ * where it rejects line comments. Returns the comment id, the root of a thread people can reply in.
+ */
+export async function createFileComment(
+	octokit: Octokit,
+	ref: RepoRef,
+	input: { pullNumber: number; commitId: string; path: string; body: string }
+): Promise<number> {
+	const { data } = await octokit.rest.pulls.createReviewComment({
+		...ref,
+		pull_number: input.pullNumber,
+		commit_id: input.commitId,
+		path: input.path,
+		subject_type: 'file',
+		body: input.body
+	});
+	return data.id;
+}
+
+/**
  * The pull request's files as GitHub shows them. `patch` is missing when GitHub does not render
  * the file's diff: a binary file, a file too large to diff, or one past the pull request's diff
  * limit. GitHub rejects inline comments on those, and one rejected comment fails the whole review.
