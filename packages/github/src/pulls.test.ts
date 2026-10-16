@@ -4,7 +4,8 @@ import {
 	dismissChangeRequests,
 	getFailedChecks,
 	getLinkedIssues,
-	resolveReviewThreads
+	resolveReviewThreads,
+	startCheckRun
 } from './pulls';
 
 const thread = (id: string, root: number, isResolved = false) => ({
@@ -147,4 +148,52 @@ test("dismissChangeRequests withdraws only the bot's own change requests", async
 		{ review_id: 5, message: 'Resolved.' }
 	]);
 	expect(count).toBe(2);
+});
+
+function checksOctokit(runs: { id: number; status: string; app: { id: number } }[]) {
+	const calls = { created: 0, updated: [] as number[] };
+	const octokit = {
+		rest: {
+			checks: {
+				listForRef: async () => ({ data: { check_runs: runs } }),
+				update: async ({ check_run_id }: { check_run_id: number }) => {
+					calls.updated.push(check_run_id);
+				},
+				create: async () => {
+					calls.created++;
+					return { data: { id: 500 } };
+				}
+			}
+		}
+	} as unknown as Octokit;
+	return { octokit, calls };
+}
+
+test('startCheckRun takes over a run the app left in progress on the commit', async () => {
+	const { octokit, calls } = checksOctokit([
+		{ id: 1, status: 'completed', app: { id: 7 } },
+		{ id: 2, status: 'in_progress', app: { id: 8 } },
+		{ id: 3, status: 'in_progress', app: { id: 7 } }
+	]);
+	const id = await startCheckRun(
+		octokit,
+		{ owner: 'o', repo: 'r' },
+		{ headSha: 'abc', name: 'Hansi', ownAppId: '7' }
+	);
+	expect(id).toBe(3);
+	expect(calls).toEqual({ created: 0, updated: [3] });
+});
+
+test("startCheckRun creates a run when none of the app's is still in progress", async () => {
+	const { octokit, calls } = checksOctokit([
+		{ id: 1, status: 'completed', app: { id: 7 } },
+		{ id: 2, status: 'in_progress', app: { id: 8 } }
+	]);
+	const id = await startCheckRun(
+		octokit,
+		{ owner: 'o', repo: 'r' },
+		{ headSha: 'abc', name: 'Hansi', ownAppId: '7' }
+	);
+	expect(id).toBe(500);
+	expect(calls).toEqual({ created: 1, updated: [] });
 });
