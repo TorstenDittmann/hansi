@@ -1,7 +1,7 @@
 import { schema } from '@hans/db';
 import { canTriggerFromComment, classifyMention, verifyWebhookSignature } from '@hans/github';
 import { chatJobFromComment } from '@hans/queue';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { getContext, getGitHubCredentials } from './context';
 import { removeRepositories, upsertInstallation, upsertRepositories } from './installations';
 import { enqueueChat, enqueueReview } from './jobs';
@@ -136,8 +136,14 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 			const rootCommentId = isReviewThread ? (comment.in_reply_to_id ?? comment.id) : undefined;
 			const intent = classifyMention(comment.body, credentials.slug);
 			// A reply in a review thread may be talking to Hansi without a mention. The worker reads
-			// the thread and answers when the reply is to one of Hansi's comments.
-			const unmentioned = !intent && isReviewThread && comment.in_reply_to_id != null;
+			// the thread and answers when the reply is to one of Hansi's comments. Findings listed in
+			// the review body have no thread, so a conversation comment may answer one of those; the
+			// worker answers when it names the finding.
+			const unmentioned =
+				!intent &&
+				(isReviewThread
+					? comment.in_reply_to_id != null
+					: await hasOpenBodyFindings(repo.id, pullNumber));
 
 			if (intent === 'review') {
 				await enqueueReview(db, queue, {
@@ -193,6 +199,26 @@ async function findActiveRepository(repositoryId: number) {
 		);
 	if (!row?.organizationId || row.suspendedAt) return null;
 	return { id: row.id, organizationId: row.organizationId };
+}
+
+/** Whether the pull request has an open finding that was listed in the review body, not inline. */
+async function hasOpenBodyFindings(repositoryId: number, pullNumber: number) {
+	const { db } = await getContext();
+	const [row] = await db
+		.select({ id: schema.reviewFindings.id })
+		.from(schema.reviewFindings)
+		.innerJoin(schema.reviews, eq(schema.reviews.id, schema.reviewFindings.reviewId))
+		.where(
+			and(
+				eq(schema.reviews.repositoryId, repositoryId),
+				eq(schema.reviews.pullNumber, pullNumber),
+				eq(schema.reviews.status, 'completed'),
+				eq(schema.reviewFindings.status, 'posted'),
+				isNull(schema.reviewFindings.githubCommentId)
+			)
+		)
+		.limit(1);
+	return !!row;
 }
 
 function toRepo(repo: Repo) {

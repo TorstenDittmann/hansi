@@ -665,8 +665,8 @@ export function formatBodyFindings(findings: Finding[], permalink: FilePermalink
 	if (findings.length === 0) return '';
 	const intro =
 		findings.length === 1
-			? "GitHub does not show the diff for this finding's lines, so it is listed here instead of inline."
-			: "GitHub does not show the diff for these findings' lines, so they are listed here instead of inline.";
+			? "GitHub does not show the diff for this finding's lines, so it is listed here instead of inline. To answer it, comment on the pull request and quote its title."
+			: "GitHub does not show the diff for these findings' lines, so they are listed here instead of inline. To answer one, comment on the pull request and quote its title.";
 	const items = findings.map((finding) => {
 		const range =
 			finding.startLine < finding.endLine
