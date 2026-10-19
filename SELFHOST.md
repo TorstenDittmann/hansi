@@ -41,7 +41,8 @@ migrations on every start, and `worker`, which runs reviews. Both use the databa
 volume. Put a reverse proxy with TLS in front of it (Caddy, Traefik,
 nginx), then continue with [Set up the GitHub App](#set-up-the-github-app).
 
-Each review runs its commands, such as installing dependencies and running tests, in a
+Each review runs its commands, such as a short script that confirms a suspected bug or installing
+locked dependencies for a lockfile change, in a
 [gVisor](https://gvisor.dev) sandbox inside the worker container. It needs no KVM, no Docker socket,
 and no privileges, but the worker must run with `seccomp=unconfined`, `apparmor=unconfined`, and
 `label=disable` (see `docker/compose.yml`), because gVisor creates a user namespace and installs its

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import {
 	createSandboxTools,
 	formatCommandResult,
+	MAX_COMMANDS,
 	truncateOutput,
 	type CommandRunner,
 	type ReviewEvent
@@ -34,17 +35,36 @@ test('run_command passes the command and timeout to the runner and formats the r
 	});
 });
 
-test('run_command reports runner errors to the model instead of throwing', async () => {
+test('run_command reports a runner error once, then stops calling the runner', async () => {
+	let calls = 0;
 	const runner: CommandRunner = {
 		run: async () => {
-			throw new Error('sandbox is gone');
+			calls++;
+			throw new Error('The sandbox was stopped.');
 		}
 	};
-	const output = await run(
-		createSandboxTools(runner, () => {}),
-		{ command: 'ls' }
+	const tools = createSandboxTools(runner, () => {});
+
+	expect(await run(tools, { command: 'go test ./...' })).toBe(
+		'Error: The sandbox was stopped. run_command will not work again here; continue with the read-only tools.'
 	);
-	expect(output).toBe('Error: sandbox is gone');
+	expect(await run(tools, { command: 'git log' })).toStartWith('Not run: The sandbox was stopped.');
+	expect(calls).toBe(1);
+});
+
+test('run_command stops running commands once its budget is used up', async () => {
+	let calls = 0;
+	const runner: CommandRunner = {
+		run: async () => {
+			calls++;
+			return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+		}
+	};
+	const tools = createSandboxTools(runner, () => {});
+	for (let i = 0; i < MAX_COMMANDS; i++) await run(tools, { command: 'true' });
+
+	expect(await run(tools, { command: 'true' })).toStartWith('Not run: the budget');
+	expect(calls).toBe(MAX_COMMANDS);
 });
 
 test('formatCommandResult names timeouts and empty output', () => {
