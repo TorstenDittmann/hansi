@@ -360,7 +360,7 @@ Do not review them line by line. Check them by running something with run_comman
 	}
 	if (!input.diff) {
 		parts.push(
-			'None of the changed files fit in this prompt; they are listed in <files_not_shown>. Read them with the tools, and run the build and the tests that cover them with run_command.'
+			'None of the changed files fit in this prompt; they are listed in <files_not_shown>. Read them with the tools.'
 		);
 	}
 	parts.push(
