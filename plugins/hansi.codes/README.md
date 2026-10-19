@@ -30,7 +30,7 @@ Codex:
 
 ```sh
 codex plugin marketplace add TorstenDittmann/hansi
-codex plugin install hansi-codes --source hansi-codes
+codex plugin add hansi-codes@hansi-codes
 ```
 
 Or install one skill with the [skills CLI](https://github.com/vercel-labs/skills):

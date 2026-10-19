@@ -48,7 +48,7 @@ claude plugin install hansi.codes@hansi.codes`}</pre>
 		</h2>
 		<pre
 			class="overflow-x-auto rounded-md bg-stone-100 p-3 font-mono text-sm dark:bg-stone-950">{`codex plugin marketplace add TorstenDittmann/hansi
-codex plugin install hansi-codes --source hansi-codes`}</pre>
+codex plugin add hansi-codes@hansi-codes`}</pre>
 	</section>
 
 	<section class="card space-y-3 p-5">

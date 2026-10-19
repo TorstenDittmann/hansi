@@ -172,7 +172,7 @@ Codex:
 
 ```sh
 codex plugin marketplace add TorstenDittmann/hansi
-codex plugin install hansi-codes --source hansi-codes
+codex plugin add hansi-codes@hansi-codes
 ```
 
 Listing the plugin in Anthropic's directory or the OpenAI plugin directory is a separate submission.
