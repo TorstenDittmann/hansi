@@ -20,6 +20,7 @@
 		"@hans/github": "workspace:*",
 		"@hans/llm": "workspace:*",
 		"@hans/queue": "workspace:*",
+		"@sbx.torsten.work/sbx": "^0.2.1",
 		"drizzle-orm": "catalog:",
 		"pino": "^10.3.1"
 	}

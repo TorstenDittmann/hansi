@@ -50,6 +50,16 @@ own syscall filters. Docker Swarm ignores these options, so platforms that deplo
 (such as Dokploy applications) need a plain Docker Compose deployment instead. Without that, reviews
 read code only. Each organization can turn the sandbox off in its settings.
 
+To run sandboxes somewhere else instead, point the worker at an [sbx](https://sbx.torsten.work)
+server with `SANDBOX_PROVIDER=sbx`, `SBX_URL`, and `SBX_API_KEY`. The worker then needs none of
+the options above, so it also runs as a swarm service. Each review gets an sbx sandbox with 2 CPUs,
+2 GiB of memory, a 4 GiB `/workspace`, and the `full` network (or none, with `network: none`),
+deleted after the review or after an hour at the latest. sbx builds Hansi's toolchain (Node.js,
+Python, PHP with Composer, Go) on first use and caches it, which needs an admin key or
+`builds.allow_sandbox_keys`. With a sandbox-scoped key, create a template with that toolchain
+once and set `SBX_TEMPLATE` to its name. The key's sandbox limit (20 by default) must cover
+`WORKER_CONCURRENCY` times `HANSI_WORKERS`.
+
 `docker/compose.yml` limits each worker, sandboxes included, to 2 CPUs and 6 GB of memory. Change
 this with `HANSI_CPUS` and `HANSI_MEMORY` (e.g. `4` and `8g`) in the same place as the other
 variables. Each sandbox is also stopped when it uses more than 2 GiB, and `WORKER_CONCURRENCY`

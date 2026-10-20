@@ -7,17 +7,18 @@ import { schema, type Database } from '@hans/db';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import { startEgressProxy } from './egress-proxy';
+import { openSbxSandbox } from './sbx-sandbox';
 import { removeTree } from './shared';
 
 /** Where the pull request's files are in the sandbox, and where commands run. */
-const WORKSPACE = '/workspace';
+export const WORKSPACE = '/workspace';
 /** Where the egress proxy's socket appears in the sandbox. */
 const PROXY_DIR = '/run/hansi';
 const PROXY_PORT = 3128;
 const SETUP_TIMEOUT_MS = 10 * 60_000;
 /** The sandbox exits after this long even if the review is still running. */
-const MAX_LIFETIME_SECONDS = 60 * 60;
-const MEMORY_BYTES = 2 * 1024 ** 3;
+export const MAX_LIFETIME_SECONDS = 60 * 60;
+export const MEMORY_BYTES = 2 * 1024 ** 3;
 /** `timeout -s KILL` exits with 128 + SIGKILL. */
 const KILLED_BY_TIMEOUT = 137;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
@@ -26,6 +27,60 @@ const MEMORY_POLL_MS = 3_000;
 export interface ReviewSandbox {
 	runner: CommandRunner;
 	close(): Promise<void>;
+}
+
+export interface OpenSandboxOptions {
+	env: Env;
+	config: RepoConfig;
+	repoDir: string;
+	name: string;
+	emit: EmitEvent;
+	log: Logger;
+}
+
+/** Starts one review's sandbox where `SANDBOX_PROVIDER` says: in this container, or on sbx. */
+export function openSandbox(options: OpenSandboxOptions): Promise<ReviewSandbox> {
+	return options.env.SANDBOX_PROVIDER === 'sbx'
+		? openSbxSandbox(options)
+		: openGvisorSandbox(options);
+}
+
+/**
+ * Runs `command` under `timeout -s KILL` in the sandbox, through `exec`, which returns null as
+ * the exit code when it had to give up itself. The in-sandbox timeout fires first, so whatever
+ * the command printed before it was killed is kept.
+ */
+export async function runWithTimeout(
+	exec: (args: string[], timeoutMs: number) => Promise<Spawned>,
+	command: string,
+	timeoutMs: number
+): Promise<CommandResult> {
+	const began = Date.now();
+	const seconds = String(Math.ceil(timeoutMs / 1000));
+	// The host-side timeout only guards a stuck runtime.
+	const result = await exec(
+		['timeout', '-s', 'KILL', seconds, 'sh', '-c', command],
+		timeoutMs + 30_000
+	);
+	const timedOut =
+		(result.exitCode === KILLED_BY_TIMEOUT || result.exitCode === null) &&
+		Date.now() - began >= timeoutMs;
+	return { ...result, exitCode: timedOut ? null : result.exitCode, timedOut };
+}
+
+/** Runs the repository's setup command, if it has one. A failed setup still leaves a usable sandbox. */
+export async function runSetup(
+	config: RepoConfig,
+	run: (command: string, timeoutMs: number) => Promise<CommandResult>,
+	emit: EmitEvent
+): Promise<void> {
+	if (!config.sandbox.setup.trim()) return;
+	const setup = await run(config.sandbox.setup, SETUP_TIMEOUT_MS);
+	// The model sees the failure itself.
+	emit({
+		type: 'sandbox.setup',
+		data: { command: config.sandbox.setup, exitCode: setup.exitCode, timedOut: setup.timedOut }
+	});
 }
 
 /** Whether an organization's reviews and replies get a sandbox: on unless its settings turn it off. */
@@ -106,7 +161,7 @@ export function memoryUsage(output: string): number | null {
 	}
 }
 
-interface Spawned {
+export interface Spawned {
 	exitCode: number | null;
 	stdout: string;
 	stderr: string;
@@ -178,14 +233,7 @@ async function spawnDetached(args: string[], errorLog: string): Promise<Spawned>
  *   ports 80 and 443, enough to install dependencies.
  * - It holds no credentials and ends after an hour.
  */
-export async function openSandbox(options: {
-	env: Env;
-	config: RepoConfig;
-	repoDir: string;
-	name: string;
-	emit: EmitEvent;
-	log: Logger;
-}): Promise<ReviewSandbox> {
+async function openGvisorSandbox(options: OpenSandboxOptions): Promise<ReviewSandbox> {
 	const { env, config, repoDir, name, emit, log } = options;
 	const started = Date.now();
 	const dir = `${repoDir}.sandbox`;
@@ -230,18 +278,9 @@ export async function openSandbox(options: {
 
 	const run = async (command: string, timeoutMs: number): Promise<CommandResult> => {
 		if (stopped) throw new Error(stopped);
-		const began = Date.now();
-		const seconds = String(Math.ceil(timeoutMs / 1000));
-		// The in-sandbox timeout fires first; the host-side one only guards a stuck runsc.
-		const result = await exec(
-			['timeout', '-s', 'KILL', seconds, 'sh', '-c', command],
-			timeoutMs + 30_000
-		);
+		const result = await runWithTimeout(exec, command, timeoutMs);
 		if (stopped) throw new Error(stopped);
-		const timedOut =
-			(result.exitCode === KILLED_BY_TIMEOUT || result.exitCode === null) &&
-			Date.now() - began >= timeoutMs;
-		return { ...result, exitCode: timedOut ? null : result.exitCode, timedOut };
+		return result;
 	};
 
 	try {
@@ -293,14 +332,7 @@ export async function openSandbox(options: {
 		}
 		emit({ type: 'sandbox.ready', data: { ms: Date.now() - started } });
 
-		if (config.sandbox.setup.trim()) {
-			const setup = await run(config.sandbox.setup, SETUP_TIMEOUT_MS);
-			// A failed setup still leaves a usable sandbox: the model sees the failure itself.
-			emit({
-				type: 'sandbox.setup',
-				data: { command: config.sandbox.setup, exitCode: setup.exitCode, timedOut: setup.timedOut }
-			});
-		}
+		await runSetup(config, run, emit);
 	} catch (error) {
 		await close();
 		throw error;
