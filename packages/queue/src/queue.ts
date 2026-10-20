@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { schema, type Database } from '@hans/db';
 
 const { jobs } = schema;
@@ -98,6 +98,25 @@ export class Queue {
 	/** Claims the next runnable job, including jobs whose lease expired (crashed worker). */
 	async claim<T = unknown>(queue: string, leaseMs = 60_000): Promise<Job<T> | null> {
 		const now = this.now();
+		// A worker that dies mid-job never calls fail(), so a job that kills its worker would
+		// otherwise be reclaimed forever. Once its attempts are used, it fails here instead.
+		await this.db
+			.update(jobs)
+			.set({
+				status: 'failed',
+				finishedAt: now,
+				lastError: 'The worker stopped while running this job',
+				lockedBy: null,
+				lockedUntil: null
+			})
+			.where(
+				and(
+					eq(jobs.queue, queue),
+					eq(jobs.status, 'active'),
+					lt(jobs.lockedUntil, now),
+					gte(jobs.attempts, jobs.maxAttempts)
+				)
+			);
 		const rows = await this.db.all<{
 			id: string;
 			queue: string;
@@ -116,7 +135,7 @@ export class Queue {
 				where j.queue = ${queue}
 					and (
 						(j.status = 'queued' and j.run_at <= ${now})
-						or (j.status = 'active' and j.locked_until < ${now})
+						or (j.status = 'active' and j.locked_until < ${now} and j.attempts < j.max_attempts)
 					)
 					and (
 						j.singleton_key is null
