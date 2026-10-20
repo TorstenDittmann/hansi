@@ -106,6 +106,36 @@ describe('Queue', () => {
 		expect(row?.lastError).toContain('worker stopped');
 	});
 
+	test('work() keeps polling when a claim fails', async () => {
+		const q = new Queue(db);
+		await q.send('review', { n: 1 });
+		const claim = q.claim.bind(q);
+		let failures = 0;
+		q.claim = (async (...args: Parameters<typeof q.claim>) => {
+			if (failures++ === 0) throw new Error('SQLITE_BUSY');
+			return claim(...args);
+		}) as typeof q.claim;
+
+		const errors: unknown[] = [];
+		const controller = new AbortController();
+		await q.work(
+			'review',
+			async () => {
+				controller.abort();
+			},
+			{
+				pollIntervalMs: 5,
+				signal: controller.signal,
+				onError: (error, job) => errors.push([error, job])
+			}
+		);
+
+		expect(errors).toHaveLength(1);
+		expect((errors[0] as [Error, unknown])[1]).toBeUndefined();
+		const [row] = await db.select().from(schema.jobs);
+		expect(row?.status).toBe('completed');
+	});
+
 	test('work() processes jobs and stops on abort', async () => {
 		const q = new Queue(db);
 		await q.send('review', { n: 1 });

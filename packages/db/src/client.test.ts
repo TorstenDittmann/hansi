@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDatabase, resolveDatabaseUrl } from './client';
+import type { Client } from '@libsql/client';
+import { createDatabase, resolveDatabaseUrl, retryWhenBusy } from './client';
 import { runMigrations } from './migrate';
 
 let root: string;
@@ -137,5 +138,40 @@ describe.skipIf(!Bun.which('sqld'))('sqld with Basic auth', () => {
 		expect(ready).rejects.toThrow();
 		await ready.catch(() => {});
 		client.close();
+	});
+});
+
+describe('retryWhenBusy', () => {
+	const busy = Object.assign(new Error('database is locked'), { code: 'SQLITE_BUSY' });
+
+	test('sends a statement again after SQLITE_BUSY', async () => {
+		let calls = 0;
+		const client = {
+			execute: async () => {
+				if (++calls < 3) throw busy;
+				return 'ok';
+			},
+			batch: async () => 'ok'
+		} as unknown as Client;
+		retryWhenBusy(client, () => 0);
+		expect(await client.execute('select 1')).toBe('ok' as never);
+		expect(calls).toBe(3);
+	});
+
+	test('gives up after its retries and passes other errors through', async () => {
+		let calls = 0;
+		const client = {
+			execute: async () => {
+				calls++;
+				throw busy;
+			},
+			batch: async () => {
+				throw new Error('syntax error');
+			}
+		} as unknown as Client;
+		retryWhenBusy(client, () => 0);
+		await expect(client.execute('select 1')).rejects.toThrow('database is locked');
+		expect(calls).toBe(7);
+		await expect(client.batch([])).rejects.toThrow('syntax error');
 	});
 });

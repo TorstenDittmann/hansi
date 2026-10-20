@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { schema, type Database } from '@hans/db';
 
 const { jobs } = schema;
@@ -28,7 +28,8 @@ export interface WorkOptions {
 	pollIntervalMs?: number;
 	leaseMs?: number;
 	signal?: AbortSignal;
-	onError?: (error: unknown, job: Job) => void;
+	/** Called when a job throws, and with no job when polling or bookkeeping fails. */
+	onError?: (error: unknown, job?: Job) => void;
 }
 
 export interface QueueOptions {
@@ -98,25 +99,30 @@ export class Queue {
 	/** Claims the next runnable job, including jobs whose lease expired (crashed worker). */
 	async claim<T = unknown>(queue: string, leaseMs = 60_000): Promise<Job<T> | null> {
 		const now = this.now();
-		// A worker that dies mid-job never calls fail(), so a job that kills its worker would
-		// otherwise be reclaimed forever. Once its attempts are used, it fails here instead.
-		await this.db
-			.update(jobs)
-			.set({
-				status: 'failed',
-				finishedAt: now,
-				lastError: 'The worker stopped while running this job',
-				lockedBy: null,
-				lockedUntil: null
-			})
-			.where(
-				and(
-					eq(jobs.queue, queue),
-					eq(jobs.status, 'active'),
-					lt(jobs.lockedUntil, now),
-					gte(jobs.attempts, jobs.maxAttempts)
+		const next = sql`
+			select j.id from jobs j
+			where j.queue = ${queue}
+				and (
+					(j.status = 'queued' and j.run_at <= ${now})
+					or (j.status = 'active' and j.locked_until < ${now})
 				)
-			);
+				and (
+					j.singleton_key is null
+					or not exists (
+						select 1 from jobs other
+						where other.queue = j.queue
+							and other.singleton_key = j.singleton_key
+							and other.id != j.id
+							and other.status = 'active'
+							and other.locked_until >= ${now}
+					)
+				)
+			order by j.run_at
+			limit 1`;
+		// Every worker polls every queue each second. Looking before writing keeps an idle poll a
+		// read, so polling does not compete with real writes for SQLite's single write lock.
+		const [candidate] = await this.db.all<{ id: string }>(next);
+		if (!candidate) return null;
 		const rows = await this.db.all<{
 			id: string;
 			queue: string;
@@ -130,32 +136,27 @@ export class Queue {
 				attempts = attempts + 1,
 				locked_by = ${this.workerId},
 				locked_until = ${now + leaseMs}
-			where id = (
-				select j.id from jobs j
-				where j.queue = ${queue}
-					and (
-						(j.status = 'queued' and j.run_at <= ${now})
-						or (j.status = 'active' and j.locked_until < ${now} and j.attempts < j.max_attempts)
-					)
-					and (
-						j.singleton_key is null
-						or not exists (
-							select 1 from jobs other
-							where other.queue = j.queue
-								and other.singleton_key = j.singleton_key
-								and other.id != j.id
-								and other.status = 'active'
-								and other.locked_until >= ${now}
-						)
-					)
-				order by j.run_at
-				limit 1
-			)
+			where id = (${next})
 			returning id, queue, payload, attempts, max_attempts, singleton_key
 		`);
 
 		const row = rows[0];
 		if (!row) return null;
+		// A worker that dies mid-job never calls fail(), so a job that kills its worker would
+		// otherwise be reclaimed forever. Once its attempts are used, it fails here instead.
+		if (row.attempts > row.max_attempts) {
+			await this.db
+				.update(jobs)
+				.set({
+					status: 'failed',
+					finishedAt: now,
+					lastError: 'The worker stopped while running this job',
+					lockedBy: null,
+					lockedUntil: null
+				})
+				.where(and(eq(jobs.id, row.id), eq(jobs.lockedBy, this.workerId)));
+			return null;
+		}
 		return {
 			id: row.id,
 			queue: row.queue,
@@ -209,14 +210,26 @@ export class Queue {
 		const { concurrency = 1, pollIntervalMs = 1_000, leaseMs = 60_000, signal } = options;
 		const inFlight = new Set<Promise<void>>();
 
+		// A database error here must not end the process: it would take every in-flight job with it.
+		const report = (error: unknown, job?: Job) => options.onError?.(error, job);
 		const run = async (job: Job<T>) => {
-			const heartbeat = setInterval(() => void this.heartbeat(job.id, leaseMs), leaseMs / 3);
+			const heartbeat = setInterval(
+				() => void this.heartbeat(job.id, leaseMs).catch((error: unknown) => report(error, job)),
+				leaseMs / 3
+			);
 			try {
-				await handler(job);
-				await this.complete(job.id);
+				let failure: unknown;
+				try {
+					await handler(job);
+				} catch (error) {
+					failure = error;
+					report(error, job);
+				}
+				if (failure === undefined) await this.complete(job.id);
+				else await this.fail(job, failure);
 			} catch (error) {
-				options.onError?.(error, job);
-				await this.fail(job, error);
+				// The job's row could not be updated; its lease runs out and it is claimed again.
+				report(error, job);
 			} finally {
 				clearInterval(heartbeat);
 			}
@@ -224,7 +237,10 @@ export class Queue {
 
 		while (!signal?.aborted) {
 			if (inFlight.size < concurrency) {
-				const job = await this.claim<T>(queue, leaseMs);
+				const job = await this.claim<T>(queue, leaseMs).catch((error: unknown) => {
+					report(error);
+					return null;
+				});
 				if (job) {
 					const promise = run(job).finally(() => inFlight.delete(promise));
 					inFlight.add(promise);
