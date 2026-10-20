@@ -119,8 +119,8 @@ export function lazySandbox(open: () => Promise<ReviewSandbox>): ReviewSandbox {
 /**
  * What commands run in unless SBX_TEMPLATE names another template: a toolchain most repositories
  * can build and test with, built by sbx once and cached. Anything else can be installed over the
- * network. Composer and Go come from their installers, since builds cannot copy files out of
- * other images.
+ * network. Composer comes from its installer and Go from mise, since builds cannot copy files
+ * out of other images.
  */
 export const TOOLCHAIN = new Template({ image: 'node:22-bookworm-slim' })
 	.withPackages(
@@ -132,10 +132,10 @@ export const TOOLCHAIN = new Template({ image: 'node:22-bookworm-slim' })
 	.run(
 		'curl -fsSL https://getcomposer.org/installer | php -- --2 --install-dir=/usr/local/bin --filename=composer'
 	)
-	.run(
-		// The newest stable Go 1.25. Without include=all the list has only the two newest lines.
-		`version=$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s).find(r=>r.stable&&r.version.startsWith("go1.25."));if(!r){console.error("no stable go1.25 release found");process.exit(1)}console.log(r.version)})') && curl -fsSL "https://go.dev/dl/$version.linux-$(dpkg --print-architecture).tar.gz" | tar -xz -C /usr/local`
-	);
+	.run('curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh')
+	.withEnv({ MISE_DATA_DIR: '/opt/mise' })
+	// Links the binaries onto PATH, so commands need no mise at run time.
+	.run('mise install go@1.25 && ln -s "$(mise where go@1.25)"/bin/* /usr/local/bin/');
 
 const BLOCK = 512;
 
@@ -211,10 +211,7 @@ export async function openSandbox(options: OpenSandboxOptions): Promise<ReviewSa
 			mounts: [{ volumeId: volume.id, path: WORKSPACE }],
 			ttl: MAX_LIFETIME_SECONDS,
 			network: { mode: config.sandbox.network === 'public' ? 'full' : 'none' },
-			env: {
-				PATH: '/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-				CI: 'true'
-			},
+			env: { CI: 'true' },
 			labels: { 'hansi.job': name }
 		})
 		.catch(async (error: unknown) => {
