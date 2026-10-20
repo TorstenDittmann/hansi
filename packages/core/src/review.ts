@@ -215,7 +215,7 @@ const verdictsSchema = z.object({
 	)
 });
 
-const DEFAULT_LIMITS = { maxDiffChars: 150_000, maxReviewSteps: 40, maxVerifySteps: 20 };
+const DEFAULT_LIMITS = { maxDiffChars: 150_000, maxReviewSteps: 100, maxVerifySteps: 50 };
 
 export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const limits = { ...DEFAULT_LIMITS, ...input.limits };
