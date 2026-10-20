@@ -133,8 +133,8 @@ export const TOOLCHAIN = new Template({ image: 'node:22-bookworm-slim' })
 		'curl -fsSL https://getcomposer.org/installer | php -- --2 --install-dir=/usr/local/bin --filename=composer'
 	)
 	.run(
-		// The newest Go 1.25.
-		`version=$(curl -fsSL 'https://go.dev/dl/?mode=json' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).find(r=>r.version.startsWith("go1.25.")).version))') && curl -fsSL "https://go.dev/dl/$version.linux-$(dpkg --print-architecture).tar.gz" | tar -xz -C /usr/local`
+		// The newest stable Go 1.25. Without include=all the list has only the two newest lines.
+		`version=$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s).find(r=>r.stable&&r.version.startsWith("go1.25."));if(!r){console.error("no stable go1.25 release found");process.exit(1)}console.log(r.version)})') && curl -fsSL "https://go.dev/dl/$version.linux-$(dpkg --print-architecture).tar.gz" | tar -xz -C /usr/local`
 	);
 
 const BLOCK = 512;
