@@ -93,6 +93,19 @@ describe('Queue', () => {
 		expect((await queue('w2').claim('review'))?.attempts).toBe(2);
 	});
 
+	test('fails a reclaimed job once its attempts are used', async () => {
+		await queue('crashed').send('review', {}, { maxAttempts: 2 });
+		await queue('crashed').claim('review', 10_000);
+		clock += 10_001;
+		await queue('crashed').claim('review', 10_000);
+		clock += 10_001;
+		expect(await queue('w2').claim('review')).toBeNull();
+
+		const [row] = await db.select().from(schema.jobs);
+		expect(row?.status).toBe('failed');
+		expect(row?.lastError).toContain('worker stopped');
+	});
+
 	test('work() processes jobs and stops on abort', async () => {
 		const q = new Queue(db);
 		await q.send('review', { n: 1 });

@@ -198,7 +198,11 @@ export async function openSandbox(options: OpenSandboxOptions): Promise<ReviewSa
 	await removeStaleVolumes(client, log);
 	// /workspace is a volume, on disk: sbx's default is a tmpfs, which would count the checkout
 	// and installed dependencies against the sandbox's memory.
-	const volume = await client.createVolume(`${VOLUME_PREFIX}${name}`);
+	// A retry after this worker died finds the last attempt's volume still there, so each attempt
+	// gets its own name. removeStaleVolumes deletes the leftovers.
+	const volume = await client.createVolume(
+		`${VOLUME_PREFIX}${name}-${crypto.randomUUID().slice(0, 8)}`
+	);
 	const removeVolume = () =>
 		client.deleteVolume(volume.id).catch((error: unknown) => {
 			if (!gone(error)) log.warn({ err: error, volume: volume.id }, 'sbx volume delete failed');
