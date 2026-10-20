@@ -145,7 +145,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 		const learnings = await loadLearnings(db, payload.organizationId, payload.repositoryId);
 
 		const token = await getInstallationToken(octokit);
-		const useSandbox = await sandboxEnabled(db, payload.organizationId);
+		const useSandbox = await sandboxEnabled(env, db, payload.organizationId);
 		const answer = await withWorkdir(env, async (repoDir) => {
 			const diff = await checkoutPullRequest({
 				dir: repoDir,

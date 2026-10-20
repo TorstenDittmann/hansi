@@ -705,7 +705,11 @@ async function reviewSandbox(
 	}
 ): Promise<ReviewSandbox | undefined> {
 	const { record, progress, log } = options;
-	if (!(await sandboxEnabled(ctx.db, options.organizationId))) {
+	if (!ctx.env.SBX_URL) {
+		record({ type: 'sandbox.skipped', data: { reason: 'no sbx server configured' } });
+		return undefined;
+	}
+	if (!(await sandboxEnabled(ctx.env, ctx.db, options.organizationId))) {
 		record({ type: 'sandbox.skipped', data: { reason: 'turned off in organization settings' } });
 		return undefined;
 	}

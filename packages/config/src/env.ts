@@ -58,18 +58,9 @@ export const envSchema = z.object({
 	WORKER_WORKDIR: optional,
 
 	/**
-	 * The gVisor runtime binary and the sandbox's root filesystem; the Docker image ships both.
-	 * Whether reviews use the sandbox is an organization setting.
+	 * The sbx server (https://sbx.torsten.work) that review sandboxes run on. Without it, reviews
+	 * read code only. Whether reviews use the sandbox is also an organization setting.
 	 */
-	SANDBOX_RUNSC: z.string().default('runsc'),
-	SANDBOX_ROOTFS: z.string().default('/opt/hansi-sandbox/rootfs'),
-
-	/**
-	 * Where sandboxes run. `gvisor`: inside the worker container, with the two settings above.
-	 * `sbx`: on an sbx server (https://sbx.torsten.work) at SBX_URL, so the worker needs no
-	 * gVisor and no relaxed seccomp.
-	 */
-	SANDBOX_PROVIDER: z.enum(['gvisor', 'sbx']).default('gvisor'),
 	SBX_URL: optional,
 	SBX_API_KEY: optional,
 	/**
@@ -82,10 +73,8 @@ export const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 const checkedEnvSchema = envSchema.superRefine((env, ctx) => {
-	if (env.SANDBOX_PROVIDER !== 'sbx') return;
-	for (const key of ['SBX_URL', 'SBX_API_KEY'] as const) {
-		if (!env[key])
-			ctx.addIssue({ code: 'custom', path: [key], message: 'required when SANDBOX_PROVIDER=sbx' });
+	if (env.SBX_URL && !env.SBX_API_KEY) {
+		ctx.addIssue({ code: 'custom', path: ['SBX_API_KEY'], message: 'required with SBX_URL' });
 	}
 });
 
