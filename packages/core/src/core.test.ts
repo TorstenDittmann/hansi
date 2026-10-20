@@ -297,6 +297,47 @@ describe('runReview', () => {
 		});
 	});
 
+	test('asks again when a model ignores the forced submission and answers in text', async () => {
+		const text = (answer: string) => ({
+			content: [{ type: 'text' as const, text: answer }],
+			finishReason: { unified: 'stop' as const, raw: 'stop' },
+			usage,
+			warnings: []
+		});
+		const model = new MockLanguageModelV4({
+			doGenerate: [
+				text('Summary: refactors divide. Bug on line 2.'),
+				toolCall('submit_review', { summary: 'Refactors divide.', findings: [finding(2, 'Bug')] }),
+				text('F1 is real.'),
+				text('F1 is real, I promise.')
+			]
+		});
+		const calls: ModelCall[] = [];
+		const result = await runReview({
+			repoDir,
+			diff,
+			pullRequest: { title: 'Refactor', body: '', author: 'octocat' },
+			config: parseRepoConfig('').config,
+			models: { review: { model, provider: 'mock', modelId: 'mock-1' } },
+			limits: { maxReviewSteps: 1, maxVerifySteps: 1 },
+			onModelCall: (call) => void calls.push(call)
+		});
+		if (result.status !== 'completed') throw new Error('expected a completed review');
+		expect(result.summary).toBe('Refactors divide.');
+		// The verifier never submitted, so its finding is kept rather than the review failing.
+		expect(result.posted.map((f) => f.title)).toEqual(['Bug']);
+		const retry = model.doGenerateCalls[1];
+		expect(retry?.toolChoice).toEqual({ type: 'auto' });
+		expect(retry?.tools?.map((t) => t.name)).toEqual(['submit_review']);
+		expect(JSON.stringify(retry?.prompt)).toContain('Bug on line 2.');
+		expect(JSON.stringify(retry?.prompt)).toContain('Call the submit_review tool now');
+		// Both attempts count toward the cost.
+		expect(calls.map((c) => [c.role, c.usage.inputTokens])).toEqual([
+			['review', 200],
+			['verify', 200]
+		]);
+	});
+
 	test('lets the model fix a submission that does not match the schema', async () => {
 		const model = new MockLanguageModelV4({
 			doGenerate: [
