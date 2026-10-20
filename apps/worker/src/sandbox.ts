@@ -1,35 +1,91 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import type { Server } from 'node:net';
-import { join } from 'node:path';
+import { readFile, rm } from 'node:fs/promises';
 import type { Env, RepoConfig } from '@hans/config';
 import { git, type CommandResult, type CommandRunner, type EmitEvent } from '@hans/core';
 import { schema, type Database } from '@hans/db';
+import { SbxClient, SbxError, Template } from '@sbx.torsten.work/sbx';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
-import { startEgressProxy } from './egress-proxy';
-import { removeTree } from './shared';
 
 /** Where the pull request's files are in the sandbox, and where commands run. */
 const WORKSPACE = '/workspace';
-/** Where the egress proxy's socket appears in the sandbox. */
-const PROXY_DIR = '/run/hansi';
-const PROXY_PORT = 3128;
 const SETUP_TIMEOUT_MS = 10 * 60_000;
-/** The sandbox exits after this long even if the review is still running. */
+/** sbx deletes the sandbox after this long even if the review is still running. */
 const MAX_LIFETIME_SECONDS = 60 * 60;
-const MEMORY_BYTES = 2 * 1024 ** 3;
+const CPUS = 2;
+const MEMORY_MB = 2048;
+/** Names the per-review volume that holds /workspace, so leftovers can be found and removed. */
+const VOLUME_PREFIX = 'hansi-';
 /** `timeout -s KILL` exits with 128 + SIGKILL. */
 const KILLED_BY_TIMEOUT = 137;
-const MAX_OUTPUT_BYTES = 1024 * 1024;
-const MEMORY_POLL_MS = 3_000;
 
 export interface ReviewSandbox {
 	runner: CommandRunner;
 	close(): Promise<void>;
 }
 
-/** Whether an organization's reviews and replies get a sandbox: on unless its settings turn it off. */
-export async function sandboxEnabled(db: Database, organizationId: string): Promise<boolean> {
+interface Spawned {
+	exitCode: number | null;
+	stdout: string;
+	stderr: string;
+}
+
+export interface OpenSandboxOptions {
+	env: Env;
+	config: RepoConfig;
+	repoDir: string;
+	name: string;
+	emit: EmitEvent;
+	log: Logger;
+}
+
+/**
+ * Runs `command` under `timeout -s KILL` in the sandbox, through `exec`, which returns null as
+ * the exit code when it had to give up itself. The in-sandbox timeout fires first, so whatever
+ * the command printed before it was killed is kept.
+ */
+async function runWithTimeout(
+	exec: (args: string[], timeoutMs: number) => Promise<Spawned>,
+	command: string,
+	timeoutMs: number
+): Promise<CommandResult> {
+	const began = Date.now();
+	const seconds = String(Math.ceil(timeoutMs / 1000));
+	// The outer timeout only guards a stuck server.
+	const result = await exec(
+		['timeout', '-s', 'KILL', seconds, 'sh', '-c', command],
+		timeoutMs + 30_000
+	);
+	const timedOut =
+		(result.exitCode === KILLED_BY_TIMEOUT || result.exitCode === null) &&
+		Date.now() - began >= timeoutMs;
+	return { ...result, exitCode: timedOut ? null : result.exitCode, timedOut };
+}
+
+/** Runs the repository's setup command, if it has one. A failed setup still leaves a usable sandbox. */
+async function runSetup(
+	config: RepoConfig,
+	run: (command: string, timeoutMs: number) => Promise<CommandResult>,
+	emit: EmitEvent
+): Promise<void> {
+	if (!config.sandbox.setup.trim()) return;
+	const setup = await run(config.sandbox.setup, SETUP_TIMEOUT_MS);
+	// The model sees the failure itself.
+	emit({
+		type: 'sandbox.setup',
+		data: { command: config.sandbox.setup, exitCode: setup.exitCode, timedOut: setup.timedOut }
+	});
+}
+
+/**
+ * Whether an organization's reviews and replies get a sandbox: when this instance has an sbx
+ * server, unless the organization's settings turn it off.
+ */
+export async function sandboxEnabled(
+	env: Env,
+	db: Database,
+	organizationId: string
+): Promise<boolean> {
+	if (!env.SBX_URL) return false;
 	const [row] = await db
 		.select({ sandbox: schema.organizationSettings.sandbox })
 		.from(schema.organizationSettings)
@@ -60,247 +116,155 @@ export function lazySandbox(open: () => Promise<ReviewSandbox>): ReviewSandbox {
 	};
 }
 
-/** The OCI runtime spec for one review's sandbox. */
-export function sandboxSpec(options: { rootfs: string; workspace: string; proxyDir: string }) {
-	const proxy = `http://127.0.0.1:${PROXY_PORT}`;
-	return {
-		ociVersion: '1.0.0',
-		process: {
-			user: { uid: 0, gid: 0 },
-			// Keeps the sandbox alive for `runsc exec`, and ends it once its lifetime is up.
-			args: ['sleep', String(MAX_LIFETIME_SECONDS)],
-			env: [
-				'PATH=/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-				'HOME=/root',
-				'CI=true',
-				...['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'].map(
-					(key) => `${key}=${proxy}`
-				),
-				'NO_PROXY=localhost,127.0.0.1',
-				'no_proxy=localhost,127.0.0.1'
-			],
-			cwd: WORKSPACE
-		},
-		root: { path: options.rootfs, readonly: false },
-		hostname: 'sandbox',
-		mounts: [
-			{ destination: '/proc', type: 'proc', source: 'proc' },
-			{ destination: '/tmp', type: 'tmpfs', source: 'tmpfs', options: ['nosuid', 'nodev'] },
-			{ destination: WORKSPACE, type: 'bind', source: options.workspace, options: ['rbind', 'rw'] },
-			{ destination: PROXY_DIR, type: 'bind', source: options.proxyDir, options: ['rbind', 'rw'] }
-		],
-		linux: {
-			resources: { memory: { limit: MEMORY_BYTES } },
-			namespaces: ['pid', 'network', 'ipc', 'uts', 'mount'].map((type) => ({ type }))
-		}
-	};
+/**
+ * What commands run in unless SBX_TEMPLATE names another template: a toolchain most repositories
+ * can build and test with, built by sbx once and cached. Anything else can be installed over the
+ * network. Composer and Go come from their installers, since builds cannot copy files out of
+ * other images.
+ */
+export const TOOLCHAIN = new Template({ image: 'node:22-bookworm-slim' })
+	.withPackages(
+		...['build-essential', 'ca-certificates', 'curl', 'git', 'unzip'],
+		...['python3', 'python3-pip', 'python3-venv'],
+		...['php-cli', 'php-curl', 'php-intl', 'php-mbstring', 'php-mysql', 'php-pgsql'],
+		...['php-sqlite3', 'php-xml', 'php-zip']
+	)
+	.run(
+		'curl -fsSL https://getcomposer.org/installer | php -- --2 --install-dir=/usr/local/bin --filename=composer'
+	)
+	.run(
+		// The newest Go 1.25.
+		`version=$(curl -fsSL 'https://go.dev/dl/?mode=json' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).find(r=>r.version.startsWith("go1.25.")).version))') && curl -fsSL "https://go.dev/dl/$version.linux-$(dpkg --print-architecture).tar.gz" | tar -xz -C /usr/local`
+	);
+
+const BLOCK = 512;
+
+/**
+ * Cuts a tar archive right after its end-of-archive marker, dropping the zero padding that fills
+ * the last record. sbx stops reading at the marker and fails the upload if more bytes follow.
+ */
+export function trimTar(tar: Uint8Array): Uint8Array<ArrayBuffer> {
+	let offset = 0;
+	while (offset + BLOCK <= tar.length) {
+		const header = tar.subarray(offset, offset + BLOCK);
+		if (header.every((byte) => byte === 0)) break;
+		const size = parseInt(
+			new TextDecoder().decode(header.subarray(124, 136)).replace(/\0.*$/s, '').trim() || '0',
+			8
+		);
+		offset += BLOCK + Math.ceil(size / BLOCK) * BLOCK;
+	}
+	return tar.slice(0, Math.min(tar.length, offset + 2 * BLOCK));
 }
 
-/** Memory in use, from `runsc events --stats` output, or null when it cannot be read. */
-export function memoryUsage(output: string): number | null {
-	try {
-		const usage = JSON.parse(output)?.data?.memory?.usage?.usage;
-		return typeof usage === 'number' ? usage : null;
-	} catch {
-		return null;
+/**
+ * Deletes volumes of reviews whose sandbox sbx has already removed, e.g. after this worker
+ * crashed. Any volume older than the sandbox lifetime is one: sbx refuses to delete a volume a
+ * live sandbox still mounts.
+ */
+async function removeStaleVolumes(client: SbxClient, log: Logger): Promise<void> {
+	const volumes = await client.listVolumes().catch(() => []);
+	const cutoff = Date.now() - 2 * MAX_LIFETIME_SECONDS * 1000;
+	for (const volume of volumes) {
+		if (!volume.name.startsWith(VOLUME_PREFIX) || Date.parse(volume.createdAt) > cutoff) continue;
+		await client.deleteVolume(volume.id).catch((error: unknown) => {
+			log.debug({ err: error, volume: volume.id }, 'stale sbx volume not deleted');
+		});
 	}
 }
 
-interface Spawned {
-	exitCode: number | null;
-	stdout: string;
-	stderr: string;
-}
-
-async function spawn(args: string[], timeoutMs?: number): Promise<Spawned> {
-	// Lowest CPU priority: a busy sandbox must not starve the web app and the worker.
-	const proc = Bun.spawn(['nice', '-n', '19', ...args], {
-		stdout: 'pipe',
-		stderr: 'pipe',
-		timeout: timeoutMs,
-		killSignal: 'SIGKILL'
-	});
-	const [stdout, stderr, exitCode] = await Promise.all([
-		readTail(proc.stdout),
-		readTail(proc.stderr),
-		proc.exited
-	]);
-	return { exitCode, stdout, stderr };
+/** Exec and file calls on a sandbox sbx no longer has, e.g. one past its lifetime. */
+function gone(error: unknown): boolean {
+	return error instanceof SbxError && (error.status === 404 || error.status === 409);
 }
 
 /**
- * Reads a stream but keeps only its last MAX_OUTPUT_BYTES: commands run untrusted code, which
- * can print far more than the worker should hold in memory.
- */
-export async function readTail(
-	stream: ReadableStream<Uint8Array>,
-	max = MAX_OUTPUT_BYTES
-): Promise<string> {
-	const chunks: Uint8Array[] = [];
-	let size = 0;
-	for await (const chunk of stream) {
-		chunks.push(chunk);
-		size += chunk.length;
-		while (size - chunks[0]!.length >= max) size -= chunks.shift()!.length;
-	}
-	const bytes = Buffer.concat(chunks);
-	return bytes.subarray(Math.max(0, bytes.length - max)).toString('utf8');
-}
-
-/**
- * For `--detach`: the processes it leaves running inherit its stdio, so pipes would never close.
- * Errors go to a file instead, read once runsc itself has exited.
- */
-async function spawnDetached(args: string[], errorLog: string): Promise<Spawned> {
-	const proc = Bun.spawn(['nice', '-n', '19', ...args], {
-		stdin: 'ignore',
-		stdout: 'ignore',
-		stderr: Bun.file(errorLog),
-		timeout: 60_000,
-		killSignal: 'SIGKILL'
-	});
-	const exitCode = await proc.exited;
-	const stderr = await Bun.file(errorLog)
-		.text()
-		.catch(() => '');
-	return { exitCode, stdout: '', stderr };
-}
-
-/**
- * Starts a gVisor sandbox for one review, inside this container: `runsc` gives it its own
- * user-space kernel, so the pull request's code never runs on the host kernel. It needs no
- * Docker, no KVM, and no privileges (only seccomp unconfined, so runsc can set up its own
- * filters). Every pull request gets one, including those from people without write access:
+ * Starts a sandbox for one review on the sbx server (https://sbx.torsten.work), so the pull
+ * request's code never runs in this container. Every pull request gets one, including those from
+ * people without write access. sbx isolates it (Docker, gVisor, Kata, or Firecracker, as the server is set up),
+ * caps its memory, and deletes it after an hour even if this worker never does:
  *
- * - The root filesystem is the toolchain image baked into this image, with a per-review
- *   writable layer on top. The checkout at HEAD, without `.git`, is at /workspace.
- * - It has no network. Its only way out is the egress proxy: HTTP(S) to public hosts on
- *   ports 80 and 443, enough to install dependencies.
- * - It holds no credentials and ends after an hour.
+ * - It starts from SBX_TEMPLATE, or from Hansi's toolchain image. The checkout at HEAD, without
+ *   `.git`, is uploaded to /workspace.
+ * - With `network: public` it gets sbx's `full` network, which blocks private ranges and cloud
+ *   metadata unless the sbx server opts out. With `none` it has no network.
+ * - It holds no credentials: the API key stays in this process.
  */
-export async function openSandbox(options: {
-	env: Env;
-	config: RepoConfig;
-	repoDir: string;
-	name: string;
-	emit: EmitEvent;
-	log: Logger;
-}): Promise<ReviewSandbox> {
+export async function openSandbox(options: OpenSandboxOptions): Promise<ReviewSandbox> {
 	const { env, config, repoDir, name, emit, log } = options;
 	const started = Date.now();
-	const dir = `${repoDir}.sandbox`;
-	const paths = {
-		bundle: join(dir, 'bundle'),
-		state: join(dir, 'state'),
-		upper: join(dir, 'upper'),
-		workspace: join(dir, 'workspace'),
-		proxyDir: join(dir, 'proxy')
-	};
-	const runsc = [
-		env.SANDBOX_RUNSC,
-		'--rootless',
-		'--ignore-cgroups',
-		'--network=none',
-		'--host-uds=open',
-		`--overlay2=root:dir=${paths.upper}`,
-		`--root=${paths.state}`
-	];
+	const client = new SbxClient({ baseUrl: env.SBX_URL, apiKey: env.SBX_API_KEY });
 
-	let proxy: Server | undefined;
-	let running = false;
-	let watchdog: ReturnType<typeof setInterval> | undefined;
-	/** Set once the sandbox was stopped for using too much memory; later commands fail with it. */
-	let stopped: string | undefined;
+	await removeStaleVolumes(client, log);
+	// /workspace is a volume, on disk: sbx's default is a tmpfs, which would count the checkout
+	// and installed dependencies against the sandbox's memory.
+	const volume = await client.createVolume(`${VOLUME_PREFIX}${name}`);
+	const removeVolume = () =>
+		client.deleteVolume(volume.id).catch((error: unknown) => {
+			if (!gone(error)) log.warn({ err: error, volume: volume.id }, 'sbx volume delete failed');
+		});
+	const info = await client
+		.createSandbox({
+			template: env.SBX_TEMPLATE ?? TOOLCHAIN,
+			cpu: CPUS,
+			memoryMb: MEMORY_MB,
+			mounts: [{ volumeId: volume.id, path: WORKSPACE }],
+			ttl: MAX_LIFETIME_SECONDS,
+			network: { mode: config.sandbox.network === 'public' ? 'full' : 'none' },
+			env: {
+				PATH: '/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+				CI: 'true'
+			},
+			labels: { 'hansi.job': name }
+		})
+		.catch(async (error: unknown) => {
+			await removeVolume();
+			throw error;
+		});
+	const id = info.id;
+
+	let closed = false;
 	const close = async () => {
-		clearInterval(watchdog);
-		if (running) {
-			running = false;
-			await spawn([...runsc, 'delete', '--force', name]).catch((error: unknown) =>
-				log.warn({ err: error }, 'sandbox delete failed')
-			);
+		if (closed) return;
+		closed = true;
+		await client.deleteSandbox(id).catch((error: unknown) => {
+			if (!gone(error)) log.warn({ err: error, id }, 'sbx sandbox delete failed');
+		});
+		await removeVolume();
+	};
+
+	const exec = async (args: string[], timeoutMs: number): Promise<Spawned> => {
+		try {
+			const { exitCode, stdout, stderr } = await client.exec(id, args, {
+				cwd: WORKSPACE,
+				timeout: Math.ceil(timeoutMs / 1000)
+			});
+			return { exitCode, stdout, stderr };
+		} catch (error) {
+			// sbx gave up on the command itself: report it like a timeout, the sandbox is still there.
+			if (error instanceof SbxError && error.code === 'timeout') {
+				return { exitCode: null, stdout: '', stderr: '' };
+			}
+			if (gone(error)) {
+				throw new Error(`The sandbox is gone: ${(error as Error).message}`, { cause: error });
+			}
+			throw error;
 		}
-		proxy?.close();
-		await removeTree(dir).catch((error: unknown) =>
-			log.warn({ err: error, dir }, 'sandbox cleanup failed')
-		);
 	};
-
-	const exec = (args: string[], timeoutMs?: number) =>
-		spawn([...runsc, 'exec', `--cwd=${WORKSPACE}`, name, ...args], timeoutMs);
-
-	const run = async (command: string, timeoutMs: number): Promise<CommandResult> => {
-		if (stopped) throw new Error(stopped);
-		const began = Date.now();
-		const seconds = String(Math.ceil(timeoutMs / 1000));
-		// The in-sandbox timeout fires first; the host-side one only guards a stuck runsc.
-		const result = await exec(
-			['timeout', '-s', 'KILL', seconds, 'sh', '-c', command],
-			timeoutMs + 30_000
-		);
-		if (stopped) throw new Error(stopped);
-		const timedOut =
-			(result.exitCode === KILLED_BY_TIMEOUT || result.exitCode === null) &&
-			Date.now() - began >= timeoutMs;
-		return { ...result, exitCode: timedOut ? null : result.exitCode, timedOut };
-	};
+	const run = (command: string, timeoutMs: number) => runWithTimeout(exec, command, timeoutMs);
 
 	try {
-		await Promise.all(Object.values(paths).map((path) => mkdir(path, { recursive: true })));
-		const archive = `${dir}/workspace.tar`;
-		await git(['archive', '--format=tar', `--output=${archive}`, 'HEAD'], { cwd: repoDir });
-		const untar = await spawn(['tar', '-xf', archive, '-C', paths.workspace]);
-		if (untar.exitCode !== 0) throw new Error(`Unpacking the checkout failed: ${untar.stderr}`);
-		await rm(archive);
-
-		if (config.sandbox.network === 'public') {
-			proxy = await startEgressProxy(join(paths.proxyDir, 'proxy.sock'), (target) =>
-				log.debug({ target }, 'sandbox egress')
-			);
+		const archive = `${repoDir}.sbx.tar`;
+		// A tree, not a commit: sbx rejects the pax header with the commit id that a commit gets.
+		await git(['archive', '--format=tar', `--output=${archive}`, 'HEAD^{tree}'], { cwd: repoDir });
+		try {
+			const tar = trimTar(await readFile(archive));
+			await client.uploadArchive(id, WORKSPACE, Bun.gzipSync(tar));
+		} finally {
+			await rm(archive, { force: true });
 		}
-		const spec = sandboxSpec({
-			rootfs: env.SANDBOX_ROOTFS,
-			workspace: paths.workspace,
-			proxyDir: paths.proxyDir
-		});
-		await writeFile(join(paths.bundle, 'config.json'), JSON.stringify(spec));
-
-		const errorLog = join(dir, 'runsc.log');
-		const boot = await spawnDetached(
-			[...runsc, 'run', '--detach', `--bundle=${paths.bundle}`, name],
-			errorLog
-		);
-		if (boot.exitCode !== 0) throw new Error(`runsc failed to start: ${boot.stderr.trim()}`);
-		running = true;
-		// Without cgroups runsc cannot cap memory, so a watchdog stops the sandbox past the limit.
-		watchdog = setInterval(async () => {
-			if (!running || stopped) return;
-			const stats = await spawn([...runsc, 'events', '--stats', name], 10_000).catch(() => null);
-			const usage = stats ? memoryUsage(stats.stdout) : null;
-			if (usage === null || usage <= MEMORY_BYTES) return;
-			stopped = `The sandbox was stopped: it used more than ${MEMORY_BYTES / 1024 ** 3} GiB of memory.`;
-			log.warn({ usage }, 'sandbox over memory limit');
-			emit({ type: 'sandbox.stopped', data: { reason: 'memory', bytes: usage } });
-			await spawn([...runsc, 'delete', '--force', name]).catch(() => {});
-			running = false;
-		}, MEMORY_POLL_MS);
-		if (proxy) {
-			// Bridges the proxy's socket to 127.0.0.1:3128, where the tools inside expect it.
-			const bridge = await spawnDetached(
-				[...runsc, 'exec', '--detach', name, 'node', '/opt/hansi/bridge.mjs'],
-				errorLog
-			);
-			if (bridge.exitCode !== 0) throw new Error(`Proxy bridge failed: ${bridge.stderr.trim()}`);
-		}
-		emit({ type: 'sandbox.ready', data: { ms: Date.now() - started } });
-
-		if (config.sandbox.setup.trim()) {
-			const setup = await run(config.sandbox.setup, SETUP_TIMEOUT_MS);
-			// A failed setup still leaves a usable sandbox: the model sees the failure itself.
-			emit({
-				type: 'sandbox.setup',
-				data: { command: config.sandbox.setup, exitCode: setup.exitCode, timedOut: setup.timedOut }
-			});
-		}
+		emit({ type: 'sandbox.ready', data: { ms: Date.now() - started, id } });
+		await runSetup(config, run, emit);
 	} catch (error) {
 		await close();
 		throw error;

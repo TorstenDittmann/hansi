@@ -42,22 +42,29 @@ volume. Put a reverse proxy with TLS in front of it (Caddy, Traefik,
 nginx), then continue with [Set up the GitHub App](#set-up-the-github-app).
 
 Each review runs its commands, such as a short script that confirms a suspected bug or installing
-locked dependencies for a lockfile change, in a
-[gVisor](https://gvisor.dev) sandbox inside the worker container. It needs no KVM, no Docker socket,
-and no privileges, but the worker must run with `seccomp=unconfined`, `apparmor=unconfined`, and
-`label=disable` (see `docker/compose.yml`), because gVisor creates a user namespace and installs its
-own syscall filters. Docker Swarm ignores these options, so platforms that deploy as swarm services
-(such as Dokploy applications) need a plain Docker Compose deployment instead. Without that, reviews
-read code only. Each organization can turn the sandbox off in its settings.
+locked dependencies for a lockfile change, in a sandbox on an [sbx](https://sbx.torsten.work)
+server, never in the worker container. Point the worker at it with `SBX_URL` and `SBX_API_KEY`.
+Without them, reviews read code only. Each organization can also turn the sandbox off in its
+settings.
 
-`docker/compose.yml` limits each worker, sandboxes included, to 2 CPUs and 6 GB of memory. Change
-this with `HANSI_CPUS` and `HANSI_MEMORY` (e.g. `4` and `8g`) in the same place as the other
-variables. Each sandbox is also stopped when it uses more than 2 GiB, and `WORKER_CONCURRENCY`
-(default 2) sets how many run at once in each worker. To review more pull requests at once, set
-`HANSI_WORKERS` (default 1) to run more workers; the limits apply to each.
+Each review gets an sbx sandbox with 2 CPUs, 2 GiB of memory, and sbx's `full` network (or none,
+when the repository sets `network: none`), deleted after the review or after an hour at the latest.
+Its `/workspace`, with the checkout and installed dependencies, is an sbx volume, which is a Docker
+volume on the sbx host, so it lives on disk under Docker's data root (`/var/lib/docker` by
+default). To keep it on another disk, move Docker's `data-root` there.
 
-Reviews check out the pull request and run their sandbox in `/tmp/hans`, a volume in
-`docker/compose.yml` that all workers share. Dependencies installed there can take several GB per review while it runs.
+sbx builds Hansi's toolchain (Node.js, Python, PHP with Composer, Go) on first use and caches it, which needs an admin key or `builds.allow_sandbox_keys`. With a
+sandbox-scoped key, create a template with that toolchain once and set `SBX_TEMPLATE` to its name.
+The key's sandbox limit (20 by default) must cover `WORKER_CONCURRENCY` times `HANSI_WORKERS`.
+
+`docker/compose.yml` limits each worker to 2 CPUs and 6 GB of memory. Change this with
+`HANSI_CPUS` and `HANSI_MEMORY` (e.g. `4` and `8g`) in the same place as the other variables.
+`WORKER_CONCURRENCY` (default 2) sets how many reviews run at once in each worker. To review more
+pull requests at once, set `HANSI_WORKERS` (default 1) to run more workers; the limits apply to
+each.
+
+Reviews check out the pull request in `/tmp/hans`, a volume in `docker/compose.yml` that all
+workers share.
 To keep this off the system disk, set `HANSI_WORKDIR` to a directory on another disk, e.g.
 `/mnt/volume/hansi`, owned by uid 1000 (`chown 1000:1000 /mnt/volume/hansi`).
 
@@ -177,8 +184,7 @@ need a networked database:
 
 ### Dokploy
 
-Dokploy **Applications** run as swarm services, which can't run the sandbox, so deploy a
-**Compose** service instead:
+Deploy Hansi as **Compose** services:
 
 1. Create a project with a **libSQL** database. Dokploy protects it with HTTP Basic auth; the user
    is `libsql`, and the password is on the database's page.

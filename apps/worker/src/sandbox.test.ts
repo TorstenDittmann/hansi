@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test';
-import { isBlockedAddress } from './egress-proxy';
-import { lazySandbox, memoryUsage, readTail, sandboxSpec, type ReviewSandbox } from './sandbox';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseEnv } from '@hans/config';
+import { git } from '@hans/core';
+import { lazySandbox, trimTar, type ReviewSandbox } from './sandbox';
 
 test('a lazy sandbox starts on its first command and only then needs closing', async () => {
 	let opened = 0;
@@ -31,61 +35,55 @@ test('a lazy sandbox starts on its first command and only then needs closing', a
 
 test('a lazy sandbox that cannot start fails its commands with the reason', async () => {
 	const sandbox = lazySandbox(async () => {
-		throw new Error('runsc missing');
+		throw new Error('sbx unreachable');
 	});
 	await expect(sandbox.runner.run('ls', { timeoutMs: 1 })).rejects.toThrow(
-		'The sandbox could not start: runsc missing'
+		'The sandbox could not start: sbx unreachable'
 	);
 	await sandbox.close();
 });
 
-test('the egress proxy refuses private, loopback, link-local, and metadata addresses', () => {
-	for (const ip of [
-		'10.1.2.3',
-		'172.17.0.1',
-		'192.168.1.1',
-		'127.0.0.1',
-		'169.254.169.254',
-		'100.64.0.1',
-		'0.0.0.0',
-		'::1',
-		'fd00::1',
-		'fe80::1',
-		'::ffff:10.0.0.1',
-		'64:ff9b::a9fe:a9fe'
-	]) {
-		expect({ ip, blocked: isBlockedAddress(ip) }).toEqual({ ip, blocked: true });
-	}
-	for (const ip of ['104.16.0.1', '8.8.8.8', '172.32.0.1', '2606:4700::1111', '::ffff:8.8.8.8']) {
-		expect({ ip, blocked: isBlockedAddress(ip) }).toEqual({ ip, blocked: false });
+test('trimTar ends a git archive right after its end-of-archive marker', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'hansi-trim-'));
+	try {
+		await git(['init', '-q'], { cwd: dir });
+		// The last file ends in zeros, which must not be mistaken for the marker.
+		await writeFile(join(dir, 'a.txt'), 'hello');
+		await writeFile(join(dir, 'zeros.bin'), new Uint8Array(1500));
+		await git(['add', '.'], { cwd: dir });
+		const tree = (await git(['write-tree'], { cwd: dir })).trim();
+		const archive = join(dir, 'out.tar');
+		await git(['archive', '--format=tar', `--output=${archive}`, tree], { cwd: dir });
+		const tar = new Uint8Array(await Bun.file(archive).arrayBuffer());
+
+		const trimmed = trimTar(tar);
+		// Two entries of one header each, 1 and 3 blocks of data, then the two-block marker.
+		expect(trimmed.length).toBe(512 * (1 + 1 + 1 + 3 + 2));
+		expect(tar.length).toBeGreaterThan(trimmed.length);
+		expect(trimmed.subarray(-1024).every((byte) => byte === 0)).toBe(true);
+
+		await writeFile(archive, trimmed);
+		const listed = Bun.spawnSync(['tar', '-tf', archive]);
+		expect(listed.stdout.toString().split('\n').filter(Boolean)).toEqual(['a.txt', 'zeros.bin']);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
 	}
 });
 
-test('the sandbox gets the checkout, the proxy, and no network of its own', () => {
-	const spec = sandboxSpec({ rootfs: '/rootfs', workspace: '/w', proxyDir: '/p' });
-	expect(spec.process.cwd).toBe('/workspace');
-	expect(spec.process.env).toContain('HTTPS_PROXY=http://127.0.0.1:3128');
-	expect(spec.process.env.some((entry) => entry.includes('SECRET') || entry.includes('KEY'))).toBe(
-		false
+test('trimTar leaves an archive without padding as it is', () => {
+	const empty = new Uint8Array(1024);
+	expect(trimTar(empty).length).toBe(1024);
+});
+
+test('an sbx server needs an API key', () => {
+	const base = {
+		HANS_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
+		BETTER_AUTH_SECRET: 'x'.repeat(32)
+	};
+	expect(parseEnv(base).SBX_URL).toBeUndefined();
+	expect(() => parseEnv({ ...base, SBX_URL: 'https://sbx.example' })).toThrow(
+		/SBX_API_KEY: required with SBX_URL/
 	);
-	expect(spec.mounts).toContainEqual({
-		destination: '/workspace',
-		type: 'bind',
-		source: '/w',
-		options: ['rbind', 'rw']
-	});
-	expect(spec.linux.namespaces).toContainEqual({ type: 'network' });
-});
-
-test('memoryUsage reads runsc stats and tolerates junk', () => {
-	const stats = JSON.stringify({ type: 'stats', data: { memory: { usage: { usage: 1234 } } } });
-	expect(memoryUsage(stats)).toBe(1234);
-	expect(memoryUsage('not json')).toBeNull();
-	expect(memoryUsage('{}')).toBeNull();
-});
-
-test('readTail keeps only the end of long output', async () => {
-	const stream = new Blob(['a'.repeat(50), 'b'.repeat(50), 'c'.repeat(50)]).stream();
-	expect(await readTail(stream, 60)).toBe('b'.repeat(10) + 'c'.repeat(50));
-	expect(await readTail(new Blob(['short']).stream(), 60)).toBe('short');
+	const env = parseEnv({ ...base, SBX_URL: 'https://sbx.example', SBX_API_KEY: 'sbx_k' });
+	expect(env.SBX_TEMPLATE).toBeUndefined();
 });

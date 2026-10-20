@@ -58,17 +58,28 @@ export const envSchema = z.object({
 	WORKER_WORKDIR: optional,
 
 	/**
-	 * The gVisor runtime binary and the sandbox's root filesystem; the Docker image ships both.
-	 * Whether reviews use the sandbox is an organization setting.
+	 * The sbx server (https://sbx.torsten.work) that review sandboxes run on. Without it, reviews
+	 * read code only. Whether reviews use the sandbox is also an organization setting.
 	 */
-	SANDBOX_RUNSC: z.string().default('runsc'),
-	SANDBOX_ROOTFS: z.string().default('/opt/hansi-sandbox/rootfs')
+	SBX_URL: optional,
+	SBX_API_KEY: optional,
+	/**
+	 * An sbx template to start sandboxes from. Without it, sbx builds Hansi's toolchain image once
+	 * and caches it, which needs an admin key or `builds.allow_sandbox_keys` on the server.
+	 */
+	SBX_TEMPLATE: optional
 });
 
 export type Env = z.infer<typeof envSchema>;
 
+const checkedEnvSchema = envSchema.superRefine((env, ctx) => {
+	if (env.SBX_URL && !env.SBX_API_KEY) {
+		ctx.addIssue({ code: 'custom', path: ['SBX_API_KEY'], message: 'required with SBX_URL' });
+	}
+});
+
 export function parseEnv(source: Record<string, string | undefined>): Env {
-	const result = envSchema.safeParse(source);
+	const result = checkedEnvSchema.safeParse(source);
 	if (!result.success) {
 		const issues = result.error.issues
 			.map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
