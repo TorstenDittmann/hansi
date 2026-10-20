@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { createClient } from '@libsql/client';
+import { createClient, type Client } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import * as schema from './schema';
 
@@ -67,6 +67,7 @@ export function createDatabase(options: DatabaseOptions) {
 						: undefined
 				}
 	);
+	retryWhenBusy(client);
 	const db = drizzle(client, { schema });
 
 	const ready = (async () => {
@@ -79,4 +80,36 @@ export function createDatabase(options: DatabaseOptions) {
 	})();
 
 	return { db, client, ready };
+}
+
+const BUSY_RETRIES = 6;
+
+/**
+ * sqld answers SQLITE_BUSY at once when another connection holds the write lock, and several
+ * workers polling the job queue make that common. A statement that got SQLITE_BUSY did not run,
+ * so it is safe to send again: retry with backoff (about 3s in total) before giving up.
+ * Statements inside an interactive transaction are not retried; the transaction fails as a whole.
+ */
+export function retryWhenBusy(client: Client, delayMs = (attempt: number) => 50 * 2 ** attempt) {
+	const retry = async <T>(run: () => Promise<T>): Promise<T> => {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await run();
+			} catch (error) {
+				if (attempt >= BUSY_RETRIES || !isBusy(error)) throw error;
+				const delay = delayMs(attempt);
+				await new Promise((resolve) => setTimeout(resolve, delay + Math.random() * delay));
+			}
+		}
+	};
+	const execute = client.execute.bind(client);
+	const batch = client.batch.bind(client);
+	client.execute = ((...args: Parameters<Client['execute']>) =>
+		retry(() => execute(...args))) as Client['execute'];
+	client.batch = ((...args: Parameters<Client['batch']>) =>
+		retry(() => batch(...args))) as Client['batch'];
+}
+
+function isBusy(error: unknown): boolean {
+	return (error as { code?: unknown } | null)?.code === 'SQLITE_BUSY';
 }
