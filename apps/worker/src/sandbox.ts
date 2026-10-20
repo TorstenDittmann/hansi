@@ -13,8 +13,8 @@ const SETUP_TIMEOUT_MS = 10 * 60_000;
 const MAX_LIFETIME_SECONDS = 60 * 60;
 const CPUS = 2;
 const MEMORY_MB = 2048;
-/** The writable /workspace, which holds the checkout and the installed dependencies. */
-const DISK_MB = 4096;
+/** Names the per-review volume that holds /workspace, so leftovers can be found and removed. */
+const VOLUME_PREFIX = 'hansi-';
 /** `timeout -s KILL` exits with 128 + SIGKILL. */
 const KILLED_BY_TIMEOUT = 137;
 
@@ -157,6 +157,22 @@ export function trimTar(tar: Uint8Array): Uint8Array<ArrayBuffer> {
 	return tar.slice(0, Math.min(tar.length, offset + 2 * BLOCK));
 }
 
+/**
+ * Deletes volumes of reviews whose sandbox sbx has already removed, e.g. after this worker
+ * crashed. Any volume older than the sandbox lifetime is one: sbx refuses to delete a volume a
+ * live sandbox still mounts.
+ */
+async function removeStaleVolumes(client: SbxClient, log: Logger): Promise<void> {
+	const volumes = await client.listVolumes().catch(() => []);
+	const cutoff = Date.now() - 2 * MAX_LIFETIME_SECONDS * 1000;
+	for (const volume of volumes) {
+		if (!volume.name.startsWith(VOLUME_PREFIX) || Date.parse(volume.createdAt) > cutoff) continue;
+		await client.deleteVolume(volume.id).catch((error: unknown) => {
+			log.debug({ err: error, volume: volume.id }, 'stale sbx volume not deleted');
+		});
+	}
+}
+
 /** Exec and file calls on a sandbox sbx no longer has, e.g. one past its lifetime. */
 function gone(error: unknown): boolean {
 	return error instanceof SbxError && (error.status === 404 || error.status === 409);
@@ -179,19 +195,32 @@ export async function openSandbox(options: OpenSandboxOptions): Promise<ReviewSa
 	const started = Date.now();
 	const client = new SbxClient({ baseUrl: env.SBX_URL, apiKey: env.SBX_API_KEY });
 
-	const info = await client.createSandbox({
-		template: env.SBX_TEMPLATE ?? TOOLCHAIN,
-		cpu: CPUS,
-		memoryMb: MEMORY_MB,
-		diskMb: DISK_MB,
-		ttl: MAX_LIFETIME_SECONDS,
-		network: { mode: config.sandbox.network === 'public' ? 'full' : 'none' },
-		env: {
-			PATH: '/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-			CI: 'true'
-		},
-		labels: { 'hansi.job': name }
-	});
+	await removeStaleVolumes(client, log);
+	// /workspace is a volume, on disk: sbx's default is a tmpfs, which would count the checkout
+	// and installed dependencies against the sandbox's memory.
+	const volume = await client.createVolume(`${VOLUME_PREFIX}${name}`);
+	const removeVolume = () =>
+		client.deleteVolume(volume.id).catch((error: unknown) => {
+			if (!gone(error)) log.warn({ err: error, volume: volume.id }, 'sbx volume delete failed');
+		});
+	const info = await client
+		.createSandbox({
+			template: env.SBX_TEMPLATE ?? TOOLCHAIN,
+			cpu: CPUS,
+			memoryMb: MEMORY_MB,
+			mounts: [{ volumeId: volume.id, path: WORKSPACE }],
+			ttl: MAX_LIFETIME_SECONDS,
+			network: { mode: config.sandbox.network === 'public' ? 'full' : 'none' },
+			env: {
+				PATH: '/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+				CI: 'true'
+			},
+			labels: { 'hansi.job': name }
+		})
+		.catch(async (error: unknown) => {
+			await removeVolume();
+			throw error;
+		});
 	const id = info.id;
 
 	let closed = false;
@@ -201,6 +230,7 @@ export async function openSandbox(options: OpenSandboxOptions): Promise<ReviewSa
 		await client.deleteSandbox(id).catch((error: unknown) => {
 			if (!gone(error)) log.warn({ err: error, id }, 'sbx sandbox delete failed');
 		});
+		await removeVolume();
 	};
 
 	const exec = async (args: string[], timeoutMs: number): Promise<Spawned> => {

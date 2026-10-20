@@ -47,10 +47,13 @@ server, never in the worker container. Point the worker at it with `SBX_URL` and
 Without them, reviews read code only. Each organization can also turn the sandbox off in its
 settings.
 
-Each review gets an sbx sandbox with 2 CPUs, 2 GiB of memory, a 4 GiB `/workspace`, and sbx's
-`full` network (or none, when the repository sets `network: none`), deleted after the review or
-after an hour at the latest. sbx builds Hansi's toolchain (Node.js, Python, PHP with Composer, Go)
-on first use and caches it, which needs an admin key or `builds.allow_sandbox_keys`. With a
+Each review gets an sbx sandbox with 2 CPUs, 2 GiB of memory, and sbx's `full` network (or none,
+when the repository sets `network: none`), deleted after the review or after an hour at the latest.
+Its `/workspace`, with the checkout and installed dependencies, is an sbx volume, which is a Docker
+volume on the sbx host, so it lives on disk under Docker's data root (`/var/lib/docker` by
+default). To keep it on another disk, move Docker's `data-root` there.
+
+sbx builds Hansi's toolchain (Node.js, Python, PHP with Composer, Go) on first use and caches it, which needs an admin key or `builds.allow_sandbox_keys`. With a
 sandbox-scoped key, create a template with that toolchain once and set `SBX_TEMPLATE` to its name.
 The key's sandbox limit (20 by default) must cover `WORKER_CONCURRENCY` times `HANSI_WORKERS`.
 
