@@ -1,6 +1,6 @@
 import { schema, type Database } from '@hans/db';
 import { getGitHubApp, type GitHubAppCredentials } from '@hans/github';
-import { eq, inArray, notInArray, and, sql } from 'drizzle-orm';
+import { eq, inArray, notInArray, and, ne, or, sql } from 'drizzle-orm';
 
 export interface InstallationInfo {
 	id: number;
@@ -60,6 +60,25 @@ export async function upsertRepositories(
 				private: sql`excluded.private`
 			}
 		});
+}
+
+/**
+ * Refreshes the name and visibility of a repository Hansi already tracks, such as after a rename
+ * or transfer on GitHub. Untracked repositories are left alone: only installation events add them.
+ */
+export async function refreshRepository(db: Database, repository: RepositoryInfo) {
+	await db
+		.update(schema.repositories)
+		.set({ fullName: repository.fullName, private: repository.private })
+		.where(
+			and(
+				eq(schema.repositories.id, repository.id),
+				or(
+					ne(schema.repositories.fullName, repository.fullName),
+					ne(schema.repositories.private, repository.private)
+				)
+			)
+		);
 }
 
 /**

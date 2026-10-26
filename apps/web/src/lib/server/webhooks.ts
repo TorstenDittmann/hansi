@@ -3,7 +3,12 @@ import { canTriggerFromComment, classifyMention, verifyWebhookSignature } from '
 import { chatJobFromComment } from '@hans/queue';
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { getContext, getGitHubCredentials } from './context';
-import { removeRepositories, upsertInstallation, upsertRepositories } from './installations';
+import {
+	refreshRepository,
+	removeRepositories,
+	upsertInstallation,
+	upsertRepositories
+} from './installations';
 import { enqueueChat, enqueueReview } from './jobs';
 
 // Only the payload fields Hansi reads. Full types: @octokit/openapi-webhooks-types.
@@ -63,6 +68,10 @@ export async function handleGitHubWebhook(request: Request): Promise<Response> {
 
 	const payload = JSON.parse(rawBody) as Payload;
 	const installation = payload.installation;
+
+	// Events carry the repository's current name, so a rename or transfer on GitHub reaches the
+	// stored name with the next event for that repository.
+	if (payload.repository) await refreshRepository(db, toRepo(payload.repository));
 
 	switch (event) {
 		case 'installation': {
