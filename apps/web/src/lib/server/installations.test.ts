@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { createTestDatabase, schema } from '@hans/db';
 import { eq } from 'drizzle-orm';
-import { upsertInstallation } from './installations';
+import { refreshRepository, upsertInstallation, upsertRepositories } from './installations';
 
 const installation = { id: 1, accountLogin: 'acme', accountType: 'Organization' };
 
@@ -47,4 +47,15 @@ test('once disconnected, another organization can claim it', async () => {
 	await db.update(schema.githubInstallations).set({ organizationId: null });
 	expect(await upsertInstallation(db, installation, 'org-b')).toBe('org-b');
 	expect(await owner()).toBe('org-b');
+});
+
+test('a renamed repository gets its new name, an untracked one is not added', async () => {
+	const { db } = await setup();
+	await upsertInstallation(db, installation, 'org-a');
+	await upsertRepositories(db, 1, [{ id: 10, fullName: 'acme/old', private: false }]);
+	await refreshRepository(db, { id: 10, fullName: 'acme/new', private: true });
+	await refreshRepository(db, { id: 11, fullName: 'acme/other', private: false });
+	expect(await db.select().from(schema.repositories)).toMatchObject([
+		{ id: 10, fullName: 'acme/new', private: true, enabled: true }
+	]);
 });
