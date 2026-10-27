@@ -63,6 +63,7 @@ import {
 	loadModels,
 	reviewDetailsUrlFor,
 	reviewTimings,
+	subagentsEnabled,
 	withWorkdir,
 	withdrawChangeRequests,
 	type RepositoryConnection,
@@ -413,6 +414,11 @@ async function executeReview(
 				}
 			}
 			const models = await loadModels(ctx, review.organizationId);
+			// Read before the sandbox opens: a throw after that would leave it running.
+			const subagents = await subagentsEnabled(db, review.organizationId);
+			if (!subagents) {
+				record({ type: 'subagents.off', data: { reason: 'turned off in organization settings' } });
+			}
 			const usage = await createUsageRecorder(ctx, {
 				organizationId: review.organizationId,
 				reviewId: review.id,
@@ -460,7 +466,8 @@ async function executeReview(
 				onEvent: record,
 				onModelCall: usage.record,
 				onModelError: usage.recordError,
-				sandbox: sandbox?.runner
+				sandbox: sandbox?.runner,
+				limits: subagents ? undefined : { maxSubagents: 0 }
 			}).finally(() => sandbox?.close());
 			await pendingWrites;
 			await db.update(schema.reviews).set(usage.totals).where(eq(schema.reviews.id, review.id));

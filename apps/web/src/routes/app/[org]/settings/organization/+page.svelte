@@ -79,6 +79,33 @@
 		</div>
 	</form>
 
+	<form method="post" action="?/subagents" use:enhance class="card overflow-hidden">
+		<div class="flex gap-3 p-5">
+			<input
+				id="subagents"
+				name="subagents"
+				type="checkbox"
+				class="mt-1 rounded border-stone-300 dark:border-stone-700"
+				checked={data.subagents}
+			/>
+			<label for="subagents" class="text-sm">
+				<span class="font-medium">Let Hansi use subagents</span>
+				<span class="muted block">
+					On pull requests that span several areas, Hansi can hand parts of the review to subagents
+					that work in parallel, which can make large reviews faster and more thorough. Each
+					subagent is another stream of model calls on your key, so a review can cost more. Turned
+					off, one reviewer reads the whole pull request.
+				</span>
+			</label>
+		</div>
+		<div
+			class="flex items-center justify-end gap-3 border-t border-stone-200 bg-stone-50 px-5 py-3 dark:border-stone-800 dark:bg-stone-900/50"
+		>
+			{#if form && 'subagentsSaved' in form}<span class="muted">Saved</span>{/if}
+			<button class="btn btn-primary">Save</button>
+		</div>
+	</form>
+
 	{#if canLeave || isOwner}
 		<section class="card divide-y divide-stone-200 dark:divide-stone-800">
 			{#if canLeave}

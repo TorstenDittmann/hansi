@@ -263,5 +263,7 @@ export const organizationSettings = sqliteTable('organization_settings', {
 		.references(() => organization.id, { onDelete: 'cascade' }),
 	/** Whether reviews and replies can run commands in a sandbox (install, build, test). */
 	sandbox: integer('sandbox', { mode: 'boolean' }).notNull().default(true),
+	/** Whether the reviewer may hand parts of a review to subagents that run in parallel. */
+	subagents: integer('subagents', { mode: 'boolean' }).notNull().default(true),
 	updatedAt
 });
