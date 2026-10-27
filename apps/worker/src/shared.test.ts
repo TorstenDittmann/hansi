@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import type { Analytics } from '@hans/analytics';
 import { createTestDatabase, schema } from '@hans/db';
+import { eq } from 'drizzle-orm';
 import { chmod, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +12,8 @@ import {
 	createUsageRecorder,
 	reviewDetailsUrl,
 	reviewDetailsUrlFor,
-	reviewTimings
+	reviewTimings,
+	subagentsEnabled
 } from './shared';
 
 const realFetch = globalThis.fetch;
@@ -188,4 +190,19 @@ test('a writable work directory is fine, and is created when missing', async () 
 	const root = join(await mkdtemp(join(tmpdir(), 'hans-workdir-')), 'nested');
 	expect(await workdirProblem({ WORKER_WORKDIR: root } as Env)).toBeNull();
 	expect(await readdir(root)).toEqual([]);
+});
+
+test('subagents are on unless the organization turned them off', async () => {
+	const { db } = await createTestDatabase();
+	await db
+		.insert(schema.organization)
+		.values({ id: 'org-1', name: 'Acme', slug: 'acme', createdAt: new Date() });
+	expect(await subagentsEnabled(db, 'org-1')).toBe(true);
+	await db.insert(schema.organizationSettings).values({ organizationId: 'org-1', sandbox: false });
+	expect(await subagentsEnabled(db, 'org-1')).toBe(true);
+	await db
+		.update(schema.organizationSettings)
+		.set({ subagents: false })
+		.where(eq(schema.organizationSettings.organizationId, 'org-1'));
+	expect(await subagentsEnabled(db, 'org-1')).toBe(false);
 });

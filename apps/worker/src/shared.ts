@@ -130,6 +130,15 @@ export async function loadLearnings(db: Database, organizationId: string, reposi
 	return rows.map((row) => row.body);
 }
 
+/** Whether the reviewer may start subagents. On by default, like every organization setting. */
+export async function subagentsEnabled(db: Database, organizationId: string): Promise<boolean> {
+	const [row] = await db
+		.select({ subagents: schema.organizationSettings.subagents })
+		.from(schema.organizationSettings)
+		.where(eq(schema.organizationSettings.organizationId, organizationId));
+	return row?.subagents ?? true;
+}
+
 /** Writes each model call to `llm_calls` with its cost, and keeps running totals. */
 /**
  * Records each model call's tokens and cost in the database, and reports it to PostHog's LLM

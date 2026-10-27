@@ -63,6 +63,7 @@ import {
 	loadModels,
 	reviewDetailsUrlFor,
 	reviewTimings,
+	subagentsEnabled,
 	withWorkdir,
 	withdrawChangeRequests,
 	type RepositoryConnection,
@@ -441,6 +442,10 @@ async function executeReview(
 				progress,
 				log
 			});
+			const subagents = await subagentsEnabled(db, review.organizationId);
+			if (!subagents) {
+				record({ type: 'subagents.off', data: { reason: 'turned off in organization settings' } });
+			}
 			const result = await runReview({
 				repoDir,
 				diff: reviewDiff,
@@ -460,7 +465,8 @@ async function executeReview(
 				onEvent: record,
 				onModelCall: usage.record,
 				onModelError: usage.recordError,
-				sandbox: sandbox?.runner
+				sandbox: sandbox?.runner,
+				limits: subagents ? undefined : { maxSubagents: 0 }
 			}).finally(() => sandbox?.close());
 			await pendingWrites;
 			await db.update(schema.reviews).set(usage.totals).where(eq(schema.reviews.id, review.id));

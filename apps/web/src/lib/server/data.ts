@@ -274,20 +274,36 @@ export async function getCostSummary(organizationId: string, now = new Date()) {
 	return costSummary(db, organizationId, now);
 }
 
-/** Whether the organization's reviews and replies can run commands in a sandbox. On by default. */
-export async function getSandboxSetting(organizationId: string): Promise<boolean> {
-	const { db } = await getContext();
-	const [row] = await db
-		.select({ sandbox: schema.organizationSettings.sandbox })
-		.from(schema.organizationSettings)
-		.where(eq(schema.organizationSettings.organizationId, organizationId));
-	return row?.sandbox ?? true;
+export interface OrganizationSettings {
+	/** Whether reviews and replies can run commands in a sandbox. */
+	sandbox: boolean;
+	/** Whether the reviewer may hand parts of a review to subagents that run in parallel. */
+	subagents: boolean;
 }
 
-export async function setSandboxSetting(organizationId: string, sandbox: boolean) {
+/** The organization's settings. Everything is on by default. */
+export async function getOrganizationSettings(
+	organizationId: string
+): Promise<OrganizationSettings> {
+	const { db } = await getContext();
+	const [row] = await db
+		.select({
+			sandbox: schema.organizationSettings.sandbox,
+			subagents: schema.organizationSettings.subagents
+		})
+		.from(schema.organizationSettings)
+		.where(eq(schema.organizationSettings.organizationId, organizationId));
+	return { sandbox: row?.sandbox ?? true, subagents: row?.subagents ?? true };
+}
+
+/** Changes some settings; the others keep their stored or default values. */
+export async function updateOrganizationSettings(
+	organizationId: string,
+	settings: Partial<OrganizationSettings>
+) {
 	const { db } = await getContext();
 	await db
 		.insert(schema.organizationSettings)
-		.values({ organizationId, sandbox })
-		.onConflictDoUpdate({ target: schema.organizationSettings.organizationId, set: { sandbox } });
+		.values({ organizationId, ...settings })
+		.onConflictDoUpdate({ target: schema.organizationSettings.organizationId, set: settings });
 }

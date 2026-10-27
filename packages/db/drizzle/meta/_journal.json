@@ -78,6 +78,13 @@
       "when": 1791980555892,
       "tag": "0010_organization_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793120444947,
+      "tag": "0011_organization_subagents",
+      "breakpoints": true
     }
   ]
 }
