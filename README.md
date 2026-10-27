@@ -21,7 +21,8 @@ Amazon Bedrock, Google, xAI, OpenRouter, or any OpenAI-compatible endpoint.
    the way a reviewer would: it reads files, searches for usages, follows the change, and looks at
    the history of the lines it touches. It also reads the issues the pull request closes, and any
    checks that already failed on the commit, so it knows what the change is meant to do and what
-   CI found.
+   CI found. On pull requests that span several areas, it can hand parts of the review to
+   subagents that work in parallel and report back.
 3. A second, skeptical pass double-checks every finding. Only the ones that hold up are posted, as
    inline comments with a suggested fix when there is one. Each comment includes a collapsed
    prompt an agent can follow to fix that issue, and the summary includes one prompt for every
@@ -228,6 +229,8 @@ each case, runs the review engine, and reports precision, recall, F1, and cost:
 EVAL_PROVIDER=anthropic EVAL_MODEL=<model id> EVAL_API_KEY=… bun run eval
 bun run eval -- --case sql --repeat 3 --min-f1 0.6
 ```
+
+Set `EVAL_SUBAGENTS=0` to run the same cases without subagents and compare quality, cost, and time.
 
 Run it before and after changing prompts or models, and add a case to `packages/evals/src/cases`
 for every bug Hansi should have caught. The `Evals` workflow runs the suite on demand, or on pull

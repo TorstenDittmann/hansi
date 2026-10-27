@@ -49,10 +49,21 @@ export function formatCommandResult(result: CommandResult): string {
 	return parts.join('\n\n');
 }
 
-export function createSandboxTools(runner: CommandRunner, emit: EmitEvent) {
-	let commandsRun = 0;
+/**
+ * Commands run so far against one sandbox. Agents that share a sandbox, like a reviewer and its
+ * subagents, share one budget.
+ */
+export interface CommandBudget {
+	used: number;
 	/** A runner error means the sandbox is gone (stopped, or never started): later calls fail too. */
-	let gone: string | undefined;
+	gone?: string;
+}
+
+export function createSandboxTools(
+	runner: CommandRunner,
+	emit: EmitEvent,
+	budget: CommandBudget = { used: 0 }
+) {
 	return {
 		run_command: tool({
 			description: `Run a shell command (sh -c) in an isolated sandbox, in a writable copy of the repository at the PR head. Returns the exit code and output (long output keeps its start and end). Default timeout ${DEFAULT_TIMEOUT_MS / 1000}s, at most ${MAX_TIMEOUT_MS / 1000}s with timeoutSeconds. At most ${MAX_COMMANDS} commands in total, so use it for lightweight checks, not builds or test suites.`,
@@ -66,15 +77,15 @@ export function createSandboxTools(runner: CommandRunner, emit: EmitEvent) {
 					.optional()
 			}),
 			execute: async ({ command, timeoutSeconds }) => {
-				if (gone) {
+				if (budget.gone) {
 					emit({ type: 'tool.run_command', data: { command, skipped: 'sandbox gone' } });
-					return `Not run: ${gone}`;
+					return `Not run: ${budget.gone}`;
 				}
-				if (commandsRun >= MAX_COMMANDS) {
+				if (budget.used >= MAX_COMMANDS) {
 					emit({ type: 'tool.run_command', data: { command, skipped: 'budget' } });
 					return `Not run: the budget of ${MAX_COMMANDS} commands is used up. Continue with the read-only tools.`;
 				}
-				commandsRun++;
+				budget.used++;
 				const timeoutMs = timeoutSeconds ? timeoutSeconds * 1000 : DEFAULT_TIMEOUT_MS;
 				const started = Date.now();
 				try {
@@ -94,8 +105,8 @@ export function createSandboxTools(runner: CommandRunner, emit: EmitEvent) {
 						type: 'tool.run_command',
 						data: { command, error: (error as Error).message, ms: Date.now() - started }
 					});
-					gone = `${(error as Error).message} run_command will not work again here; continue with the read-only tools.`;
-					return `Error: ${gone}`;
+					budget.gone = `${(error as Error).message} run_command will not work again here; continue with the read-only tools.`;
+					return `Error: ${budget.gone}`;
 				}
 			}
 		})
