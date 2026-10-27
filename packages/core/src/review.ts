@@ -356,6 +356,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 					),
 					context: [pullRequestSection(input.pullRequest), ...rules],
 					files: included,
+					excluded,
 					tools: createTools,
 					emit,
 					hooks: input,

@@ -7,7 +7,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { runReview } from './review';
 import { createSandboxTools, MAX_COMMANDS, type CommandRunner } from './sandbox';
 import { semaphore } from './subagents';
-import type { ReviewEvent } from './tools';
+import { oneFetchAtATime, type ReviewEvent } from './tools';
 
 const diff = `diff --git a/src/math.ts b/src/math.ts
 index 1111111..2222222 100644
@@ -28,6 +28,13 @@ index 1111111..2222222 100644
 -  return s[0];
 +  return s.charAt(1);
  }
+diff --git a/src/old.ts b/src/old.ts
+deleted file mode 100644
+index 1111111..0000000
+--- a/src/old.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export const old = 1;
 `;
 
 const usage = {
@@ -135,7 +142,10 @@ describe('subagents', () => {
 				if (!hasToolResults(options)) {
 					return respond(
 						{ toolName: 'delegate', input: { task: 'Check math.ts', paths: ['src/math.ts'] } },
-						{ toolName: 'delegate', input: { task: 'Check text.ts', paths: ['src/text.ts'] } }
+						{
+							toolName: 'delegate',
+							input: { task: 'Check text.ts', paths: ['src/text.ts', 'src/old.ts'] }
+						}
 					);
 				}
 				expect(promptText(options)).toContain('already added to the review');
@@ -158,6 +168,8 @@ describe('subagents', () => {
 		const textPrompt = subagentPrompts.find((p) => p.includes('Check text.ts'))!;
 		expect(textPrompt).toContain('s.charAt(1)');
 		expect(textPrompt).not.toContain('const result = a / b');
+		// A changed file that is not reviewed line by line is named as changed, with the reason.
+		expect(textPrompt).toContain('src/old.ts (changed, but not reviewed line by line: deleted)');
 		const started = events.filter((e) => e.type === 'subagent.started');
 		expect(started.map((e) => e.data?.agent).sort()).toEqual(['sub-1', 'sub-2']);
 		expect(events.find((e) => e.type === 'review.submitted')?.data).toMatchObject({
@@ -238,4 +250,24 @@ test('semaphore lets at most the limit run at once', async () => {
 		})
 	);
 	expect(mostAtOnce).toBe(2);
+});
+
+test('fetches in one checkout take turns, even after a failure', async () => {
+	const order: string[] = [];
+	const step = (name: string, fail = false) =>
+		oneFetchAtATime('/repo', async () => {
+			order.push(`${name} start`);
+			await Bun.sleep(5);
+			order.push(`${name} end`);
+			if (fail) throw new Error(name);
+		});
+	const other = oneFetchAtATime('/other', async () => void order.push('other'));
+	await Promise.allSettled([step('a', true), step('b'), other]);
+	expect(order.filter((entry) => entry !== 'other')).toEqual([
+		'a start',
+		'a end',
+		'b start',
+		'b end'
+	]);
+	expect(order.indexOf('other')).toBeLessThan(order.indexOf('a end'));
 });

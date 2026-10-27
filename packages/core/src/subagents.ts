@@ -33,6 +33,8 @@ export interface DelegateOptions {
 	context: string[];
 	/** Every reviewable changed file, including the ones not shown to the lead reviewer. */
 	files: FileDiff[];
+	/** Changed files that are not reviewed line by line, such as deleted or path-filtered ones. */
+	excluded: { path: string; reason: string }[];
 	/** Tools for one subagent, reporting through its own `emit`. */
 	tools: (emit: EmitEvent) => ToolSet;
 	emit: EmitEvent;
@@ -136,19 +138,26 @@ function subagentPrompt(options: DelegateOptions, task: string, paths: string[])
 		budget -= rendered.length;
 		shown.push(rendered);
 	}
-	const unknown = paths.filter((path) => !options.files.some((f) => f.path === path));
 	const changed = options.files.map((f) => `- ${f.path}`).join('\n');
+	const excluded = options.excluded.filter((f) => wanted.has(f.path));
+	const unknown = paths.filter(
+		(path) => ![...options.files, ...options.excluded].some((f) => f.path === path)
+	);
 	const parts = [
 		...options.context,
 		`<task>\n${task}\n</task>`,
-		`<changed_files>\nEvery file this pull request changes. Findings can only go on changed lines of these files.\n${changed}\n</changed_files>`
+		`<changed_files>\nThe files this pull request changes that are reviewed. Findings can only go on changed lines of these files.\n${changed}\n</changed_files>`
 	];
-	if (notShown.length || unknown.length) {
+	if (notShown.length || excluded.length || unknown.length) {
 		const lines = [
 			...notShown.map((path) => `- ${path} (too large to show: read it with the tools)`),
+			...excluded.map((f) => `- ${f.path} (changed, but not reviewed line by line: ${f.reason})`),
 			...unknown.map((path) => `- ${path} (not changed in this pull request)`)
 		];
-		parts.push(`<files_not_shown>\n${lines.join('\n')}\n</files_not_shown>`);
+		const deleted = excluded.some((f) => f.reason === 'deleted')
+			? '\nDeleted files may still be imported or called elsewhere: use grep to check whether the changed files still use them.'
+			: '';
+		parts.push(`<files_not_shown>\n${lines.join('\n')}${deleted}\n</files_not_shown>`);
 	}
 	parts.push(
 		`<diff>\nThe files your task is about. Each line: new-file line number, marker (+ added, - removed, space context), content.\n\n${shown.join('\n\n')}\n</diff>`
