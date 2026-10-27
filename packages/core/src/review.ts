@@ -6,16 +6,7 @@ import {
 	type RepoConfig,
 	type Severity
 } from '@hans/config';
-import {
-	generateText,
-	isStepCount,
-	tool,
-	ToolChoiceViolationError,
-	type LanguageModel,
-	type LanguageModelUsage,
-	type ModelMessage,
-	type ToolSet
-} from 'ai';
+import { tool, type LanguageModel, type ToolSet } from 'ai';
 import { z } from 'zod';
 import {
 	commentableLines,
@@ -26,15 +17,10 @@ import {
 	renderFileDiff,
 	type FileDiff
 } from './diff';
+import { runToSubmission } from './agent-loop';
 import { dependencyChanges } from './dependencies';
 import { filterFiles, isGeneratedOutput, isLockfile } from './filters';
-import {
-	cachedPrompt,
-	callModel,
-	reasoningCallOptions,
-	type ModelCall,
-	type ModelFailure
-} from './model-call';
+import { cachedPrompt, callModel, type ModelCall, type ModelFailure } from './model-call';
 import {
 	compareSeverity,
 	findingSchema,
@@ -48,12 +34,25 @@ import {
 } from './findings';
 import {
 	buildReviewPrompt,
+	pullRequestSection,
 	reviewerInstructions,
 	reviewRules,
+	subagentInstructions,
 	verifierInstructions
 } from './prompts';
 import { presentReview } from './present';
-import { createSandboxTools, SANDBOX_GUIDANCE, type CommandRunner } from './sandbox';
+import {
+	createSandboxTools,
+	SANDBOX_GUIDANCE,
+	type CommandBudget,
+	type CommandRunner
+} from './sandbox';
+import {
+	createDelegateTool,
+	MAX_SUBAGENT_STEPS,
+	MAX_SUBAGENTS,
+	SHARED_SANDBOX_GUIDANCE
+} from './subagents';
 import { tiers, type Tier } from './tier';
 import { checkSuggestion } from './suggestions';
 import { decideVerdict, openDefectApprovalReason, type Verdict } from './verdict';
@@ -112,7 +111,14 @@ export interface ReviewInput {
 	onModelCall?: (call: ModelCall) => void | Promise<void>;
 	onModelError?: (failure: ModelFailure) => void | Promise<void>;
 	signal?: AbortSignal;
-	limits?: { maxDiffChars?: number; maxReviewSteps?: number; maxVerifySteps?: number };
+	limits?: {
+		maxDiffChars?: number;
+		maxReviewSteps?: number;
+		maxVerifySteps?: number;
+		/** Subagents the reviewer may start with `delegate`; 0 turns delegation off. */
+		maxSubagents?: number;
+		maxSubagentSteps?: number;
+	};
 	/** Lets the review and verify passes run commands against the PR head. Off when absent. */
 	sandbox?: CommandRunner;
 }
@@ -215,7 +221,13 @@ const verdictsSchema = z.object({
 	)
 });
 
-const DEFAULT_LIMITS = { maxDiffChars: 150_000, maxReviewSteps: 100, maxVerifySteps: 50 };
+const DEFAULT_LIMITS = {
+	maxDiffChars: 150_000,
+	maxReviewSteps: 100,
+	maxVerifySteps: 50,
+	maxSubagents: MAX_SUBAGENTS,
+	maxSubagentSteps: MAX_SUBAGENT_STEPS
+};
 
 export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 	const limits = { ...DEFAULT_LIMITS, ...input.limits };
@@ -288,14 +300,23 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: [];
 	});
 
-	const tools: ToolSet = {
+	// The reviewer, its subagents, and the verifier share the sandbox and its command budget.
+	const commandBudget: CommandBudget = { used: 0 };
+	const createTools = (emit: EmitEvent): ToolSet => ({
 		...createRepoTools(input.repoDir, emit, {
 			token: input.trustedSource?.token,
 			baseRef: input.trustedSource?.ref
 		}),
-		...(input.sandbox ? createSandboxTools(input.sandbox, emit) : {})
-	};
+		...(input.sandbox ? createSandboxTools(input.sandbox, emit, commandBudget) : {})
+	});
+	const tools = createTools(emit);
 	const guidelines = await loadRepoGuidelines(input.repoDir, input.trustedSource);
+	const rules = reviewRules({
+		guidelines,
+		learnings: input.learnings,
+		instructions: config.instructions,
+		pathInstructions
+	});
 	const prompt = buildReviewPrompt({
 		...input.pullRequest,
 		linkedIssues: input.linkedIssues,
@@ -317,17 +338,43 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 			: undefined
 	});
 
-	// 1. Review: an agent loop that explores the repo, then submits findings.
+	// 1. Review: an agent loop that explores the repo, then submits findings. It may hand tasks
+	//    to subagents that run in parallel; their findings join its own.
 	const submitReview = tool({
 		description: 'Submit the review. Call exactly once, at the end.',
 		inputSchema: submissionSchema,
 		execute: async () => 'Review submitted.'
 	});
+	const subagentFindings: Finding[] = [];
+	const delegate =
+		limits.maxSubagents > 0
+			? createDelegateTool({
+					model: input.models.review,
+					instructions: withSharedSandbox(
+						withSandboxGuidance(subagentInstructions(config), input),
+						input
+					),
+					context: [pullRequestSection(input.pullRequest), ...rules],
+					files: included,
+					excluded,
+					tools: createTools,
+					emit,
+					hooks: input,
+					onFindings: (found) => void subagentFindings.push(...found),
+					maxSubagents: limits.maxSubagents,
+					maxSteps: limits.maxSubagentSteps
+				})
+			: undefined;
+	const reviewerPrompt = reviewerInstructions(config, {
+		subagents: delegate && limits.maxSubagents
+	});
 	const review = await callModel('review', input.models.review, input, () =>
 		runToSubmission('submit_review', limits.maxReviewSteps, input.models.review, {
-			instructions: withSandboxGuidance(reviewerInstructions(config), input),
+			instructions: delegate
+				? withSharedSandbox(withSandboxGuidance(reviewerPrompt, input), input)
+				: withSandboxGuidance(reviewerPrompt, input),
 			prompt: cachedPrompt(input.models.review, prompt),
-			tools: { ...tools, submit_review: submitReview },
+			tools: { ...tools, ...(delegate && { delegate }), submit_review: submitReview },
 			abortSignal: input.signal
 		})
 	);
@@ -340,12 +387,18 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 		);
 	}
 	const submitted = submissionSchema.parse(submission.input);
-	const { summary, findings } = submitted;
+	const { summary } = submitted;
+	const findings = [...submitted.findings, ...subagentFindings];
 	const openFindings = input.openFindings ?? [];
 	const resolved = submitted.resolved.filter((id) => openFindings.some((f) => f.id === id));
 	emit({
 		type: 'review.submitted',
-		data: { findings: findings.length, resolved, tier: submitted.tier ?? null }
+		data: {
+			findings: findings.length,
+			fromSubagents: subagentFindings.length,
+			resolved,
+			tier: submitted.tier ?? null
+		}
 	});
 
 	// 2. Validate positions against every reviewable file, not only the ones that fit in the
@@ -434,12 +487,6 @@ export async function runReview(input: ReviewInput): Promise<ReviewResult> {
 
 	// 5. Verify: a second, skeptical pass removes false positives. It can move findings, so
 	//    two of them may now sit on the same lines: check for duplicates again.
-	const rules = reviewRules({
-		guidelines,
-		learnings: input.learnings,
-		instructions: config.instructions,
-		pathInstructions
-	});
 	const verified = distinct.length
 		? await verifyFindings(
 				distinct,
@@ -572,109 +619,6 @@ function dropDuplicates(findings: Finding[], dropped: DroppedFinding[]): Finding
 		}
 	}
 	return distinct;
-}
-
-/**
- * Stops once `toolName` was called with valid input. A call that does not match the schema, such
- * as an unknown category, gets the validation error back so the model can submit again.
- */
-function validCall(toolName: string) {
-	return ({ steps }: { steps: { toolCalls: { toolName: string; invalid?: boolean }[] }[] }) =>
-		steps.at(-1)?.toolCalls.some((call) => call.toolName === toolName && !call.invalid) ?? false;
-}
-
-/**
- * Runs an agent loop that ends with a call to `toolName`. Out of steps, the last step may only
- * make that call, so the loop submits what it found so far instead of failing the whole review.
- *
- * Some models (or the provider routing them) ignore a forced tool choice and answer in text,
- * which the SDK rejects. Then the model gets one more turn, with the conversation so far and its
- * text answer, in which `toolName` is the only tool. If it still does not call it, the caller
- * sees no call and handles that like any other missing submission.
- */
-async function runToSubmission(
-	toolName: string,
-	maxSteps: number,
-	model: ReviewModel,
-	options: {
-		instructions: string;
-		prompt: ModelMessage[];
-		tools: ToolSet;
-		abortSignal?: AbortSignal;
-	}
-): Promise<{
-	toolCalls: { toolName: string; input: unknown; invalid?: boolean }[];
-	usage: LanguageModelUsage;
-}> {
-	const settings = { model: model.model, ...reasoningCallOptions(model), ...options };
-	const messages: ModelMessage[] = [];
-	let usage: LanguageModelUsage | undefined;
-	try {
-		return await generateText({
-			...settings,
-			stopWhen: [isStepCount(maxSteps), validCall(toolName)],
-			prepareStep: ({ stepNumber }) =>
-				stepNumber >= maxSteps - 1
-					? { toolChoice: { type: 'tool', toolName }, activeTools: [toolName] }
-					: undefined,
-			// Every model call, including the one the SDK then rejects.
-			onLanguageModelCallEnd: (call) => {
-				usage = usage ? addUsage(usage, call.usage) : call.usage;
-			},
-			onStepEnd: (step) => void messages.push(...step.response.messages)
-		});
-	} catch (error) {
-		if (!ToolChoiceViolationError.isInstance(error) || options.abortSignal?.aborted) throw error;
-		const answer = error.content
-			.flatMap((part) => (part.type === 'text' && part.text.trim() ? [part.text] : []))
-			.join('\n');
-		const retry = await generateText({
-			...settings,
-			prompt: [
-				...options.prompt,
-				...messages,
-				...(answer ? [{ role: 'assistant' as const, content: answer }] : []),
-				{
-					role: 'user',
-					content: `You answered in text. Call the ${toolName} tool now with your result; it is the only way to submit.`
-				}
-			],
-			activeTools: [toolName],
-			stopWhen: [isStepCount(2), validCall(toolName)]
-		});
-		return {
-			toolCalls: retry.toolCalls,
-			usage: usage ? addUsage(usage, retry.usage) : retry.usage
-		};
-	}
-}
-
-function addUsage(a: LanguageModelUsage, b: LanguageModelUsage): LanguageModelUsage {
-	const add = (x?: number, y?: number) =>
-		x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0);
-	return {
-		inputTokens: add(a.inputTokens, b.inputTokens),
-		inputTokenDetails: {
-			noCacheTokens: add(a.inputTokenDetails?.noCacheTokens, b.inputTokenDetails?.noCacheTokens),
-			cacheReadTokens: add(
-				a.inputTokenDetails?.cacheReadTokens,
-				b.inputTokenDetails?.cacheReadTokens
-			),
-			cacheWriteTokens: add(
-				a.inputTokenDetails?.cacheWriteTokens,
-				b.inputTokenDetails?.cacheWriteTokens
-			)
-		},
-		outputTokens: add(a.outputTokens, b.outputTokens),
-		outputTokenDetails: {
-			textTokens: add(a.outputTokenDetails?.textTokens, b.outputTokenDetails?.textTokens),
-			reasoningTokens: add(
-				a.outputTokenDetails?.reasoningTokens,
-				b.outputTokenDetails?.reasoningTokens
-			)
-		},
-		totalTokens: add(a.totalTokens, b.totalTokens)
-	};
 }
 
 function withoutSuggestion(finding: Finding): Finding {
@@ -851,6 +795,10 @@ async function verifyFindings(
 
 function withSandboxGuidance(instructions: string, input: ReviewInput): string {
 	return input.sandbox ? `${instructions}\n\n${SANDBOX_GUIDANCE}` : instructions;
+}
+
+function withSharedSandbox(instructions: string, input: ReviewInput): string {
+	return input.sandbox ? `${instructions}\n${SHARED_SANDBOX_GUIDANCE}` : instructions;
 }
 
 async function codeContext(repoDir: string, path: string, start: number, end: number) {

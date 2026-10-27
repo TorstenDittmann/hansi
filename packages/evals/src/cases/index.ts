@@ -1,4 +1,5 @@
 import type { EvalCase } from '../types';
+import { multiAreaCases } from './multi-area';
 
 /** 1-based line range of the first line containing `needle`, so expectations track the code. */
 function lineOf(content: string, needle: string): [number, number] {
@@ -1011,5 +1012,6 @@ export function adapter(_source: string): Adapter {
 					'claimVerificationSend writes the Set and sessionStorage before mutate(), and onError only toasts, so a failed send is never retried.'
 			}
 		]
-	}
+	},
+	...multiAreaCases
 ];

@@ -8,6 +8,23 @@ import { astLanguages, astSearch } from './structure';
 export type ReviewEvent = { type: string; data?: Record<string, unknown> };
 export type EmitEvent = (event: ReviewEvent) => void;
 
+/** The last fetch queued in each checkout. */
+const fetchQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Runs `work` after every earlier call for the same checkout has finished. A fetch replaces
+ * FETCH_HEAD and takes its lock, so agents working in parallel in one checkout take turns.
+ */
+export function oneFetchAtATime<T>(repoDir: string, work: () => Promise<T>): Promise<T> {
+	const result = (fetchQueues.get(repoDir) ?? Promise.resolve()).then(work);
+	const settled = result.catch(() => {});
+	fetchQueues.set(repoDir, settled);
+	void settled.then(() => {
+		if (fetchQueues.get(repoDir) === settled) fetchQueues.delete(repoDir);
+	});
+	return result;
+}
+
 const MAX_READ_LINES = 400;
 const MAX_GREP_LINES = 100;
 const MAX_LIST_ENTRIES = 300;
@@ -269,22 +286,23 @@ export function createRepoTools(
 							lines.push(`${ref}: not a branch or tag name`);
 							continue;
 						}
-						// Trees only: whether a path exists needs no file contents. No depth limit, so
-						// history the checkout already has is not cut off.
-						const fetched = await git(
-							['fetch', '--quiet', '--no-tags', '--filter=blob:none', 'origin', ref],
-							{ cwd: repoDir, token: options.token }
-						).then(
-							() => true,
-							() => false
-						);
-						if (!fetched) {
+						const listed = await oneFetchAtATime(repoDir, async () => {
+							// Trees only: whether a path exists needs no file contents. No depth limit, so
+							// history the checkout already has is not cut off.
+							const fetched = await git(
+								['fetch', '--quiet', '--no-tags', '--filter=blob:none', 'origin', ref],
+								{ cwd: repoDir, token: options.token }
+							).then(
+								() => true,
+								() => false
+							);
+							if (!fetched) return null;
+							return git(['ls-tree', '--name-only', 'FETCH_HEAD', '--', file], { cwd: repoDir });
+						});
+						if (listed === null) {
 							lines.push(`${ref}: no such branch or tag`);
 							continue;
 						}
-						const listed = await git(['ls-tree', '--name-only', 'FETCH_HEAD', '--', file], {
-							cwd: repoDir
-						});
 						const present = listed.trim() !== '';
 						lines.push(`${ref}: ${present ? 'present' : 'absent'}`);
 					}

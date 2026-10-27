@@ -15,6 +15,9 @@ on:
         type: choice
         default: ''
         options: ['', none, minimal, low, medium, high, xhigh]
+      subagents:
+        description: Subagents the reviewer may start (empty uses the default, 0 turns them off)
+        default: ''
   pull_request:
     types: [labeled, synchronize]
 
@@ -33,6 +36,7 @@ jobs:
           EVAL_MODEL: ${{ vars.EVAL_MODEL }}
           EVAL_VERIFY_MODEL: ${{ vars.EVAL_VERIFY_MODEL }}
           EVAL_REASONING_EFFORT: ${{ inputs.reasoning_effort || vars.EVAL_REASONING_EFFORT }}
+          EVAL_SUBAGENTS: ${{ inputs.subagents }}
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
       - uses: actions/upload-artifact@v4
         if: always()

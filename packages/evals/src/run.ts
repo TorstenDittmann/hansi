@@ -5,7 +5,8 @@
 //
 // Environment: EVAL_PROVIDER, EVAL_MODEL, EVAL_API_KEY (or the provider's usual variable),
 // EVAL_BASE_URL (OpenAI-compatible endpoints), EVAL_REGION (Amazon Bedrock), EVAL_VERIFY_MODEL
-// (optional, same provider), EVAL_REASONING_EFFORT (none, minimal, low, medium, high, xhigh).
+// (optional, same provider), EVAL_REASONING_EFFORT (none, minimal, low, medium, high, xhigh),
+// EVAL_SUBAGENTS (subagents the reviewer may start; 0 turns delegation off).
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -81,6 +82,11 @@ const models = {
 	verify: process.env.EVAL_VERIFY_MODEL ? model(process.env.EVAL_VERIFY_MODEL) : undefined
 };
 
+const subagents = process.env.EVAL_SUBAGENTS ? Number(process.env.EVAL_SUBAGENTS) : undefined;
+if (subagents !== undefined && !(Number.isInteger(subagents) && subagents >= 0)) {
+	fail('EVAL_SUBAGENTS must be a whole number, 0 or more');
+}
+
 const selected = cases.filter((c) => !args.case || c.name.includes(args.case));
 if (selected.length === 0) fail(`No case matches "${args.case}"`);
 const repeat = Math.max(1, Number(args.repeat) || 1);
@@ -120,6 +126,7 @@ for (const evalCase of selected) {
 				},
 				config: repoConfigSchema.parse(evalCase.config ?? {}),
 				models,
+				limits: subagents === undefined ? undefined : { maxSubagents: subagents },
 				onModelCall: (call) => {
 					const cost = estimateCost(findPrice(catalog, provider, call.modelId), call.usage);
 					usage.costUsd = cost === null || usage.costUsd === null ? null : usage.costUsd + cost;
