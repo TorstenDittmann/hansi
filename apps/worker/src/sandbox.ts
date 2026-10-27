@@ -15,6 +15,11 @@ const CPUS = 2;
 const MEMORY_MB = 2048;
 /** Names the per-review volume that holds /workspace, so leftovers can be found and removed. */
 const VOLUME_PREFIX = 'hansi-';
+/**
+ * Files over this size stay out of the sandbox. They are assets, fixtures, and binaries that
+ * commands rarely need, and a few of them can fill sbx's archive limit (256 MiB by default).
+ */
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 /** `timeout -s KILL` exits with 128 + SIGKILL. */
 const KILLED_BY_TIMEOUT = 137;
 
@@ -158,6 +163,33 @@ export function trimTar(tar: Uint8Array): Uint8Array<ArrayBuffer> {
 }
 
 /**
+ * Writes the checkout at HEAD to a tar file, without files over `maxFileBytes`, and returns the
+ * paths it left out. A tree, not a commit: sbx rejects the pax header with the commit id that a
+ * commit gets. Sizes come from git's objects, which the checkout already has.
+ */
+export async function archiveCheckout(
+	repoDir: string,
+	output: string,
+	maxFileBytes = MAX_FILE_BYTES
+): Promise<string[]> {
+	const listing = await git(['ls-tree', '-r', '-l', '-z', 'HEAD'], { cwd: repoDir });
+	const omitted = listing.split('\0').flatMap((entry) => {
+		// "<mode> <type> <object> <size>\t<path>"; the size is "-" for submodules.
+		const tab = entry.indexOf('\t');
+		const size = Number(entry.slice(0, tab).trim().split(/\s+/)[3]);
+		return tab > 0 && size > maxFileBytes ? [entry.slice(tab + 1)] : [];
+	});
+	const excludes = omitted.map((path) => `:(exclude,literal)${path}`);
+	await git(
+		['archive', '--format=tar', `--output=${output}`, 'HEAD^{tree}', '--', '.', ...excludes],
+		{
+			cwd: repoDir
+		}
+	);
+	return omitted;
+}
+
+/**
  * Deletes volumes of reviews whose sandbox sbx has already removed, e.g. after this worker
  * crashed. Any volume older than the sandbox lifetime is one: sbx refuses to delete a volume a
  * live sandbox still mounts.
@@ -256,15 +288,31 @@ export async function openSandbox(options: OpenSandboxOptions): Promise<ReviewSa
 
 	try {
 		const archive = `${repoDir}.sbx.tar`;
-		// A tree, not a commit: sbx rejects the pax header with the commit id that a commit gets.
-		await git(['archive', '--format=tar', `--output=${archive}`, 'HEAD^{tree}'], { cwd: repoDir });
+		let omitted: string[];
 		try {
+			omitted = await archiveCheckout(repoDir, archive);
 			const tar = trimTar(await readFile(archive));
-			await client.uploadArchive(id, WORKSPACE, Bun.gzipSync(tar));
+			await client.uploadArchive(id, WORKSPACE, Bun.gzipSync(tar)).catch((error: unknown) => {
+				if (error instanceof SbxError && error.status === 413) {
+					throw new Error(
+						`The checkout is ${Math.ceil(tar.length / 2 ** 20)} MiB, more than the sbx server accepts (SBX_MAX_ARCHIVE_BYTES): ${error.message}`,
+						{ cause: error }
+					);
+				}
+				throw error;
+			});
 		} finally {
 			await rm(archive, { force: true });
 		}
-		emit({ type: 'sandbox.ready', data: { ms: Date.now() - started, id } });
+		emit({
+			type: 'sandbox.ready',
+			data: {
+				ms: Date.now() - started,
+				id,
+				omitted: omitted.length,
+				omittedFiles: omitted.slice(0, 20)
+			}
+		});
 		await runSetup(config, run, emit);
 	} catch (error) {
 		await close();

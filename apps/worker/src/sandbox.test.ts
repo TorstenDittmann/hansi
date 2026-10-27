@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseEnv } from '@hans/config';
 import { git } from '@hans/core';
-import { lazySandbox, trimTar, type ReviewSandbox } from './sandbox';
+import { archiveCheckout, lazySandbox, trimTar, type ReviewSandbox } from './sandbox';
 
 test('a lazy sandbox starts on its first command and only then needs closing', async () => {
 	let opened = 0;
@@ -86,4 +86,22 @@ test('an sbx server needs an API key', () => {
 	);
 	const env = parseEnv({ ...base, SBX_URL: 'https://sbx.example', SBX_API_KEY: 'sbx_k' });
 	expect(env.SBX_TEMPLATE).toBeUndefined();
+});
+
+test('archiveCheckout leaves out files over the size limit', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'hansi-archive-'));
+	try {
+		await git(['init', '-q'], { cwd: dir });
+		await writeFile(join(dir, 'small.txt'), 'hello');
+		await writeFile(join(dir, 'big [1].bin'), new Uint8Array(2000));
+		await git(['add', '.'], { cwd: dir });
+		await git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init'], { cwd: dir });
+		const archive = join(dir, 'out.tar');
+
+		expect(await archiveCheckout(dir, archive, 1000)).toEqual(['big [1].bin']);
+		const listed = Bun.spawnSync(['tar', '-tf', archive]);
+		expect(listed.stdout.toString().split('\n').filter(Boolean)).toEqual(['small.txt']);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
 });
