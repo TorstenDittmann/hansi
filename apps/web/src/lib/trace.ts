@@ -48,9 +48,10 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export function formatMs(ms: number | undefined) {
 	if (ms === undefined) return '';
 	if (ms < 1000) return `${ms}ms`;
-	const seconds = ms / 1000;
-	if (seconds < 60) return `${seconds.toFixed(1)}s`;
-	return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+	if (ms < 59_950) return `${(ms / 1000).toFixed(1)}s`;
+	// Round to whole seconds first so 119.6s reads 2m 0s, not 1m 60s.
+	const seconds = Math.round(ms / 1000);
+	return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 function range(start: unknown, end: unknown) {

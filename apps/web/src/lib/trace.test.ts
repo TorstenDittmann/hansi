@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildTrace, traceItem, type TraceEvent } from './trace';
+import { buildTrace, formatMs, traceItem, type TraceEvent } from './trace';
 
 const at = (seconds: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, seconds));
 let nextId = 1;
@@ -66,4 +66,12 @@ test('folds interleaved subagent steps under the subagent that ran them', () => 
 	expect(second.end).toBeUndefined();
 	if (last.kind !== 'event') throw new Error('expected event');
 	expect(last.item.offset).toBe(7);
+});
+
+test('carries a rounded-up second into the minutes', () => {
+	expect(formatMs(620)).toBe('620ms');
+	expect(formatMs(4439)).toBe('4.4s');
+	expect(formatMs(59_960)).toBe('1m 0s');
+	expect(formatMs(119_600)).toBe('2m 0s');
+	expect(formatMs(144_229)).toBe('2m 24s');
 });
