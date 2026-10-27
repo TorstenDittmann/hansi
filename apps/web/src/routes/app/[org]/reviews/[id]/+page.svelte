@@ -5,6 +5,7 @@
 	import RetryReviewButton from '$lib/components/RetryReviewButton.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TierBadge from '$lib/components/TierBadge.svelte';
+	import Trace from '$lib/components/Trace.svelte';
 	import {
 		formatCost,
 		formatDate,
@@ -219,14 +220,7 @@
 	<section>
 		<h2 class="text-lg font-semibold">Trace</h2>
 		{#if review.events.length}
-			<ol class="card mt-3 divide-y divide-stone-200 font-mono text-xs dark:divide-stone-800">
-				{#each review.events as event (event.id)}
-					<li class="flex gap-4 px-4 py-2">
-						<span class="w-40 shrink-0 text-stone-500">{event.type}</span>
-						<span class="break-all">{event.data ? JSON.stringify(event.data) : ''}</span>
-					</li>
-				{/each}
-			</ol>
+			<Trace events={review.events} />
 		{:else}
 			<p class="muted mt-2">{pending ?? 'No events recorded.'}</p>
 		{/if}
