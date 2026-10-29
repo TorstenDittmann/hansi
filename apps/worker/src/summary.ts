@@ -9,7 +9,8 @@ import {
 	SUMMARY_MARKER,
 	tierMeaning,
 	type Finding,
-	type SummaryInput
+	type SummaryInput,
+	type Tier
 } from '@hans/core';
 import { schema, type Database } from '@hans/db';
 import {
@@ -216,20 +217,66 @@ export async function refreshSummaryAfterSettlement(input: {
 	if (!blockingOpen) {
 		await withdrawChangeRequests(connection, pullNumber, CHANGE_REQUEST_DISMISSAL, log);
 	}
-	if (!approve) return;
-
+	const approved =
+		approve && (await submitSettlementApproval(connection, pullNumber, summary, log));
+	if (approve && !approved) await writeSummary(settledVerdict);
+	const verdict = approved ? 'approve' : settledVerdict;
+	// The approval is now Hansi's standing verdict; the next review compares against it.
+	if (approved) {
+		await db
+			.update(schema.reviews)
+			.set({ verdict: 'approve' })
+			.where(eq(schema.reviews.id, last.id));
+	}
+	if (verdict === lastVerdict) return;
+	// The check run follows the verdict and may be required for merging: a run left failing from
+	// the withdrawn change request would keep blocking the pull request.
 	try {
-		// The summary and the dismissal ran since the head was checked. Read it again right before
-		// the approval, so it cannot land on a commit the author has already replaced.
+		const checkRunId = await findOwnCheckRun(octokit, ref, {
+			headSha: last.headSha,
+			name: 'Hansi',
+			ownAppId: connection.appId
+		});
+		if (checkRunId) {
+			await completeCheckRun(octokit, ref, checkRunId, {
+				conclusion:
+					verdict === 'approve' ? 'success' : verdict === 'comment' ? 'neutral' : 'failure',
+				title: `Tier ${summary.tier}: ${tierMeaning[summary.tier]}`,
+				summary: absolutizeLinks(
+					[summary.tierReason, lastSummary].filter(Boolean).join('\n\n'),
+					repository.fullName,
+					last.headSha
+				)
+			});
+		}
+	} catch (error) {
+		log.warn({ err: error }, 'could not update the check run after settlement');
+	}
+}
+
+/**
+ * Approves the reviewed commit after a settlement. The summary and the dismissal ran since the
+ * head was checked, so it is read again right before the approval, which cannot then land on a
+ * commit the author has already replaced. Returns whether the approval was submitted.
+ */
+async function submitSettlementApproval(
+	{ octokit, ref }: RepositoryConnection,
+	pullNumber: number,
+	summary: { headSha: string; tier: Tier; url: string },
+	log: Logger
+): Promise<boolean> {
+	try {
 		const current = await getPullRequest(octokit, ref, pullNumber);
-		if (current.state !== 'open' || !sameSha(current.headSha, last.headSha)) {
-			log.info({ reviewedSha: last.headSha }, 'pull request head moved before settlement approval');
-			await writeSummary(settledVerdict);
-			return;
+		if (current.state !== 'open' || !sameSha(current.headSha, summary.headSha)) {
+			log.info(
+				{ reviewedSha: summary.headSha },
+				'pull request head moved before settlement approval'
+			);
+			return false;
 		}
 		await createReview(octokit, ref, {
 			pullNumber,
-			commitId: last.headSha,
+			commitId: summary.headSha,
 			event: 'APPROVE',
 			body: formatReviewBody({
 				tier: summary.tier,
@@ -240,34 +287,10 @@ export async function refreshSummaryAfterSettlement(input: {
 			}),
 			comments: []
 		});
+		return true;
 	} catch (error) {
 		log.warn({ err: error }, 'could not approve after settlement');
-		await writeSummary(settledVerdict);
-		return;
-	}
-	// The approval is now Hansi's standing verdict; the next review compares against it.
-	await db.update(schema.reviews).set({ verdict: 'approve' }).where(eq(schema.reviews.id, last.id));
-	// The check run follows the verdict and may be required for merging: a run left failing from
-	// the change request would keep blocking the pull request Hansi just approved.
-	try {
-		const checkRunId = await findOwnCheckRun(octokit, ref, {
-			headSha: last.headSha,
-			name: 'Hansi',
-			ownAppId: connection.appId
-		});
-		if (checkRunId) {
-			await completeCheckRun(octokit, ref, checkRunId, {
-				conclusion: 'success',
-				title: `Tier ${summary.tier}: ${tierMeaning[summary.tier]}`,
-				summary: absolutizeLinks(
-					[summary.tierReason, lastSummary].filter(Boolean).join('\n\n'),
-					repository.fullName,
-					last.headSha
-				)
-			});
-		}
-	} catch (error) {
-		log.warn({ err: error }, 'could not update the check run after settlement approval');
+		return false;
 	}
 }
 
