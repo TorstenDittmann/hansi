@@ -21,7 +21,7 @@ export const reasoningEffortLabel: Record<ReasoningEffort, string> = {
 export function parseReasoningEffort(value: unknown): ReasoningEffort | null | undefined {
 	if (value == null || value === '') return null;
 	if (typeof value !== 'string') return undefined;
-	const trimmed = value.trim();
+	const trimmed = value.trim().toLowerCase();
 	if (!trimmed) return null;
 	return (reasoningEfforts as readonly string[]).includes(trimmed)
 		? (trimmed as ReasoningEffort)

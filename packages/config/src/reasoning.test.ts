@@ -11,6 +11,7 @@ test('empty input means the provider default', () => {
 test('accepts the shared effort levels', () => {
 	expect(parseReasoningEffort('high')).toBe('high');
 	expect(parseReasoningEffort(' xhigh ')).toBe('xhigh');
+	expect(parseReasoningEffort('High')).toBe('high');
 });
 
 test('rejects an unknown level', () => {
