@@ -1,5 +1,7 @@
 import {
+	decideVerdict,
 	filesTooLargeFromBody,
+	formatReviewBody,
 	formatSummaryComment,
 	standingFromOpenFindings,
 	STALE_HEAD_NOTE_MARK,
@@ -8,12 +10,24 @@ import {
 	type SummaryInput
 } from '@hans/core';
 import { schema, type Database } from '@hans/db';
-import { getMarkedComment, upsertMarkedComment } from '@hans/github';
-import { severityAtLeast, type Severity, type Verdict } from '@hans/config';
+import {
+	createReview,
+	getMarkedComment,
+	getPullRequest,
+	isTrustedAuthor,
+	upsertMarkedComment
+} from '@hans/github';
+import {
+	blockingSeverity,
+	severityAtLeast,
+	type RepoConfig,
+	type Severity,
+	type Verdict
+} from '@hans/config';
 import type { Logger } from 'pino';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { statusBlockOf, withStatusBlock } from './progress';
-import { CHANGE_REQUEST_DISMISSAL } from './submit-review';
+import { CHANGE_REQUEST_DISMISSAL, shouldApproveAfterSettlement } from './submit-review';
 import { reviewDetailsUrlFor, withdrawChangeRequests, type RepositoryConnection } from './shared';
 
 type FindingRow = {
@@ -110,11 +124,10 @@ export async function refreshSummaryAfterSettlement(input: {
 	organizationId: string;
 	repositoryId: number;
 	pullNumber: number;
-	/** Findings at or above this severity block the pull request (`reviews.requestChanges`). */
-	blockingSeverity: Severity;
+	config: RepoConfig;
 	log: Logger;
 }): Promise<void> {
-	const { db, env, connection, organizationId, repositoryId, pullNumber } = input;
+	const { db, env, connection, organizationId, repositoryId, pullNumber, config, log } = input;
 	const { octokit, ref, mention, repository } = connection;
 
 	const [last] = await db
@@ -137,46 +150,131 @@ export async function refreshSummaryAfterSettlement(input: {
 		.orderBy(desc(schema.reviews.finishedAt))
 		.limit(1);
 	if (!last?.summary || !last.verdict) return;
+	const lastSummary = last.summary;
 
 	const rows = await loadSummaryFindings(db, { organizationId, repositoryId, pullNumber });
-	const blockingOpen = hasBlockingOpen(rows, input.blockingSeverity);
+	const blockingOpen = hasBlockingOpen(rows, blockingSeverity(config));
+	const lastVerdict = last.verdict as Verdict;
 	// A change request stands while a blocking finding is open; after that the latest verdict
-	// becomes a comment. A conversation is not a review of the code, so it never approves.
-	const verdict =
-		last.verdict === 'request_changes' && !blockingOpen ? 'comment' : (last.verdict as Verdict);
+	// becomes a comment, or an approval when the latest review would have approved without the
+	// settled findings.
+	const settledVerdict: Verdict =
+		lastVerdict === 'request_changes' && !blockingOpen ? 'comment' : lastVerdict;
 
 	const existing = await getMarkedComment(octokit, ref, pullNumber, SUMMARY_MARKER);
 	const extras = existing ? summaryExtrasFromBody(existing.body) : {};
-
-	const summaryInput = summaryAfterSettlement({
-		repository: repository.fullName,
-		headSha: last.headSha,
-		summary: last.summary,
-		verdict,
-		walkthrough: last.walkthrough ?? [],
-		latestReviewId: last.id,
-		findings: rows,
-		detailsUrl: await reviewDetailsUrlFor(db, env.APP_URL, organizationId, last.id),
-		mention,
-		...extras
+	const approve = await approvesAfterSettlement(connection, {
+		pullNumber,
+		reviewedSha: last.headSha,
+		lastVerdict,
+		open: rows
+			.filter((f) => f.status === 'posted')
+			.map((f) => ({ ...f, severity: f.severity as Severity })),
+		diffTruncated: !!extras.filesTooLargeForPrompt,
+		config,
+		log
 	});
 
-	// A review running right now keeps its status line above the rebuilt summary.
-	await upsertMarkedComment(
-		octokit,
-		ref,
-		pullNumber,
-		SUMMARY_MARKER,
-		withStatusBlock(formatSummaryComment(summaryInput), existing && statusBlockOf(existing.body))
-	);
+	const detailsUrl = await reviewDetailsUrlFor(db, env.APP_URL, organizationId, last.id);
+	const writeSummary = async (verdict: Verdict) => {
+		const summaryInput = summaryAfterSettlement({
+			repository: repository.fullName,
+			headSha: last.headSha,
+			summary: lastSummary,
+			verdict,
+			walkthrough: last.walkthrough ?? [],
+			latestReviewId: last.id,
+			findings: rows,
+			detailsUrl,
+			mention,
+			...extras,
+			// The note explained a withheld approval. One that is now given has no reason left.
+			...(verdict === 'approve' ? { approvalWithheld: null } : {})
+		});
+		// A review running right now keeps its status line above the rebuilt summary.
+		const comment = await upsertMarkedComment(
+			octokit,
+			ref,
+			pullNumber,
+			SUMMARY_MARKER,
+			withStatusBlock(formatSummaryComment(summaryInput), existing && statusBlockOf(existing.body))
+		);
+		return { ...summaryInput, url: comment.url };
+	};
+
+	const summary = await writeSummary(approve ? 'approve' : settledVerdict);
 	await db
 		.update(schema.reviews)
-		.set({ tier: summaryInput.tier, tierReason: summaryInput.tierReason })
+		.set({ tier: summary.tier, tierReason: summary.tierReason })
 		.where(eq(schema.reviews.id, last.id));
 	// No blocking finding is left: withdraw any change request, including one an earlier review
 	// left in place. Dismissing finds nothing to do when there is none.
 	if (!blockingOpen) {
-		await withdrawChangeRequests(connection, pullNumber, CHANGE_REQUEST_DISMISSAL, input.log);
+		await withdrawChangeRequests(connection, pullNumber, CHANGE_REQUEST_DISMISSAL, log);
+	}
+	if (!approve) return;
+
+	try {
+		await createReview(octokit, ref, {
+			pullNumber,
+			commitId: last.headSha,
+			event: 'APPROVE',
+			body: formatReviewBody({
+				tier: summary.tier,
+				verdict: 'approve',
+				blocking: 0,
+				comments: 0,
+				summaryUrl: summary.url
+			}),
+			comments: []
+		});
+	} catch (error) {
+		log.warn({ err: error }, 'could not approve after settlement');
+		await writeSummary(settledVerdict);
+		return;
+	}
+	// The approval is now Hansi's standing verdict; the next review compares against it.
+	await db.update(schema.reviews).set({ verdict: 'approve' }).where(eq(schema.reviews.id, last.id));
+}
+
+/**
+ * Whether settling a finding in a thread approves the pull request. The checks that need GitHub
+ * run only when the remaining findings would allow an approval at all. A failed check does not
+ * approve.
+ */
+async function approvesAfterSettlement(
+	{ octokit, ref }: RepositoryConnection,
+	input: {
+		pullNumber: number;
+		reviewedSha: string;
+		lastVerdict: Verdict;
+		open: { severity: Severity; category: string; title: string }[];
+		diffTruncated: boolean;
+		config: RepoConfig;
+		log: Logger;
+	}
+): Promise<boolean> {
+	const openVerdict = decideVerdict({ posted: [], stillOpen: input.open, config: input.config });
+	const candidate = {
+		lastVerdict: input.lastVerdict,
+		openVerdict,
+		diffTruncated: input.diffTruncated
+	};
+	if (
+		!shouldApproveAfterSettlement({ ...candidate, headUnchanged: true, authorMayBeApproved: true })
+	) {
+		return false;
+	}
+	try {
+		const pr = await getPullRequest(octokit, ref, input.pullNumber);
+		const headUnchanged =
+			pr.state === 'open' && pr.headSha.toLowerCase() === input.reviewedSha.toLowerCase();
+		const authorMayBeApproved =
+			input.config.reviews.approveOutsideContributors || (await isTrustedAuthor(octokit, ref, pr));
+		return shouldApproveAfterSettlement({ ...candidate, headUnchanged, authorMayBeApproved });
+	} catch (error) {
+		input.log.warn({ err: error }, 'could not check whether a settlement approves');
+		return false;
 	}
 }
 

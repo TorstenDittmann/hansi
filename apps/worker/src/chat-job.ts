@@ -1,4 +1,4 @@
-import { blockingSeverity, parseRepoConfig, REPO_CONFIG_FILE } from '@hans/config';
+import { parseRepoConfig, REPO_CONFIG_FILE } from '@hans/config';
 import { absolutizeLinks, checkoutPullRequest, runChat, type ThreadMessage } from '@hans/core';
 import { schema } from '@hans/db';
 import {
@@ -221,7 +221,7 @@ export async function handleChatJob(ctx: WorkerContext, job: Job<ChatJobPayload>
 				organizationId: payload.organizationId,
 				repositoryId: payload.repositoryId,
 				pullNumber: payload.pullNumber,
-				blockingSeverity: blockingSeverity(config),
+				config,
 				log
 			}).catch((error) => log.warn({ err: error }, 'could not refresh summary after settlement'));
 		}
