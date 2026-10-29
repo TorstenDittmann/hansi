@@ -28,3 +28,8 @@ test('restricted mode rejects everyone else', () => {
 	expect(canSignUp(restricted, candidate)).toBe(false);
 	expect(canSignUp(restricted, { ...candidate, githubLogin: null })).toBe(false);
 });
+
+test('restricted mode rejects a login that only partly matches', () => {
+	expect(canSignUp(restricted, { ...candidate, githubLogin: 'octo' })).toBe(false);
+	expect(canSignUp(restricted, { ...candidate, githubLogin: 'octocat2' })).toBe(false);
+});
