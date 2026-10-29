@@ -10,7 +10,7 @@ test('a failed chat posts a fixed reply and only after the last attempt', () => 
 	expect(chatFailureReply({ attempts: 1, maxAttempts: 2 })).toBeNull();
 
 	const reply = chatFailureReply({ attempts: 2, maxAttempts: 2 });
-	expect(reply).toBe("Sorry, I couldn't answer that right now.");
+	expect(reply).toBe("Sorry, I couldn't answer that right now. Please try again in a few minutes.");
 	expect(reply ?? '').not.toContain(providerError.message);
 	expect(reply ?? '').not.toContain('Bedrock');
 	expect(reply ?? '').not.toContain('AI_APICallError');

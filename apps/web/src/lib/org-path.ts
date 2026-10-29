@@ -11,9 +11,9 @@ export function organizationHome(slug: string) {
  * Account and organization admin are not slugs.
  */
 export function organizationSlugFromPath(pathname: string): string | undefined {
-	const match = pathname.match(/^\/app\/([^/]+)/);
-	if (!match) return undefined;
-	let segment = match[1]!;
+	const raw = pathname.match(/^\/app\/([^/]+)/)?.[1];
+	if (raw === undefined) return undefined;
+	let segment = raw;
 	try {
 		segment = decodeURIComponent(segment);
 	} catch {

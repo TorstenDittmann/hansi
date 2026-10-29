@@ -11,6 +11,11 @@ export const tierMeaning: Record<Tier, string> = {
 	F: 'Do not merge'
 };
 
+/** Whether a tier is good enough to merge without further changes. */
+export function isMergeableTier(tier: Tier): boolean {
+	return tier === 'S' || tier === 'A';
+}
+
 export const verdicts = ['approve', 'request_changes', 'comment'] as const;
 export type Verdict = (typeof verdicts)[number];
 

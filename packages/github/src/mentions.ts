@@ -14,7 +14,7 @@ export function classifyMention(body: string, slug: string): 'review' | 'chat' |
 		.filter((line) => !line.trimStart().startsWith('>'))
 		.join('\n');
 	const mention = `@${escapeRegExp(slug)}(?![\\w-])`;
-	if (new RegExp(`${mention}\\s+(full\\s+)?review\\b`, 'i').test(text)) return 'review';
+	if (new RegExp(`${mention}\\s+(full\\s+|re-?)?review\\b`, 'i').test(text)) return 'review';
 	if (new RegExp(mention, 'i').test(text)) return 'chat';
 	return null;
 }

@@ -7,7 +7,8 @@
  */
 
 /** Posted once a chat job has used its attempts. */
-export const CHAT_FAILURE_REPLY = "Sorry, I couldn't answer that right now.";
+export const CHAT_FAILURE_REPLY =
+	"Sorry, I couldn't answer that right now. Please try again in a few minutes.";
 
 /** Check run body when a review throws. The title stays "Review failed". */
 export const REVIEW_FAILURE_SUMMARY = 'The review did not finish.';
