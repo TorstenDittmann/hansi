@@ -1,4 +1,5 @@
 import {
+	absolutizeLinks,
 	decideVerdict,
 	filesTooLargeFromBody,
 	formatReviewBody,
@@ -6,12 +7,15 @@ import {
 	standingFromOpenFindings,
 	STALE_HEAD_NOTE_MARK,
 	SUMMARY_MARKER,
+	tierMeaning,
 	type Finding,
 	type SummaryInput
 } from '@hans/core';
 import { schema, type Database } from '@hans/db';
 import {
+	completeCheckRun,
 	createReview,
+	findOwnCheckRun,
 	getMarkedComment,
 	getPullRequest,
 	isTrustedAuthor,
@@ -215,6 +219,14 @@ export async function refreshSummaryAfterSettlement(input: {
 	if (!approve) return;
 
 	try {
+		// The summary and the dismissal ran since the head was checked. Read it again right before
+		// the approval, so it cannot land on a commit the author has already replaced.
+		const current = await getPullRequest(octokit, ref, pullNumber);
+		if (current.state !== 'open' || !sameSha(current.headSha, last.headSha)) {
+			log.info({ reviewedSha: last.headSha }, 'pull request head moved before settlement approval');
+			await writeSummary(settledVerdict);
+			return;
+		}
 		await createReview(octokit, ref, {
 			pullNumber,
 			commitId: last.headSha,
@@ -235,6 +247,32 @@ export async function refreshSummaryAfterSettlement(input: {
 	}
 	// The approval is now Hansi's standing verdict; the next review compares against it.
 	await db.update(schema.reviews).set({ verdict: 'approve' }).where(eq(schema.reviews.id, last.id));
+	// The check run follows the verdict and may be required for merging: a run left failing from
+	// the change request would keep blocking the pull request Hansi just approved.
+	try {
+		const checkRunId = await findOwnCheckRun(octokit, ref, {
+			headSha: last.headSha,
+			name: 'Hansi',
+			ownAppId: connection.appId
+		});
+		if (checkRunId) {
+			await completeCheckRun(octokit, ref, checkRunId, {
+				conclusion: 'success',
+				title: `Tier ${summary.tier}: ${tierMeaning[summary.tier]}`,
+				summary: absolutizeLinks(
+					[summary.tierReason, lastSummary].filter(Boolean).join('\n\n'),
+					repository.fullName,
+					last.headSha
+				)
+			});
+		}
+	} catch (error) {
+		log.warn({ err: error }, 'could not update the check run after settlement approval');
+	}
+}
+
+function sameSha(a: string, b: string): boolean {
+	return a.toLowerCase() === b.toLowerCase();
 }
 
 /**
@@ -267,8 +305,7 @@ async function approvesAfterSettlement(
 	}
 	try {
 		const pr = await getPullRequest(octokit, ref, input.pullNumber);
-		const headUnchanged =
-			pr.state === 'open' && pr.headSha.toLowerCase() === input.reviewedSha.toLowerCase();
+		const headUnchanged = pr.state === 'open' && sameSha(pr.headSha, input.reviewedSha);
 		const authorMayBeApproved =
 			input.config.reviews.approveOutsideContributors || (await isTrustedAuthor(octokit, ref, pr));
 		return shouldApproveAfterSettlement({ ...candidate, headUnchanged, authorMayBeApproved });

@@ -234,6 +234,23 @@ export async function startCheckRun(
 	return data.id;
 }
 
+/** The app's latest check run with this name on a commit, or null when it has none there. */
+export async function findOwnCheckRun(
+	octokit: Octokit,
+	ref: RepoRef,
+	input: { headSha: string; name: string; ownAppId: string }
+): Promise<number | null> {
+	const { data } = await octokit.rest.checks.listForRef({
+		...ref,
+		ref: input.headSha,
+		check_name: input.name,
+		filter: 'latest',
+		per_page: 100
+	});
+	const own = data.check_runs.find((run) => String(run.app?.id) === input.ownAppId);
+	return own?.id ?? null;
+}
+
 /** Updates what an in-progress check run says, without completing it. */
 export async function updateCheckRun(
 	octokit: Octokit,
