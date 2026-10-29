@@ -48,3 +48,12 @@ test('our own bot cannot trigger', () => {
 		)
 	).toBe(false);
 });
+
+test('our own bot is recognized regardless of case', () => {
+	expect(
+		canTriggerFromComment(
+			{ user: { login: 'Hansi-Codes[BOT]', type: 'Bot' }, author_association: 'NONE' },
+			slug
+		)
+	).toBe(false);
+});
