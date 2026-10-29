@@ -276,3 +276,5 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 ## License
 
 [MIT](LICENSE)
+
+<!-- Dummy change for testing. Safe to close without merging. -->
