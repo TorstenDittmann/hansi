@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	shouldApproveAfterSettlement,
 	shouldDismissChangeRequest,
 	shouldSubmitReview,
 	submissionForCurrentHead
@@ -144,5 +145,37 @@ describe('shouldDismissChangeRequest', () => {
 		expect(shouldDismissChangeRequest({ ...fixed, lastDecisiveVerdict: 'approve' })).toBe(false);
 		expect(shouldDismissChangeRequest({ ...fixed, lastDecisiveVerdict: null })).toBe(false);
 		expect(shouldDismissChangeRequest({ ...fixed, headMoved: true })).toBe(false);
+	});
+});
+
+describe('shouldApproveAfterSettlement', () => {
+	const settled = {
+		lastVerdict: 'request_changes' as const,
+		openVerdict: 'approve' as const,
+		headUnchanged: true,
+		diffTruncated: false,
+		authorMayBeApproved: true
+	};
+
+	test('approves once the last finding blocking a Tier S pull request is settled', () => {
+		expect(shouldApproveAfterSettlement(settled)).toBe(true);
+		expect(shouldApproveAfterSettlement({ ...settled, lastVerdict: 'comment' })).toBe(true);
+	});
+
+	test('does not approve while open findings still withhold it', () => {
+		expect(shouldApproveAfterSettlement({ ...settled, openVerdict: 'comment' })).toBe(false);
+		expect(shouldApproveAfterSettlement({ ...settled, openVerdict: 'request_changes' })).toBe(
+			false
+		);
+	});
+
+	test('does not approve twice', () => {
+		expect(shouldApproveAfterSettlement({ ...settled, lastVerdict: 'approve' })).toBe(false);
+	});
+
+	test('keeps the guards a review applies to approvals', () => {
+		expect(shouldApproveAfterSettlement({ ...settled, headUnchanged: false })).toBe(false);
+		expect(shouldApproveAfterSettlement({ ...settled, diffTruncated: true })).toBe(false);
+		expect(shouldApproveAfterSettlement({ ...settled, authorMayBeApproved: false })).toBe(false);
 	});
 });

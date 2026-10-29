@@ -106,3 +106,32 @@ export function shouldDismissChangeRequest(input: {
 /** Shown on GitHub next to the dismissed review. */
 export const CHANGE_REQUEST_DISMISSAL =
 	'The findings that requested changes are resolved. See the summary comment for what is still open.';
+
+/**
+ * Whether a finding settled in a thread may turn Hansi's standing verdict into an approval.
+ *
+ * Settling the last blocking finding used to only dismiss the change request, so a pull request
+ * graded Tier S stayed unapproved until the next push. The approval is the one the latest review
+ * would have given with these findings settled, so it holds the same guards as a review: the head
+ * is still the reviewed commit, the whole diff was reviewed, and the author may be approved.
+ */
+export function shouldApproveAfterSettlement(input: {
+	/** Verdict of the latest review, as stored. */
+	lastVerdict: Verdict;
+	/** `decideVerdict` over the findings still open after the settlement. */
+	openVerdict: Verdict;
+	/** The pull request is open and its head is the commit the latest review read. */
+	headUnchanged: boolean;
+	/** Part of the diff did not fit in the latest review's prompt. */
+	diffTruncated: boolean;
+	/** The author has write access, or `approveOutsideContributors` is on. */
+	authorMayBeApproved: boolean;
+}): boolean {
+	return (
+		input.openVerdict === 'approve' &&
+		input.lastVerdict !== 'approve' &&
+		input.headUnchanged &&
+		!input.diffTruncated &&
+		input.authorMayBeApproved
+	);
+}
