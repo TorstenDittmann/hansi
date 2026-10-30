@@ -69,6 +69,7 @@ export const providerIds = [
 	'xai',
 	'google',
 	'openrouter',
+	'cerebras',
 	'amazon-bedrock',
 	'openai-compatible'
 ] as const;

@@ -3,6 +3,7 @@
 	import '@fontsource-variable/martian-mono';
 	import anthropicLogo from '$lib/assets/providers/anthropic.svg';
 	import bedrockLogo from '$lib/assets/providers/bedrock.svg';
+	import cerebrasLogo from '$lib/assets/providers/cerebras.svg';
 	import geminiLogo from '$lib/assets/providers/gemini.svg';
 	import openaiLogo from '$lib/assets/providers/openai.svg';
 	import openrouterLogo from '$lib/assets/providers/openrouter.svg';
@@ -37,7 +38,8 @@
 		{ name: 'Amazon Bedrock', logo: bedrockLogo },
 		{ name: 'Google Gemini', logo: geminiLogo },
 		{ name: 'xAI', logo: xaiLogo },
-		{ name: 'OpenRouter', logo: openrouterLogo }
+		{ name: 'OpenRouter', logo: openrouterLogo },
+		{ name: 'Cerebras', logo: cerebrasLogo }
 	];
 
 	const plan = [
@@ -50,7 +52,7 @@
 	const faqs = [
 		{
 			q: 'Which models can Hansi use?',
-			a: 'Any model from OpenAI, Anthropic, xAI, Google, or OpenRouter, plus any OpenAI-compatible endpoint. You can use a stronger model to review and a cheaper one to double-check findings.'
+			a: 'Any model from OpenAI, Anthropic, xAI, Google, OpenRouter, or Cerebras, plus any OpenAI-compatible endpoint. You can use a stronger model to review and a cheaper one to double-check findings.'
 		},
 		{
 			q: 'How good are the reviews?',

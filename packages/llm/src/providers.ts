@@ -1,5 +1,6 @@
 import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createCerebras } from '@ai-sdk/cerebras';
 import { createGoogle } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
@@ -13,6 +14,7 @@ export const providerIds = [
 	'xai',
 	'google',
 	'openrouter',
+	'cerebras',
 	'amazon-bedrock',
 	'openai-compatible'
 ] as const;
@@ -71,6 +73,14 @@ export const providers: Record<ProviderId, ProviderInfo> = {
 		requiresBaseUrl: false,
 		modelsDevId: 'openrouter',
 		keyUrl: 'https://openrouter.ai/keys'
+	},
+	cerebras: {
+		id: 'cerebras',
+		name: 'Cerebras',
+		defaultBaseUrl: 'https://api.cerebras.ai/v1',
+		requiresBaseUrl: false,
+		modelsDevId: 'cerebras',
+		keyUrl: 'https://cloud.cerebras.ai'
 	},
 	'amazon-bedrock': {
 		id: 'amazon-bedrock',
@@ -134,6 +144,8 @@ export function createLanguageModel(
 			return createGoogle({ apiKey, baseURL })(modelId);
 		case 'openrouter':
 			return createOpenRouter({ apiKey, baseURL })(modelId);
+		case 'cerebras':
+			return createCerebras({ apiKey, baseURL })(modelId);
 		case 'amazon-bedrock': {
 			if (!credential.region) throw new Error('Amazon Bedrock requires a region');
 			const auth = parseBedrockKey(apiKey);
