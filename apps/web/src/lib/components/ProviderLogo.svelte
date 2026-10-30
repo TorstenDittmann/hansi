@@ -1,6 +1,7 @@
 <script lang="ts">
 	import anthropic from '$lib/assets/providers/anthropic.svg';
 	import bedrock from '$lib/assets/providers/bedrock.svg';
+	import cerebras from '$lib/assets/providers/cerebras.svg';
 	import gemini from '$lib/assets/providers/gemini.svg';
 	import openai from '$lib/assets/providers/openai.svg';
 	import openrouter from '$lib/assets/providers/openrouter.svg';
@@ -14,7 +15,8 @@
 		'amazon-bedrock': bedrock,
 		google: gemini,
 		xai,
-		openrouter
+		openrouter,
+		cerebras
 	};
 	const logo = $derived(logos[provider]);
 </script>

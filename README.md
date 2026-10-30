@@ -9,7 +9,7 @@
 
 Hansi reviews your GitHub pull requests like a careful teammate: it points out real bugs, stays
 quiet about style, and approves the rest. It runs on your own model key from OpenAI, Anthropic,
-Amazon Bedrock, Google, xAI, OpenRouter, or any OpenAI-compatible endpoint.
+Amazon Bedrock, Google, xAI, OpenRouter, Cerebras, or any OpenAI-compatible endpoint.
 
 **Use it** at [hansi.codes](https://hansi.codes), free during the beta, or
 **[host it yourself](SELFHOST.md)**. Hansi is MIT-licensed and runs as a single Docker image.

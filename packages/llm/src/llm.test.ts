@@ -160,3 +160,22 @@ describe('amazon bedrock', () => {
 		expect(typeof model === 'object' && model.provider).toContain('bedrock');
 	});
 });
+
+describe('cerebras', () => {
+	test('lists models from the Cerebras API with a bearer key', async () => {
+		const calls: { url: string; init?: RequestInit }[] = [];
+		const fetchImpl = (async (url: string, init?: RequestInit) => {
+			calls.push({ url, init });
+			return Response.json({ data: [{ id: 'gpt-oss-120b' }] });
+		}) as unknown as typeof fetch;
+		const models = await listModels({ provider: 'cerebras', apiKey: 'k' }, fetchImpl);
+		expect(models).toEqual([{ id: 'gpt-oss-120b', name: undefined }]);
+		expect(calls[0]!.url).toBe('https://api.cerebras.ai/v1/models');
+		expect((calls[0]!.init?.headers as Record<string, string>).authorization).toBe('Bearer k');
+	});
+
+	test('creates a Cerebras model', () => {
+		const model = createLanguageModel({ provider: 'cerebras', apiKey: 'k' }, 'gpt-oss-120b');
+		expect(typeof model === 'object' && model.provider).toContain('cerebras');
+	});
+});

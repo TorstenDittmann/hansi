@@ -39,6 +39,7 @@ const keyVariables: Record<ProviderId, string> = {
 	xai: 'XAI_API_KEY',
 	google: 'GOOGLE_GENERATIVE_AI_API_KEY',
 	openrouter: 'OPENROUTER_API_KEY',
+	cerebras: 'CEREBRAS_API_KEY',
 	'amazon-bedrock': 'AWS_BEARER_TOKEN_BEDROCK',
 	'openai-compatible': 'OPENAI_COMPATIBLE_API_KEY'
 };
