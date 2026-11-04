@@ -263,7 +263,8 @@ GitHub ──webhook──► web (SvelteKit + Hono at /api) ──► libSQL �
 - Pull request content is treated as untrusted input that may try to steer the model, so approvals
   are guarded outside the model:
   - `.hansi.json` and guideline files come from the base branch;
-  - pull requests from people without write access are never approved automatically;
+  - pull requests from people without write access are never approved automatically, and a bot
+    counts as having it only when its own commit heads a branch in the repository itself;
   - a review that could not see the whole diff never approves;
   - an open bug, security, concurrency, or error-handling finding, even a minor one, is never
     approved over.
