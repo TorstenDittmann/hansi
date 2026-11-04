@@ -736,7 +736,7 @@ async function reviewSandbox(
  */
 async function approvalRestriction(
 	{ octokit, ref }: RepositoryConnection,
-	pr: { author: string; authorAssociation: string },
+	pr: { author: string; authorAssociation: string; botOnOwnBranch: boolean },
 	config: RepoConfig
 ): Promise<string | undefined> {
 	if (config.reviews.approveOutsideContributors) return undefined;
