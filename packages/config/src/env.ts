@@ -67,14 +67,7 @@ export const envSchema = z.object({
 	 * An sbx template to start sandboxes from. Without it, sbx builds Hansi's toolchain image once
 	 * and caches it, which needs an admin key or `builds.allow_sandbox_keys` on the server.
 	 */
-	SBX_TEMPLATE: optional,
-
-	/**
-	 * The day the hosted service at hansi.codes shuts down, as `YYYY-MM-DD`. When set, the
-	 * homepage becomes the sunset page and the dashboard shows a notice. Self-hosted instances
-	 * leave it unset.
-	 */
-	SUNSET_DATE: optional.pipe(z.iso.date().optional())
+	SBX_TEMPLATE: optional
 });
 
 export type Env = z.infer<typeof envSchema>;
