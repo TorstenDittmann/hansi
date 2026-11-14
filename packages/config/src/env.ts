@@ -74,7 +74,7 @@ export const envSchema = z.object({
 	 * homepage becomes the sunset page and the dashboard shows a notice. Self-hosted instances
 	 * leave it unset.
 	 */
-	SUNSET_DATE: z.iso.date().optional()
+	SUNSET_DATE: optional.pipe(z.iso.date().optional())
 });
 
 export type Env = z.infer<typeof envSchema>;
