@@ -11,6 +11,9 @@ You need:
 - A domain for it, e.g. `hansi.example.com`.
 - An API key from a model provider.
 
+If you are moving from the hosted service, read [Moving from hansi.codes](#moving-from-hansicodes)
+first.
+
 ## Quick start with Docker Compose
 
 ```sh
@@ -199,6 +202,32 @@ Deploy Hansi as **Compose** services:
 
 Push to `main` and both redeploy. The web app runs the migrations, so a worker that starts first
 exits and comes back once they have run.
+
+## Moving from hansi.codes
+
+The hosted service at hansi.codes is shutting down. Your self-hosted instance runs the same code,
+so reviews look and behave the same. Nothing moves over automatically, but most of what you set up
+lives in your repositories and carries over on its own.
+
+1. **Start your instance** with the [quick start](#quick-start-with-docker-compose), and put it
+   behind HTTPS on your own domain.
+2. **Create your GitHub App** on `APP_URL/setup`. It is a new app with its own name, so reviews
+   come from your bot instead of `@hansi-codes`. Install it on the same repositories.
+3. **Add your model key** under **Models** and pick the same review and verify models you used on
+   hansi.codes. You pay your provider directly, as before.
+4. **Invite your team** under **Members**, by email or with an invite link.
+5. **Check required status checks.** If a branch protection rule requires the `Hansi` check run,
+   make sure the new app reports it on a pull request before you remove the old app.
+6. **Uninstall the hansi.codes app** from your account or organization, under **Settings →
+   Applications → Installed GitHub Apps** on GitHub, so it stops receiving your pull requests.
+
+What carries over and what doesn't:
+
+- **`.hansi.json`, `AGENTS.md`, and the other guideline files** are in your repositories, so they
+  apply right away. Hansi reads them from the base branch, as before.
+- **Learnings** (what you taught Hansi in comment replies) live in the hosted database and don't
+  move. Add the important ones to `.hansi.json` under `instructions`, or teach the new bot again.
+- **Review history and costs** stay behind with the hosted service.
 
 ## Analytics
 

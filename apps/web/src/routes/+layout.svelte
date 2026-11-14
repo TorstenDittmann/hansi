@@ -12,6 +12,7 @@
 	import { identifyAnalyticsUser, resetAnalyticsIdentity, startAnalytics } from '$lib/analytics';
 	import { startThemeSync } from '$lib/theme-client.svelte';
 	import { authClient } from '$lib/auth-client';
+	import { formatSunsetDate } from '$lib/sunset';
 	import {
 		DEFAULT_DESCRIPTION,
 		OG_IMAGE_HEIGHT,
@@ -202,6 +203,21 @@
 	{@render children()}
 {:else}
 	<div class="min-h-screen">
+		{#if data.sunsetDate}
+			<div
+				class="border-b border-amber-200 bg-amber-50 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
+				role="status"
+			>
+				<p class="mx-auto max-w-5xl px-4 py-2">
+					hansi.codes shuts down on <time datetime={data.sunsetDate}
+						>{formatSunsetDate(data.sunsetDate)}</time
+					>. Reviews keep running until then.
+					<a href={resolve('/')} class="font-medium underline underline-offset-2"
+						>Move to a self-hosted instance</a
+					>
+				</p>
+			</div>
+		{/if}
 		<header class="border-b border-stone-200 dark:border-stone-800">
 			<div class="mx-auto max-w-5xl px-4">
 				<div class="flex h-14 items-center justify-between gap-4">

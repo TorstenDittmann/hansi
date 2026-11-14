@@ -1,6 +1,12 @@
 # Hansi
 
-[hansi.codes](https://hansi.codes) · Named after Hansi, the cat.
+Named after Hansi, the cat.
+
+> [!IMPORTANT]
+> **The hosted service at hansi.codes is shutting down.** Hansi stays open source:
+> [host it yourself](SELFHOST.md) with one Docker image and your own model key. If you use
+> hansi.codes today, see [Moving from hansi.codes](SELFHOST.md#moving-from-hansicodes).
+> Something new is on the way; watch this repository to hear about it first.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.png">
@@ -11,8 +17,7 @@ Hansi reviews your GitHub pull requests like a careful teammate: it points out r
 quiet about style, and approves the rest. It runs on your own model key from OpenAI, Anthropic,
 Amazon Bedrock, Google, xAI, OpenRouter, Cerebras, or any OpenAI-compatible endpoint.
 
-**Use it** at [hansi.codes](https://hansi.codes), free during the beta, or
-**[host it yourself](SELFHOST.md)**. Hansi is MIT-licensed and runs as a single Docker image.
+**[Host it yourself](SELFHOST.md)**: Hansi is MIT-licensed and runs as a single Docker image.
 
 ## How it works
 
